@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -30,6 +31,8 @@ type pruneModel struct {
 
 	results map[string]string // name -> status string
 	spinner spinner.Model
+	help    help.Model
+	keys    KeyMap
 	failed  bool
 
 	width, height int
@@ -58,6 +61,8 @@ func NewPruneModel(layout liftoff.Layout) (tea.Model, error) {
 		selected:   sel,
 		results:    map[string]string{},
 		spinner:    sp,
+		help:       NewHelp(),
+		keys:       DefaultKeymap,
 	}, nil
 }
 
@@ -120,10 +125,14 @@ func (m *pruneModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.help.Width = msg.Width
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			m.stage = pruneStageAborted
 			return m, tea.Quit
+		}
+		if msg.String() == "?" {
+			m.help.ShowAll = !m.help.ShowAll
 		}
 	case pruneRunMsg:
 		if msg.done {
@@ -210,19 +219,20 @@ func (m *pruneModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *pruneModel) View() string {
+	var body string
 	switch m.stage {
 	case pruneStageSelect:
-		return m.viewSelect()
+		body = m.viewSelect()
 	case pruneStageConfirm:
-		return m.viewConfirm()
+		body = m.viewConfirm()
 	case pruneStageRun:
-		return StyleTitle.Render("kit prune — running") + "\n\n  " + m.spinner.View() + " washing selected worktrees…"
+		body = StyleTitle.Render("kit prune — running") + "\n\n  " + m.spinner.View() + " washing selected worktrees…"
 	case pruneStageDone:
-		return m.viewDone()
+		body = m.viewDone()
 	case pruneStageAborted:
 		return StyleWarn.Render("aborted.\n")
 	}
-	return ""
+	return body + "\n" + m.help.View(m.keys)
 }
 
 func (m *pruneModel) viewSelect() string {

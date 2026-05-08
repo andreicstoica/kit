@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -73,6 +74,8 @@ type washModel struct {
 	confirmCursor int
 
 	spinner      spinner.Model
+	help         help.Model
+	keys         KeyMap
 	updates      <-chan liftoff.StepUpdate
 	stepTitles   []string
 	stepStatuses []liftoff.StepStatus
@@ -127,6 +130,8 @@ func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
 		dropDB:     true,
 		removeGtab: true,
 		spinner:    sp,
+		help:       NewHelp(),
+		keys:       DefaultKeymap,
 		stepLines:  map[int][]string{},
 	}, nil
 }
@@ -137,11 +142,15 @@ func (m *washModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.list.SetSize(msg.Width, msg.Height-2)
+		m.help.Width = msg.Width
+		m.list.SetSize(msg.Width, msg.Height-3)
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			m.stage = washStageAborted
 			return m, tea.Quit
+		}
+		if msg.String() == "?" {
+			m.help.ShowAll = !m.help.ShowAll
 		}
 	}
 	switch m.stage {
@@ -288,19 +297,20 @@ func (m *washModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *washModel) View() string {
+	var body string
 	switch m.stage {
 	case washStageSelect:
-		return m.list.View()
+		body = m.list.View()
 	case washStageConfirm:
-		return m.viewConfirm()
+		body = m.viewConfirm()
 	case washStageRunning:
-		return m.viewRunning()
+		body = m.viewRunning()
 	case washStageDone:
-		return m.viewDone()
+		body = m.viewDone()
 	case washStageAborted:
 		return StyleWarn.Render("aborted.\n")
 	}
-	return ""
+	return body + "\n" + m.help.View(m.keys)
 }
 
 func (m *washModel) viewConfirm() string {

@@ -1,13 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
@@ -17,15 +11,17 @@ import (
 var logCmd = &cobra.Command{
 	Use:   "log [name]",
 	Short: "Tail all service logs for a kit",
-	Long: `log opens a multi-source tail of every .log file under
-~/.config/kit/run/<name>/. Each line is prefixed with its service.
-
-If <name> is omitted, you'll get a Bubble Tea-free picker.
-
-Press Ctrl-C to exit.`,
+	Long: "Tails every `.log` under `~/.config/kit/run/<name>/` in a scrollable viewport.\n\n" +
+		"Each line is prefixed with its service tag. Service tags are color-coded.\n\n" +
+		"Keys:\n\n" +
+		"- `f` toggle follow (auto-scroll to bottom)\n" +
+		"- `↑/↓ k/j` scroll line\n" +
+		"- `pgup/pgdn` scroll page\n" +
+		"- `g/G` top/bottom\n" +
+		"- `?` toggle help\n" +
+		"- `q` / `ctrl+c` exit",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		layout := liftoff.DefaultLayout()
 		var name string
 		if len(args) == 1 {
 			n, err := liftoff.NormalizeAndValidate(args[0])
@@ -36,86 +32,20 @@ Press Ctrl-C to exit.`,
 		} else {
 			st, _ := liftoff.LoadState()
 			if st == nil || len(st.Worktrees) == 0 {
-				return fmt.Errorf("no worktrees in state — run `kit play` first")
+				return fmt.Errorf("no worktrees in state — run `kit play` first or pass a name")
 			}
-			out, err := tui.RenderLineup(layout)
-			if err == nil {
-				fmt.Println(out)
+			// Pick the most recently used worktree.
+			names := st.SortedNames()
+			if len(names) == 0 {
+				return fmt.Errorf("no worktrees in state")
 			}
-			fmt.Print("name to tail: ")
-			r := bufio.NewReader(os.Stdin)
-			line, _ := r.ReadString('\n')
-			n, err := liftoff.NormalizeAndValidate(line)
-			if err != nil {
-				return err
-			}
-			name = n
+			name = names[0]
+			fmt.Fprintf(cmd.ErrOrStderr(), "tailing %s (most recent)\n", name)
 		}
-		dir, err := liftoff.RunDir(name)
-		if err != nil {
-			return err
-		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return fmt.Errorf("no log dir for %s — start services first", name)
-		}
-		var logs []string
-		for _, e := range entries {
-			if filepath.Ext(e.Name()) == ".log" {
-				logs = append(logs, filepath.Join(dir, e.Name()))
-			}
-		}
-		if len(logs) == 0 {
-			return fmt.Errorf("no logs in %s", dir)
-		}
-		fmt.Fprintf(os.Stderr, "tailing %d log(s) for %s — Ctrl-C to exit\n\n", len(logs), name)
-		return tailMultiple(logs)
+		return tui.RunLogTUI(name)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(logCmd)
-}
-
-// tailMultiple opens each path, seeks to end, and streams new lines forever.
-func tailMultiple(paths []string) error {
-	var wg sync.WaitGroup
-	for _, p := range paths {
-		wg.Add(1)
-		go func(path string) {
-			defer wg.Done()
-			tailFile(path)
-		}(p)
-	}
-	wg.Wait()
-	return nil
-}
-
-func tailFile(path string) {
-	tag := filepath.Base(path)
-	f, err := os.Open(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[%s] open: %v\n", tag, err)
-		return
-	}
-	defer f.Close()
-	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		fmt.Fprintf(os.Stderr, "[%s] seek: %v\n", tag, err)
-		return
-	}
-	r := bufio.NewReader(f)
-	for {
-		line, err := r.ReadString('\n')
-		if line != "" {
-			fmt.Printf("[%s] %s", tag, line)
-		}
-		if err == io.EOF {
-			time.Sleep(200 * time.Millisecond)
-			continue
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[%s] %v\n", tag, err)
-			return
-		}
-	}
 }

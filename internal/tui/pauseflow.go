@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,6 +37,8 @@ type pauseModel struct {
 	failed   bool
 
 	spinner       spinner.Model
+	help          help.Model
+	keys          KeyMap
 	width, height int
 
 	preselectedName string
@@ -55,6 +58,8 @@ func NewPauseModel(layout liftoff.Layout, name string, only []liftoff.Service) (
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
 	m.spinner = sp
+	m.help = NewHelp()
+	m.keys = DefaultKeymap
 
 	if name != "" {
 		path := layout.WorktreePath(name)
@@ -169,13 +174,17 @@ func (m *pauseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.help.Width = msg.Width
 		if m.picker.Items() != nil {
-			m.picker.SetSize(msg.Width, msg.Height-2)
+			m.picker.SetSize(msg.Width, msg.Height-3)
 		}
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			m.stage = pauseStageAborted
 			return m, tea.Quit
+		}
+		if msg.String() == "?" {
+			m.help.ShowAll = !m.help.ShowAll
 		}
 	}
 	switch m.stage {
@@ -257,19 +266,20 @@ func (m *pauseModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *pauseModel) View() string {
+	var body string
 	switch m.stage {
 	case pauseStagePicker:
-		return m.picker.View()
+		body = m.picker.View()
 	case pauseStageConfirm:
-		return m.viewConfirm()
+		body = m.viewConfirm()
 	case pauseStageRun:
-		return m.viewRun()
+		body = m.viewRun()
 	case pauseStageDone:
-		return m.viewDone()
+		body = m.viewDone()
 	case pauseStageAborted:
 		return StyleWarn.Render("aborted.\n")
 	}
-	return ""
+	return body + "\n" + m.help.View(m.keys)
 }
 
 func (m *pauseModel) viewConfirm() string {

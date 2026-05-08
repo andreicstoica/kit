@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/stopwatch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -83,7 +85,10 @@ type playModel struct {
 	failureSvc  liftoff.Service
 	failureErr  error
 
-	spinner spinner.Model
+	spinner   spinner.Model
+	stopwatch stopwatch.Model
+	help      help.Model
+	keys      KeyMap
 
 	width, height int
 
@@ -127,6 +132,9 @@ func NewPlayModel(layout liftoff.Layout, name string, only []liftoff.Service, no
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
 	m.spinner = sp
+	m.stopwatch = stopwatch.NewWithInterval(time.Second)
+	m.help = NewHelp()
+	m.keys = DefaultKeymap
 
 	if name != "" {
 		// Skip picker, validate the worktree exists.
@@ -304,13 +312,21 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.help.Width = msg.Width
 		if m.picker.Items() != nil {
-			m.picker.SetSize(msg.Width, msg.Height-2)
+			m.picker.SetSize(msg.Width, msg.Height-3)
 		}
+	case stopwatch.TickMsg, stopwatch.StartStopMsg, stopwatch.ResetMsg:
+		var cmd tea.Cmd
+		m.stopwatch, cmd = m.stopwatch.Update(msg)
+		return m, cmd
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			m.stage = playStageAborted
 			return m, tea.Quit
+		}
+		if msg.String() == "?" {
+			m.help.ShowAll = !m.help.ShowAll
 		}
 	case playSetupErrMsg:
 		m.failed = true
@@ -322,7 +338,7 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stage = playStageRun
 		m.runOrder = msg.plan.Services
 		m.runUpdates = m.layout.RunPlay(msg.plan)
-		return m, tea.Batch(m.spinner.Tick, playNext(m.runUpdates))
+		return m, tea.Batch(m.spinner.Tick, m.stopwatch.Init(), playNext(m.runUpdates))
 	case playCeleryConflictMsg:
 		m.celeryVictim = msg.victim
 		m.celeryPID = msg.pid
@@ -461,21 +477,23 @@ func (m *playModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *playModel) View() string {
+	var body string
 	switch m.stage {
 	case playStagePicker:
-		return m.picker.View()
+		body = m.picker.View()
 	case playStageToggle:
-		return m.viewToggle()
+		body = m.viewToggle()
 	case playStageCeleryPrompt:
-		return m.viewCelery()
+		body = m.viewCelery()
 	case playStageRun:
-		return m.viewRun()
+		body = m.viewRun()
 	case playStageDone:
-		return m.viewDone()
+		body = m.viewDone()
 	case playStageAborted:
 		return StyleWarn.Render("aborted.\n")
 	}
-	return ""
+	footer := "\n" + m.help.View(m.keys)
+	return body + footer
 }
 
 func (m *playModel) viewToggle() string {
@@ -519,7 +537,8 @@ func (m *playModel) viewCelery() string {
 
 func (m *playModel) viewRun() string {
 	var b strings.Builder
-	b.WriteString(StyleTitle.Render("kit play — "+m.chosen.name) + "\n\n")
+	b.WriteString(StyleTitle.Render("kit play — "+m.chosen.name) + "  " +
+		StyleDim.Render(m.stopwatch.View()) + "\n\n")
 	if m.plan.ReplaceCelery {
 		b.WriteString(StyleDim.Render(fmt.Sprintf("replaced %s's celery\n", m.plan.ReplaceVictim)))
 	}
