@@ -8,27 +8,42 @@ import "github.com/charmbracelet/lipgloss"
 //
 // lipgloss.AdaptiveColor checks the terminal background at startup and
 // picks the right value automatically.
+// Exported colors so cmd/ packages can reuse them (root logger, help renderer).
+// Keep these tied to lipgloss.AdaptiveColor so they pick light/dark variants.
 var (
 	// Brand greenish — soccer pitch.
-	colorAccent = lipgloss.AdaptiveColor{Light: "#0F8A4E", Dark: "#5DD39E"}
+	ColorAccent = lipgloss.AdaptiveColor{Light: "#0F8A4E", Dark: "#5DD39E"}
 	// Secondary text (branch names, paths).
-	colorMuted  = lipgloss.AdaptiveColor{Light: "#3F4750", Dark: "#9aa5b1"}
+	ColorMuted = lipgloss.AdaptiveColor{Light: "#3F4750", Dark: "#9aa5b1"}
 	// Error / failure.
-	colorErr    = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F38BA8"}
+	ColorErr = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F38BA8"}
 	// Warning / caution.
-	colorWarn   = lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#F9E2AF"}
+	ColorWarn = lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#F9E2AF"}
 	// Success / running.
-	colorOK     = lipgloss.AdaptiveColor{Light: "#1F7F3F", Dark: "#A6E3A1"}
+	ColorOK = lipgloss.AdaptiveColor{Light: "#1F7F3F", Dark: "#A6E3A1"}
 	// Deemphasized / placeholder.
-	colorDim    = lipgloss.AdaptiveColor{Light: "#7C8590", Dark: "#6c7086"}
+	ColorDim = lipgloss.AdaptiveColor{Light: "#7C8590", Dark: "#6c7086"}
+	// Service-specific accents for log tags.
+	ColorAPI    = lipgloss.AdaptiveColor{Light: "#0060c0", Dark: "#89DCEB"}
+	ColorAdminBE = lipgloss.AdaptiveColor{Light: "#8b4fc6", Dark: "#cba6f7"}
 
-	StyleTitle = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
-	StyleHelp  = lipgloss.NewStyle().Foreground(colorMuted)
-	StyleOK    = lipgloss.NewStyle().Foreground(colorOK)
-	StyleErr   = lipgloss.NewStyle().Foreground(colorErr)
-	StyleWarn  = lipgloss.NewStyle().Foreground(colorWarn)
-	StyleDim   = lipgloss.NewStyle().Foreground(colorDim)
-	StyleHi    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	// Internal aliases (lowercase) for legacy package-internal references.
+	colorAccent  = ColorAccent
+	colorMuted   = ColorMuted
+	colorErr     = ColorErr
+	colorWarn    = ColorWarn
+	colorOK      = ColorOK
+	colorDim     = ColorDim
+	colorAPI     = ColorAPI
+	colorAdminBE = ColorAdminBE
+
+	StyleTitle = lipgloss.NewStyle().Bold(true).Foreground(ColorAccent)
+	StyleHelp  = lipgloss.NewStyle().Foreground(ColorMuted)
+	StyleOK    = lipgloss.NewStyle().Foreground(ColorOK)
+	StyleErr   = lipgloss.NewStyle().Foreground(ColorErr)
+	StyleWarn  = lipgloss.NewStyle().Foreground(ColorWarn)
+	StyleDim   = lipgloss.NewStyle().Foreground(ColorDim)
+	StyleHi    = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
 )
 
 // Glyph returns a unicode marker for a step status.

@@ -45,15 +45,23 @@ type pauseModel struct {
 	onlyServices    []liftoff.Service
 }
 
+// PauseConfig captures `kit pause` invocation — name preselected (skip picker)
+// + optional service filter.
+type PauseConfig struct {
+	Name string
+	Only []liftoff.Service
+}
+
 // NewPauseModel constructs the pause flow.
-func NewPauseModel(layout liftoff.Layout, name string, only []liftoff.Service) (tea.Model, error) {
+func NewPauseModel(layout liftoff.Layout, cfg PauseConfig) (tea.Model, error) {
 	m := &pauseModel{
 		layout:          layout,
 		stage:           pauseStagePicker,
 		statuses:        map[liftoff.Service]liftoff.StepStatus{},
-		preselectedName: name,
-		onlyServices:    only,
+		preselectedName: cfg.Name,
+		onlyServices:    cfg.Only,
 	}
+	name := cfg.Name
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
@@ -324,8 +332,8 @@ func (m *pauseModel) viewDone() string {
 }
 
 // RunPauseTUI is the cobra entry point.
-func RunPauseTUI(layout liftoff.Layout, name string, only []liftoff.Service) error {
-	m, err := NewPauseModel(layout, name, only)
+func RunPauseTUI(layout liftoff.Layout, cfg PauseConfig) error {
+	m, err := NewPauseModel(layout, cfg)
 	if err != nil {
 		return err
 	}

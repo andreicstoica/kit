@@ -49,7 +49,11 @@ the service-selection screen.`,
 		if err != nil {
 			return err
 		}
-		return tui.RunPlayTUI(layout, name, only, playNoCelery)
+		return tui.RunPlayTUI(layout, tui.PlayConfig{
+			Name:     name,
+			Only:     only,
+			NoCelery: playNoCelery,
+		})
 	},
 }
 

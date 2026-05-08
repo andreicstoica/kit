@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
@@ -20,12 +20,9 @@ func newLogger() *log.Logger {
 		Level:           log.InfoLevel,
 	})
 	styles := log.DefaultStyles()
-	styles.Levels[log.ErrorLevel] = styles.Levels[log.ErrorLevel].
-		Foreground(lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F38BA8"}).Bold(true)
-	styles.Levels[log.WarnLevel] = styles.Levels[log.WarnLevel].
-		Foreground(lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#F9E2AF"}).Bold(true)
-	styles.Levels[log.InfoLevel] = styles.Levels[log.InfoLevel].
-		Foreground(lipgloss.AdaptiveColor{Light: "#0F8A4E", Dark: "#5DD39E"}).Bold(true)
+	styles.Levels[log.ErrorLevel] = styles.Levels[log.ErrorLevel].Foreground(tui.ColorErr).Bold(true)
+	styles.Levels[log.WarnLevel] = styles.Levels[log.WarnLevel].Foreground(tui.ColorWarn).Bold(true)
+	styles.Levels[log.InfoLevel] = styles.Levels[log.InfoLevel].Foreground(tui.ColorAccent).Bold(true)
 	l.SetStyles(styles)
 	return l
 }

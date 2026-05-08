@@ -97,9 +97,18 @@ type playModel struct {
 	plan            liftoff.PlayPlan
 }
 
-// NewPlayModel constructs the initial play model. If name is non-empty, the
-// picker stage is skipped.
-func NewPlayModel(layout liftoff.Layout, name string, only []liftoff.Service, noCelery bool) (tea.Model, error) {
+// PlayConfig is what `kit play` was invoked with — preselected name (may be
+// empty → picker), explicit service list (skips toggle screen), and a
+// no-celery shortcut.
+type PlayConfig struct {
+	Name     string
+	Only     []liftoff.Service
+	NoCelery bool
+}
+
+// NewPlayModel constructs the initial play model. If cfg.Name is non-empty,
+// the picker stage is skipped.
+func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	m := &playModel{
 		layout:          layout,
 		stage:           playStagePicker,
@@ -108,25 +117,27 @@ func NewPlayModel(layout liftoff.Layout, name string, only []liftoff.Service, no
 		runMessages:     map[liftoff.Service]string{},
 		runURLs:         map[liftoff.Service]string{},
 		runPIDs:         map[liftoff.Service]int{},
-		preselectedName: name,
+		preselectedName: cfg.Name,
 	}
 	for _, s := range liftoff.DefaultServices {
 		m.toggleOn[s] = true
 	}
-	if noCelery {
+	if cfg.NoCelery {
 		m.toggleOn[liftoff.SvcCelery] = false
 		m.toggleOn[liftoff.SvcBeat] = false
 	}
-	if len(only) > 0 {
+	if len(cfg.Only) > 0 {
 		// Override defaults with the explicit set.
 		for _, s := range liftoff.AllServices {
 			m.toggleOn[s] = false
 		}
-		for _, s := range only {
+		for _, s := range cfg.Only {
 			m.toggleOn[s] = true
 		}
 	}
 	m.toggleSvcs = liftoff.AllServices
+	name := cfg.Name
+	only := cfg.Only
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -599,11 +610,11 @@ func (m *playModel) viewDone() string {
 }
 
 // RunPlayTUI is the cobra entry point.
-func RunPlayTUI(layout liftoff.Layout, name string, only []liftoff.Service, noCelery bool) error {
+func RunPlayTUI(layout liftoff.Layout, cfg PlayConfig) error {
 	if !layout.MasterIsRepo() {
 		return fmt.Errorf("master repo not found at %s", layout.Master)
 	}
-	m, err := NewPlayModel(layout, name, only, noCelery)
+	m, err := NewPlayModel(layout, cfg)
 	if err != nil {
 		return err
 	}

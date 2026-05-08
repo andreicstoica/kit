@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // KeyMap is the shared keybinding registry for kit TUIs.
@@ -80,6 +81,20 @@ var DefaultKeymap = KeyMap{
 		key.WithKeys("ctrl+c", "q"),
 		key.WithHelp("q/ctrl+c", "quit"),
 	),
+}
+
+// HandleCommonKey processes the universal ?-help and ctrl+c keys.
+// Returns (handled, quit). Mutates help.ShowAll on `?`.
+// Each flow's Update should call this before its own KeyMsg switch.
+func HandleCommonKey(msg tea.KeyMsg, h *help.Model) (handled, quit bool) {
+	switch {
+	case msg.Type == tea.KeyCtrlC:
+		return true, true
+	case msg.String() == "?":
+		h.ShowAll = !h.ShowAll
+		return true, false
+	}
+	return false, false
 }
 
 // NewHelp returns a configured help.Model for kit TUIs.

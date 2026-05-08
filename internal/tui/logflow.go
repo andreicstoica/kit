@@ -67,13 +67,27 @@ type logModel struct {
 	help     help.Model
 	keys     logKeys
 
-	lines  []string // raw, full backlog
+	lines  []string // raw, full backlog (capped)
+	buf    strings.Builder // joined content; rebuilt only on trim
 	width  int
 	height int
 
 	// channel where tail goroutines push lines, plus a done channel so they exit.
 	incoming chan logLineMsg
 	done     chan struct{}
+}
+
+// rebuildBuf reassembles m.buf from m.lines. Called only when the rolling
+// window trims old lines; new-line appends use a cheap WriteString.
+func (m *logModel) rebuildBuf() {
+	m.buf.Reset()
+	m.buf.Grow(len(m.lines) * 80)
+	for i, ln := range m.lines {
+		if i > 0 {
+			m.buf.WriteByte('\n')
+		}
+		m.buf.WriteString(ln)
+	}
 }
 
 // pumpLines is the tea.Cmd that reads from the channel.
@@ -171,8 +185,14 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lines = append(m.lines, styled)
 		if len(m.lines) > 5000 {
 			m.lines = m.lines[len(m.lines)-5000:]
+			m.rebuildBuf()
+		} else {
+			if m.buf.Len() > 0 {
+				m.buf.WriteByte('\n')
+			}
+			m.buf.WriteString(styled)
 		}
-		m.viewport.SetContent(strings.Join(m.lines, "\n"))
+		m.viewport.SetContent(m.buf.String())
 		if m.follow {
 			m.viewport.GotoBottom()
 		}
@@ -183,31 +203,26 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// stylizeLine prefixes the service tag with a color and shows the raw line.
-func stylizeLine(tag, line string) string {
-	tagColor := tagColorFor(tag)
-	return tagColor.Render("["+tag+"]") + " " + line
+// tagStyles maps log file tag → lipgloss style. Built once at init.
+var tagStyles = map[string]lipgloss.Style{
+	"app":      lipgloss.NewStyle().Foreground(ColorAccent).Bold(true),
+	"admin":    lipgloss.NewStyle().Foreground(ColorWarn).Bold(true),
+	"api":      lipgloss.NewStyle().Foreground(ColorAPI).Bold(true),
+	"admin_be": lipgloss.NewStyle().Foreground(ColorAdminBE).Bold(true),
+	"celery":   lipgloss.NewStyle().Foreground(ColorOK).Bold(true),
+	"beat":     lipgloss.NewStyle().Foreground(ColorErr).Bold(true),
+	"mcp":      lipgloss.NewStyle().Foreground(ColorMuted).Bold(true),
 }
 
-// tagColorFor picks a stable color per tag.
-func tagColorFor(tag string) lipgloss.Style {
-	switch tag {
-	case "app":
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#0F8A4E", Dark: "#5DD39E"}).Bold(true)
-	case "admin":
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#F9E2AF"}).Bold(true)
-	case "api":
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#0060c0", Dark: "#89DCEB"}).Bold(true)
-	case "admin_be":
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#8b4fc6", Dark: "#cba6f7"}).Bold(true)
-	case "celery":
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#1F7F3F", Dark: "#A6E3A1"}).Bold(true)
-	case "beat":
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F38BA8"}).Bold(true)
-	case "mcp":
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#3F4750", Dark: "#9aa5b1"}).Bold(true)
+var defaultTagStyle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
+
+// stylizeLine prefixes the service tag with a color and shows the raw line.
+func stylizeLine(tag, line string) string {
+	style, ok := tagStyles[tag]
+	if !ok {
+		style = defaultTagStyle
 	}
-	return lipgloss.NewStyle().Foreground(colorMuted).Bold(true)
+	return style.Render("["+tag+"]") + " " + line
 }
 
 func (m *logModel) View() string {

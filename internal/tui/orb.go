@@ -38,6 +38,10 @@ type Orb struct {
 	width  int // grid width
 	height int // grid height
 
+	// Reusable grid + style buffers (allocated once in NewOrb).
+	grid  [][]rune
+	style [][]int
+
 	// Springs.
 	ballXSpring harmonica.Spring
 	ballYSpring harmonica.Spring
@@ -69,9 +73,17 @@ type Orb struct {
 // NewOrb returns the penalty animation sized for the side panel.
 func NewOrb() Orb {
 	w, h := 30, 14
+	grid := make([][]rune, h)
+	style := make([][]int, h)
+	for i := range grid {
+		grid[i] = make([]rune, w)
+		style[i] = make([]int, w)
+	}
 	o := Orb{
 		width:       w,
 		height:      h,
+		grid:        grid,
+		style:       style,
 		ballXSpring: harmonica.NewSpring(harmonica.FPS(30), 6.0, 0.55),
 		ballYSpring: harmonica.NewSpring(harmonica.FPS(30), 6.0, 0.55),
 		keepSpring:  harmonica.NewSpring(harmonica.FPS(30), 5.0, 0.45),
@@ -162,15 +174,15 @@ func (o *Orb) judge() {
 }
 
 // View renders the scene framed by a rounded box.
+// Reuses pre-allocated grid + style slices, clearing them in place each frame.
 func (o Orb) View() string {
 	w, h := o.width, o.height
-	grid := make([][]rune, h)
-	style := make([][]int, h) // index into styleTable
-	for i := range grid {
-		grid[i] = make([]rune, w)
-		style[i] = make([]int, w)
-		for j := range grid[i] {
-			grid[i][j] = ' '
+	grid := o.grid
+	style := o.style
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			grid[y][x] = ' '
+			style[y][x] = 0
 		}
 	}
 

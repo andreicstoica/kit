@@ -42,9 +42,22 @@ var keywordEmoji = []struct {
 }
 
 // hashPool is the fallback emoji set. Branch hash → index.
+// Picked for visual variety + not overlapping with keyword glyphs.
 var hashPool = []string{
-	"🍊", "🌵", "🎯", "🧩", "🪁", "🎸", "🌈", "🔮",
-	"🧲", "🎪", "🦊", "🐙", "🍄", "🌶️", "🎲",
+	// fruits / food
+	"🍊", "🍋", "🍉", "🍇", "🍓", "🍑", "🥝", "🥭", "🥥", "🍍",
+	"🌽", "🌶️", "🍄", "🥨", "🥞", "🍩", "🧁", "🍪", "🍫", "🍬",
+	// animals
+	"🦊", "🐙", "🦉", "🦄", "🦋", "🐝", "🦔", "🦦", "🦩", "🐉",
+	"🦒", "🦘", "🦡", "🦨", "🦥", "🐢", "🦎", "🐳", "🦭", "🦜",
+	// objects / vibes
+	"🌵", "🎯", "🧩", "🪁", "🎸", "🌈", "🔮", "🧲", "🎪", "🎲",
+	"🪐", "🌙", "⭐", "✨", "🌟", "🪩", "🎏", "🪄", "🎨", "🛹",
+	"🪕", "🥁", "🎺", "🎻", "🎤", "🎬", "🎢", "🛸", "🪂", "🎰",
+	// plants / weather
+	"🌻", "🌺", "🌸", "🌼", "🍀", "🌴", "🌲", "🌿",
+	// random fun
+	"🧃", "🧊", "🪅", "🦴", "🪞", "🧸", "🪲", "🐌",
 }
 
 // EmojiFor returns a stable emoji for a branch name.

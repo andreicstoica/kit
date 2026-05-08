@@ -5,21 +5,17 @@ import (
 	"os"
 	"strings"
 
+	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
-// helpHeader styles the command title.
-var helpHeader = lipgloss.NewStyle().
-	Bold(true).
-	Foreground(lipgloss.AdaptiveColor{Light: "#0F8A4E", Dark: "#5DD39E"})
-
-var helpUse = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#3F4750", Dark: "#9aa5b1"})
-
-var helpDim = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#7C8590", Dark: "#6c7086"})
+var (
+	helpHeader = lipgloss.NewStyle().Bold(true).Foreground(tui.ColorAccent)
+	helpUse    = lipgloss.NewStyle().Foreground(tui.ColorMuted)
+	helpDim    = lipgloss.NewStyle().Foreground(tui.ColorDim)
+)
 
 func init() {
 	// Setting on the root only; cobra inherits the help func down the tree

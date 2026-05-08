@@ -38,7 +38,7 @@ var pauseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return tui.RunPauseTUI(layout, name, only)
+		return tui.RunPauseTUI(layout, tui.PauseConfig{Name: name, Only: only})
 	},
 }
 
