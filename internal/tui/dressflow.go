@@ -23,7 +23,6 @@ const (
 	stageToggleBackend
 	stageToggleFrontend
 	stageToggleGraphite
-	stageToggleGtab
 	stageReview
 	stageRunning
 	stageDone
@@ -134,7 +133,7 @@ func (m *dressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.stage {
 	case stageName:
 		return m.updateName(msg)
-	case stageToggleDB, stageToggleBackend, stageToggleFrontend, stageToggleGraphite, stageToggleGtab:
+	case stageToggleDB, stageToggleBackend, stageToggleFrontend, stageToggleGraphite:
 		return m.updateToggle(msg)
 	case stageReview:
 		return m.updateReview(msg)
@@ -205,8 +204,6 @@ func (m *dressModel) currentToggle() *toggle {
 		return &m.frontend
 	case stageToggleGraphite:
 		return &m.graphite
-	case stageToggleGtab:
-		return &m.gtab
 	}
 	return nil
 }
@@ -252,7 +249,7 @@ func (m *dressModel) plan() liftoff.DressPlan {
 		BackendDeps:     m.backend.on,
 		SymlinkFrontend: m.frontend.on,
 		GraphiteTrack:   m.graphite.on,
-		Gtab:            m.gtab.on,
+		Gtab:            true, // always created
 	}
 }
 
@@ -272,7 +269,7 @@ func (m *dressModel) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stage = stageAborted
 			return m, tea.Quit
 		case "backspace":
-			m.stage = stageToggleGtab
+			m.stage = stageToggleGraphite
 		}
 	}
 	return m, nil
@@ -322,7 +319,7 @@ func (m *dressModel) View() string {
 	switch m.stage {
 	case stageName:
 		return m.viewName()
-	case stageToggleDB, stageToggleBackend, stageToggleFrontend, stageToggleGraphite, stageToggleGtab:
+	case stageToggleDB, stageToggleBackend, stageToggleFrontend, stageToggleGraphite:
 		return m.viewToggle()
 	case stageReview:
 		return m.viewReview()
@@ -355,7 +352,7 @@ func (m *dressModel) viewName() string {
 func (m *dressModel) viewToggle() string {
 	t := m.currentToggle()
 	idx := int(m.stage - stageToggleDB)
-	total := 5
+	total := 4
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render(fmt.Sprintf("kit dress — step %d/%d", idx+2, total+2)) + "\n\n")
 	b.WriteString(StyleHi.Render(t.label) + "\n")
@@ -385,7 +382,7 @@ func (m *dressModel) viewReview() string {
 		b.WriteString("  " + line + "\n")
 	}
 	skipped := []string{}
-	for _, t := range []toggle{m.db, m.backend, m.frontend, m.graphite, m.gtab} {
+	for _, t := range []toggle{m.db, m.backend, m.frontend, m.graphite} {
 		if !t.on {
 			skipped = append(skipped, t.label)
 		}
@@ -460,9 +457,7 @@ func (m *dressModel) viewDone() string {
 		}
 		b.WriteString("\n" + StyleHi.Render("next:") + "\n")
 		b.WriteString("  kit play " + m.name + "      # start servers\n")
-		if m.gtab.on {
-			b.WriteString("  kit warmup " + m.name + "    # launch ghostty workspace\n")
-		}
+		b.WriteString("  kit warmup " + m.name + "    # launch ghostty workspace\n")
 		b.WriteString("  cd " + m.worktree + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("press enter to exit"))

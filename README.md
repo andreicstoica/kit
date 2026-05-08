@@ -174,9 +174,11 @@ progress. Allocates a port slot at the end.
 
 ### `kit lineup` (alias `ls`) — kits on the field
 
-Static table: `NAME · SLOT · BRANCH · STATUS · SERVICES · LAST USED · GTAB`.
-Branch emoji prefix. Sorted by last-used desc. Detects legacy
-`liftoff-<name>` paths and marks them.
+Static table: `NAME · SLOT · BRANCH · STATUS · RUNNING · LAST USED`.
+Branch emoji prefix. Sorted by last-used desc. RUNNING shows `N/6` when at
+least one default service is alive, `—` otherwise. Detects legacy
+`liftoff-<name>` paths and marks them; gtab files from the legacy zshrc
+script are auto-detected so `kit warmup` works on old worktrees.
 
 ### `kit play [name]` — run servers
 

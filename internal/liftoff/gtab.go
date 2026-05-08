@@ -79,27 +79,51 @@ func (l Layout) WriteGtab(name, worktree string) (string, error) {
 	return path, nil
 }
 
-// RemoveGtab deletes the AppleScript file. Returns nil if missing.
+// RemoveGtab deletes both the new-format and legacy AppleScript files (if present).
+// Returns nil if neither exists.
 func (l Layout) RemoveGtab(name string) error {
-	err := os.Remove(l.GtabFile(name))
-	if err != nil && !os.IsNotExist(err) {
-		return err
+	for _, path := range []string{l.GtabFile(name), l.LegacyGtabFile(name)} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	return nil
 }
 
-// LaunchGtab runs `gtab <name>` (or `osascript <path>` if gtab is not on PATH).
-func (l Layout) LaunchGtab(name string) error {
-	if _, err := exec.LookPath("gtab"); err == nil {
-		return exec.Command("gtab", name).Start()
-	}
-	return exec.Command("osascript", l.GtabFile(name)).Start()
+// LegacyGtabFile returns the old zshrc-era path (~/.config/gtab/liftoff-<name>.applescript).
+// Used so worktrees created before kit existed are still launchable.
+func (l Layout) LegacyGtabFile(name string) string {
+	return l.GtabFile("liftoff-" + name)
 }
 
-// HasGtab returns true if the AppleScript file exists for a feature.
+// LaunchGtab runs `gtab <name>` (or `osascript <path>` if gtab is not on PATH).
+// Falls back to the legacy filename if the new-format file is missing.
+func (l Layout) LaunchGtab(name string) error {
+	if _, err := exec.LookPath("gtab"); err == nil {
+		// gtab CLI looks up by stem, so try both.
+		if _, err := os.Stat(l.GtabFile(name)); err == nil {
+			return exec.Command("gtab", name).Start()
+		}
+		if _, err := os.Stat(l.LegacyGtabFile(name)); err == nil {
+			return exec.Command("gtab", "liftoff-"+name).Start()
+		}
+	}
+	path := l.GtabFile(name)
+	if _, err := os.Stat(path); err != nil {
+		path = l.LegacyGtabFile(name)
+	}
+	return exec.Command("osascript", path).Start()
+}
+
+// HasGtab returns true if either the new-format or legacy AppleScript exists.
 func (l Layout) HasGtab(name string) bool {
-	_, err := os.Stat(l.GtabFile(name))
-	return err == nil
+	if _, err := os.Stat(l.GtabFile(name)); err == nil {
+		return true
+	}
+	if _, err := os.Stat(l.LegacyGtabFile(name)); err == nil {
+		return true
+	}
+	return false
 }
 
 // EnsureGtabDir is a no-op convenience to make the dir.
