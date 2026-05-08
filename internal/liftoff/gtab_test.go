@@ -28,7 +28,7 @@ func TestWriteGtab(t *testing.T) {
 		`set initial working directory of cfg2 to "` + wt + `/frontend/app"`,
 		`set initial working directory of cfgSplit2 to "` + wt + `/frontend/admin"`,
 		`set initial working directory of cfg3 to "` + wt + `/backend"`,
-		`perform action "set_tab_title:voice-agent"`,
+		`perform action "set_tab_title:🎤 voice-agent"`,
 		`perform action "set_tab_title:frontend"`,
 		`perform action "set_tab_title:backend"`,
 		`perform action "set_tab_title:celery"`,

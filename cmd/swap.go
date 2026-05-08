@@ -47,6 +47,11 @@ Editor selection (first match wins):
 		if err := c.Start(); err != nil {
 			return err
 		}
+		// Best-effort: bump last_used so lineup sorts this kit to the top.
+		if st, err := liftoff.LoadState(); err == nil {
+			st.TouchLastUsed(name)
+			_ = st.Save()
+		}
 		fmt.Printf("opened %s in %s\n", path, editor)
 		return nil
 	},

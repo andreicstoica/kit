@@ -7,14 +7,17 @@ import (
 
 // DressPlan captures every choice for a `kit dress` run.
 type DressPlan struct {
-	Name           string
-	Worktree       string
-	CloneDB        bool
-	BackendDeps    bool
-	FrontendDeps   bool
-	GraphiteTrack  bool
-	Gtab           bool
-	OverwriteEnvs  bool // force overwrite if env files already exist in worktree
+	Name              string
+	Worktree          string
+	CloneDB           bool
+	BackendDeps       bool
+	SymlinkFrontend   bool // symlink frontend node_modules from master
+	GraphiteTrack     bool
+	Gtab              bool
+	OverwriteEnvs     bool // force overwrite if env files already exist in worktree
+
+	// Result fields populated after RunDress completes successfully.
+	AllocatedSlot int
 }
 
 // StepStatus is the lifecycle of one step.
@@ -49,9 +52,11 @@ type StepUpdate struct {
 	Index   int
 	Title   string
 	Status  StepStatus
-	Line    string // log line (when not a status transition)
+	Line    string
 	Err     error
 	Elapsed time.Duration
+	// AllocatedSlot is filled in for the slot-allocation step's StepDone update.
+	AllocatedSlot int
 }
 
 // step is one executable unit.
@@ -59,10 +64,12 @@ type step struct {
 	title string
 	skip  bool
 	run   func(emit func(string)) error
+	// extras can be filled by the step itself when emitting the final StepDone.
+	extras func() (slot int)
 }
 
 // PlanSteps returns the ordered step list, including skipped ones (for display).
-func (l Layout) planSteps(p DressPlan) []step {
+func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 	dbName := DBName(p.Name)
 	return []step{
 		{
@@ -113,17 +120,11 @@ func (l Layout) planSteps(p DressPlan) []step {
 			},
 		},
 		{
-			title: "yarn install frontend/app",
-			skip:  !p.FrontendDeps,
+			title: "symlink frontend node_modules from master",
+			skip:  !p.SymlinkFrontend,
 			run: func(emit func(string)) error {
-				return InstallFrontendApp(p.Worktree, emit)
-			},
-		},
-		{
-			title: "yarn install frontend/admin",
-			skip:  !p.FrontendDeps,
-			run: func(emit func(string)) error {
-				return InstallFrontendAdmin(p.Worktree, emit)
+				_, err := LinkNodeModules(l.Master, p.Worktree, emit)
+				return err
 			},
 		},
 		{
@@ -145,12 +146,36 @@ func (l Layout) planSteps(p DressPlan) []step {
 				return nil
 			},
 		},
+		{
+			title: "allocate port slot",
+			run: func(emit func(string)) error {
+				st, err := LoadState()
+				if err != nil {
+					return err
+				}
+				slot, err := st.AllocateSlot(p.Name, PortsBindable)
+				if err != nil {
+					return err
+				}
+				st.TouchLastUsed(p.Name)
+				if err := st.Save(); err != nil {
+					return err
+				}
+				ports := PortsForSlot(slot)
+				if slotResult != nil {
+					*slotResult = slot
+				}
+				emit(fmt.Sprintf("slot %d → app:%d admin:%d api:%d admin_be:%d",
+					slot, ports.App, ports.Admin, ports.API, ports.AdminBE))
+				return nil
+			},
+		},
 	}
 }
 
 // StepTitles returns just the titles for preview before run.
 func (l Layout) StepTitles(p DressPlan) []string {
-	steps := l.planSteps(p)
+	steps := l.planSteps(p, nil)
 	out := make([]string, 0, len(steps))
 	for _, s := range steps {
 		out = append(out, s.title)
@@ -164,7 +189,8 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 	ch := make(chan StepUpdate, 64)
 	go func() {
 		defer close(ch)
-		steps := l.planSteps(p)
+		var slot int
+		steps := l.planSteps(p, &slot)
 		for i, s := range steps {
 			if s.skip {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
@@ -181,7 +207,13 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
 				return
 			}
-			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed}
+			ch <- StepUpdate{
+				Index:         i,
+				Title:         s.title,
+				Status:        StepDone,
+				Elapsed:       elapsed,
+				AllocatedSlot: slot,
+			}
 		}
 	}()
 	return ch

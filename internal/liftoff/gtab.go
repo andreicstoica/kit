@@ -19,7 +19,7 @@ const gtabTemplate = `tell application "Ghostty"
     set initial working directory of cfg1 to "{{.Worktree}}"
     set win to new window with configuration cfg1
     set p1 to focused terminal of selected tab of win
-    perform action "set_tab_title:{{.Name}}" on p1
+    perform action "set_tab_title:{{.TabTitle}}" on p1
 
     set cfg2 to new surface configuration
     set initial working directory of cfg2 to "{{.Worktree}}/frontend/app"
@@ -49,6 +49,7 @@ end tell
 
 type gtabData struct {
 	Name     string
+	TabTitle string // Name with emoji prefix when available
 	Worktree string
 }
 
@@ -68,7 +69,11 @@ func (l Layout) WriteGtab(name, worktree string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	if err := tmpl.Execute(f, gtabData{Name: name, Worktree: worktree}); err != nil {
+	tabTitle := name
+	if e := EmojiFor(name); e != "" {
+		tabTitle = e + " " + name
+	}
+	if err := tmpl.Execute(f, gtabData{Name: name, TabTitle: tabTitle, Worktree: worktree}); err != nil {
 		return "", err
 	}
 	return path, nil

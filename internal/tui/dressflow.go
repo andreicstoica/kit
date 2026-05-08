@@ -68,6 +68,7 @@ type dressModel struct {
 	failureErr    error
 	totalElapsed  time.Duration
 	startTime     time.Time
+	allocatedSlot int
 
 	width  int
 	height int
@@ -93,7 +94,7 @@ func NewDressModel(layout liftoff.Layout) tea.Model {
 		spinner:      sp,
 		db:           toggle{label: "Clone local DB", help: "pg_dump liftoff → liftoff_<name>; updates backend/.env", on: true},
 		backend:      toggle{label: "Install backend deps", help: "pip install -r requirements.txt -r requirements_test.txt", on: true},
-		frontend:     toggle{label: "Install frontend deps", help: "yarn install in frontend/app and frontend/admin", on: true},
+		frontend:     toggle{label: "Symlink frontend node_modules", help: "link frontend/app/node_modules + frontend/admin/node_modules to master (saves 2GB + skips yarn install)", on: true},
 		graphite:     toggle{label: "Track in graphite", help: "gt track --parent master so this branch joins your stack", on: true},
 		gtab:         toggle{label: "Create gtab workspace", help: "AppleScript launcher for ghostty (4 tabs, splits)", on: true},
 		currentLines: map[int][]string{},
@@ -245,13 +246,13 @@ func (m *dressModel) updateToggle(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *dressModel) plan() liftoff.DressPlan {
 	return liftoff.DressPlan{
-		Name:          m.name,
-		Worktree:      m.worktree,
-		CloneDB:       m.db.on,
-		BackendDeps:   m.backend.on,
-		FrontendDeps:  m.frontend.on,
-		GraphiteTrack: m.graphite.on,
-		Gtab:          m.gtab.on,
+		Name:            m.name,
+		Worktree:        m.worktree,
+		CloneDB:         m.db.on,
+		BackendDeps:     m.backend.on,
+		SymlinkFrontend: m.frontend.on,
+		GraphiteTrack:   m.graphite.on,
+		Gtab:            m.gtab.on,
 	}
 }
 
@@ -294,6 +295,9 @@ func (m *dressModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stepStatuses[u.Index] = u.Status
 			if u.Elapsed > 0 {
 				m.stepElapsed[u.Index] = u.Elapsed
+			}
+			if u.AllocatedSlot > 0 {
+				m.allocatedSlot = u.AllocatedSlot
 			}
 			if u.Line != "" {
 				lines := m.currentLines[u.Index]
@@ -437,17 +441,29 @@ func (m *dressModel) viewDone() string {
 		b.WriteString("error: " + m.failureErr.Error() + "\n\n")
 		b.WriteString("Inspect partial state at " + m.worktree + " before retrying.\n")
 	} else {
-		b.WriteString(StyleOK.Render("✓ kit dressed: "+m.name) + "\n\n")
+		emoji := liftoff.EmojiFor(m.name)
+		title := "✓ kit dressed: " + m.name
+		if emoji != "" {
+			title = "✓ kit dressed: " + emoji + " " + m.name
+		}
+		b.WriteString(StyleOK.Render(title) + "\n\n")
 		b.WriteString("worktree: " + m.worktree + "\n")
 		b.WriteString("branch:   " + m.name + "\n")
+		if m.allocatedSlot > 0 {
+			ports := liftoff.PortsForSlot(m.allocatedSlot)
+			b.WriteString(fmt.Sprintf("slot:     %d\n", m.allocatedSlot))
+			b.WriteString(fmt.Sprintf("ports:    app:%d admin:%d api:%d admin_be:%d\n",
+				ports.App, ports.Admin, ports.API, ports.AdminBE))
+		}
 		if m.db.on {
 			b.WriteString("db:       " + liftoff.DBName(m.name) + "\n")
 		}
 		b.WriteString("\n" + StyleHi.Render("next:") + "\n")
-		b.WriteString("  cd " + m.worktree + "\n")
+		b.WriteString("  kit play " + m.name + "      # start servers\n")
 		if m.gtab.on {
 			b.WriteString("  kit warmup " + m.name + "    # launch ghostty workspace\n")
 		}
+		b.WriteString("  cd " + m.worktree + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("press enter to exit"))
 	return b.String()
