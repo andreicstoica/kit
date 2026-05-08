@@ -6,19 +6,21 @@ import (
 	"os/exec"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
+	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
 
 var swapCmd = &cobra.Command{
-	Use:     "swap <name> [editor]",
+	Use:     "swap [name] [editor]",
 	Aliases: []string{"open"},
 	Short:   "Sub into a kit — open its worktree in your IDE",
-	Long: "**swap** opens the worktree for `<name>` in your editor.\n\n" +
+	Long: "**swap** opens a kit's worktree in your editor.\n\n" +
 		"## Examples\n\n" +
 		"```\n" +
-		"kit swap notebook            # uses default editor\n" +
-		"kit swap notebook cursor     # forces cursor\n" +
-		"kit swap notebook zed        # forces zed\n" +
+		"kit swap                       # picker → default editor\n" +
+		"kit swap notebook              # default editor\n" +
+		"kit swap notebook cursor       # force cursor\n" +
+		"kit swap notebook zed          # force zed\n" +
 		"```\n\n" +
 		"## Editor selection (first match wins)\n\n" +
 		"1. positional `[editor]` arg if provided\n" +
@@ -27,13 +29,33 @@ var swapCmd = &cobra.Command{
 		"4. `zed` if installed\n" +
 		"5. `cursor` if installed\n" +
 		"6. `code` if installed",
-	Args: cobra.RangeArgs(1, 2),
+	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
-		name, err := liftoff.NormalizeAndValidate(args[0])
-		if err != nil {
-			return err
+
+		var name string
+		var editorArg string
+		switch len(args) {
+		case 0:
+			n, err := tui.PickWorktree(layout, "kit swap — pick a kit")
+			if err != nil {
+				return err
+			}
+			if n == "" {
+				return nil // user esc'd
+			}
+			name = n
+		case 1, 2:
+			n, err := liftoff.NormalizeAndValidate(args[0])
+			if err != nil {
+				return err
+			}
+			name = n
+			if len(args) == 2 {
+				editorArg = args[1]
+			}
 		}
+
 		path := layout.WorktreePath(name)
 		if _, err := os.Stat(path); err != nil {
 			legacy := layout.LegacyWorktreePath(name)
@@ -43,18 +65,18 @@ var swapCmd = &cobra.Command{
 				return fmt.Errorf("worktree not found: %s", path)
 			}
 		}
-		var editor string
-		if len(args) == 2 {
-			editor = args[1]
-			if _, err := exec.LookPath(editor); err != nil {
-				return fmt.Errorf("editor %q not on PATH", editor)
-			}
-		} else {
+
+		editor := editorArg
+		if editor == "" {
 			editor = pickEditor()
 		}
 		if editor == "" {
 			return fmt.Errorf("no editor found — pass one as 2nd arg or set KIT_EDITOR")
 		}
+		if _, err := exec.LookPath(editor); err != nil {
+			return fmt.Errorf("editor %q not on PATH", editor)
+		}
+
 		c := exec.Command(editor, path)
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
