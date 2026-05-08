@@ -71,8 +71,9 @@ type logModel struct {
 	width  int
 	height int
 
-	// channel where tail goroutines push lines.
+	// channel where tail goroutines push lines, plus a done channel so they exit.
 	incoming chan logLineMsg
+	done     chan struct{}
 }
 
 // pumpLines is the tea.Cmd that reads from the channel.
@@ -88,35 +89,57 @@ func pumpLines(ch chan logLineMsg) tea.Cmd {
 
 func (m *logModel) Init() tea.Cmd {
 	for _, p := range m.files {
-		go tailFileToChan(p, m.incoming)
+		go tailFileToChan(p, m.incoming, m.done)
 	}
 	return pumpLines(m.incoming)
 }
 
-func tailFileToChan(path string, ch chan<- logLineMsg) {
+// trySend attempts to send msg on ch but bails out if done closes first.
+// Returns false if done was signaled (caller should exit).
+func trySend(ch chan<- logLineMsg, done <-chan struct{}, msg logLineMsg) bool {
+	select {
+	case ch <- msg:
+		return true
+	case <-done:
+		return false
+	}
+}
+
+func tailFileToChan(path string, ch chan<- logLineMsg, done <-chan struct{}) {
 	tag := strings.TrimSuffix(filepath.Base(path), ".log")
 	f, err := os.Open(path)
 	if err != nil {
-		ch <- logLineMsg{tag: tag, line: fmt.Sprintf("[error] open: %v", err)}
+		trySend(ch, done, logLineMsg{tag: tag, line: fmt.Sprintf("[error] open: %v", err)})
 		return
 	}
 	defer f.Close()
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		ch <- logLineMsg{tag: tag, line: fmt.Sprintf("[error] seek: %v", err)}
+		trySend(ch, done, logLineMsg{tag: tag, line: fmt.Sprintf("[error] seek: %v", err)})
 		return
 	}
 	r := bufio.NewReader(f)
 	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
 		line, err := r.ReadString('\n')
 		if line != "" {
-			ch <- logLineMsg{tag: tag, line: strings.TrimRight(line, "\n")}
+			if !trySend(ch, done, logLineMsg{tag: tag, line: strings.TrimRight(line, "\n")}) {
+				return
+			}
 		}
 		if err == io.EOF {
-			time.Sleep(200 * time.Millisecond)
+			select {
+			case <-done:
+				return
+			case <-time.After(200 * time.Millisecond):
+			}
 			continue
 		}
 		if err != nil {
-			ch <- logLineMsg{tag: tag, line: fmt.Sprintf("[error] %v", err)}
+			trySend(ch, done, logLineMsg{tag: tag, line: fmt.Sprintf("[error] %v", err)})
 			return
 		}
 	}
@@ -133,6 +156,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit), msg.Type == tea.KeyCtrlC:
+			close(m.done) // signal tail goroutines to exit
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Follow):
 			m.follow = !m.follow
@@ -200,10 +224,7 @@ func (m *logModel) View() string {
 
 // RunLogTUI is the cobra entry point for `kit log`.
 func RunLogTUI(worktree string) error {
-	dir, err := liftoff.RunDir(worktree)
-	if err != nil {
-		return err
-	}
+	dir := liftoff.RunDirPath(worktree)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("no log dir for %s — run `kit play` first", worktree)
@@ -229,6 +250,7 @@ func RunLogTUI(worktree string) error {
 		help:     NewHelp(),
 		keys:     newLogKeys(),
 		incoming: make(chan logLineMsg, 256),
+		done:     make(chan struct{}),
 	}
 	_, runErr := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return runErr

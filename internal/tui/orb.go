@@ -238,9 +238,9 @@ func (o Orb) View() string {
 	}
 
 	// Ball: ● glyph, big when at rest, smaller in flight.
-	bRow := int(math.Round(o.ballY))
-	bCol := int(math.Round(o.ballX))
-	if bRow >= 0 && bRow < h && bCol >= 0 && bCol < w {
+	bRow := clampInt(int(math.Round(o.ballY)), 0, h-1)
+	bCol := clampInt(int(math.Round(o.ballX)), 0, w-1)
+	{
 		ballChar := '●'
 		if o.phase == phaseShoot {
 			ballChar = '◉'
@@ -287,6 +287,16 @@ func (o Orb) View() string {
 func scoreLine(o Orb) string {
 	goals := o.totalShots - o.saves
 	return fmt.Sprintf("saves %d · goals %d", o.saves, goals)
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // penaltyStyle indexes into a small style table for grid characters.

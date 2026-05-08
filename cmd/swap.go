@@ -10,18 +10,24 @@ import (
 )
 
 var swapCmd = &cobra.Command{
-	Use:     "swap <name>",
+	Use:     "swap <name> [editor]",
 	Aliases: []string{"open"},
 	Short:   "Sub into a kit — open its worktree in your IDE",
-	Long: `swap opens the worktree for <name> in your editor.
-
-Editor selection (first match wins):
-  $KIT_EDITOR             explicit override (must be on PATH)
-  $VISUAL or $EDITOR      generic editor env vars
-  zed (if installed)
-  cursor (if installed)
-  code (if installed)`,
-	Args: cobra.ExactArgs(1),
+	Long: "**swap** opens the worktree for `<name>` in your editor.\n\n" +
+		"## Examples\n\n" +
+		"```\n" +
+		"kit swap notebook            # uses default editor\n" +
+		"kit swap notebook cursor     # forces cursor\n" +
+		"kit swap notebook zed        # forces zed\n" +
+		"```\n\n" +
+		"## Editor selection (first match wins)\n\n" +
+		"1. positional `[editor]` arg if provided\n" +
+		"2. `$KIT_EDITOR` env var\n" +
+		"3. `$VISUAL` / `$EDITOR`\n" +
+		"4. `zed` if installed\n" +
+		"5. `cursor` if installed\n" +
+		"6. `code` if installed",
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		name, err := liftoff.NormalizeAndValidate(args[0])
@@ -37,9 +43,17 @@ Editor selection (first match wins):
 				return fmt.Errorf("worktree not found: %s", path)
 			}
 		}
-		editor := pickEditor()
+		var editor string
+		if len(args) == 2 {
+			editor = args[1]
+			if _, err := exec.LookPath(editor); err != nil {
+				return fmt.Errorf("editor %q not on PATH", editor)
+			}
+		} else {
+			editor = pickEditor()
+		}
 		if editor == "" {
-			return fmt.Errorf("no editor found. Set KIT_EDITOR or install zed/cursor/code")
+			return fmt.Errorf("no editor found — pass one as 2nd arg or set KIT_EDITOR")
 		}
 		c := exec.Command(editor, path)
 		c.Stdout = os.Stdout

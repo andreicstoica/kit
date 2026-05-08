@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
@@ -41,6 +42,11 @@ var logCmd = &cobra.Command{
 			}
 			name = names[0]
 			fmt.Fprintf(cmd.ErrOrStderr(), "tailing %s (most recent)\n", name)
+		}
+		// Pre-flight: bail before entering TUI if no run dir exists for this kit.
+		dir := liftoff.RunDirPath(name)
+		if _, err := os.Stat(dir); err != nil {
+			return fmt.Errorf("no run dir for %s — run `kit play %s` first", name, name)
 		}
 		return tui.RunLogTUI(name)
 	},

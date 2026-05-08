@@ -35,13 +35,13 @@ var rootCmd = &cobra.Command{
 	Short: "Manage Liftoff feature worktrees with port allocation + service spin-up",
 	Long: "**kit** creates, lists, and runs isolated git-worktree feature environments for Liftoff.\n\n" +
 		"## Soccer-themed verbs (classic aliases work)\n\n" +
-		"- `design` (`dress` · `new`) — create a fresh kit\n" +
+		"- `design` (`new`) — create a fresh kit\n" +
 		"- `lineup` (`ls`) — show kits on the field\n" +
 		"- `play` — spin up dev servers (frontend + backend + celery)\n" +
 		"- `pause` — halt services\n" +
 		"- `log` — tail service logs\n" +
 		"- `wash` (`rm`) — strip a kit and clean up\n" +
-		"- `prune` — bulk-wash merged/closed branches\n" +
+		"- `tear` (`prune`) — bulk-wash merged/closed branches\n" +
 		"- `warmup` (`gtab`) — launch the ghostty workspace\n" +
 		"- `swap` (`open`) — open the worktree in your IDE\n\n" +
 		"## What makes it useful\n\n" +

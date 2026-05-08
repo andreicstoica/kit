@@ -22,10 +22,10 @@ var helpDim = lipgloss.NewStyle().
 	Foreground(lipgloss.AdaptiveColor{Light: "#7C8590", Dark: "#6c7086"})
 
 func init() {
+	// Setting on the root only; cobra inherits the help func down the tree
+	// for any command that doesn't set its own, so subcommands registered
+	// in other init() functions pick this up automatically.
 	rootCmd.SetHelpFunc(prettyHelp)
-	for _, c := range rootCmd.Commands() {
-		c.SetHelpFunc(prettyHelp)
-	}
 }
 
 // prettyHelp renders cobra help with glamour for the Long body.

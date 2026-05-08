@@ -11,14 +11,20 @@ import (
 	"time"
 )
 
-// RunDir returns ~/.config/kit/run/<name>/.
-// Creates the dir if missing.
-func RunDir(name string) (string, error) {
+// RunDirPath returns ~/.config/kit/run/<name>/ without touching the filesystem.
+// Use for read-only lookups (ReadPID, log paths, status).
+func RunDirPath(name string) string {
 	if v := os.Getenv("KIT_RUN_DIR"); v != "" {
-		return ensureDir(filepath.Join(v, name))
+		return filepath.Join(v, name)
 	}
 	home, _ := os.UserHomeDir()
-	return ensureDir(filepath.Join(home, ".config", "kit", "run", name))
+	return filepath.Join(home, ".config", "kit", "run", name)
+}
+
+// RunDir returns ~/.config/kit/run/<name>/, creating it if missing.
+// Use only when you're about to write (PID file, log file, cmd record).
+func RunDir(name string) (string, error) {
+	return ensureDir(RunDirPath(name))
 }
 
 func ensureDir(p string) (string, error) {
@@ -28,35 +34,26 @@ func ensureDir(p string) (string, error) {
 	return p, nil
 }
 
-// PIDFile is the path for a service's pid file.
+// PIDFile returns the service's pid-file path. Does NOT create directories.
 func PIDFile(worktree, service string) (string, error) {
-	dir, err := RunDir(worktree)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, service+".pid"), nil
+	return filepath.Join(RunDirPath(worktree), service+".pid"), nil
 }
 
-// LogFile is the path for a service's combined log.
+// LogFile returns the service's log-file path. Does NOT create directories.
 func LogFile(worktree, service string) (string, error) {
-	dir, err := RunDir(worktree)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, service+".log"), nil
+	return filepath.Join(RunDirPath(worktree), service+".log"), nil
 }
 
-// CmdFile is the path for the recorded command line + env.
+// CmdFile returns the service's cmd-record path. Does NOT create directories.
 func CmdFile(worktree, service string) (string, error) {
-	dir, err := RunDir(worktree)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, service+".cmd"), nil
+	return filepath.Join(RunDirPath(worktree), service+".cmd"), nil
 }
 
-// WritePID writes pid to the pid file.
+// WritePID writes pid to the pid file. Creates the run dir if missing.
 func WritePID(worktree, service string, pid int) error {
+	if _, err := RunDir(worktree); err != nil {
+		return err
+	}
 	path, err := PIDFile(worktree, service)
 	if err != nil {
 		return err

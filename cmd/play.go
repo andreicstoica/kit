@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
@@ -36,6 +38,12 @@ the service-selection screen.`,
 				return err
 			}
 			name = n
+		} else {
+			// No name given: try to detect from cwd.
+			if n := worktreeNameFromCwd(layout); n != "" {
+				name = n
+				fmt.Fprintf(cmd.ErrOrStderr(), "playing %s (from cwd)\n", name)
+			}
 		}
 		only, err := parseServiceList(playOnly)
 		if err != nil {
@@ -51,6 +59,36 @@ func init() {
 	playCmd.Flags().BoolVar(&playNoCelery, "no-celery", false,
 		"skip celery worker and beat")
 	rootCmd.AddCommand(playCmd)
+}
+
+// worktreeNameFromCwd returns the worktree name if the current directory is
+// inside one of the worktrees registered for the layout, else "".
+func worktreeNameFromCwd(layout liftoff.Layout) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	cwd, _ = filepath.Abs(cwd)
+	wts, err := layout.ListWorktrees()
+	if err != nil {
+		return ""
+	}
+	// Pick the longest matching worktree path (handles nested dirs correctly).
+	best := ""
+	bestLen := 0
+	for _, w := range wts {
+		if w.IsMaster(layout) || w.Bare {
+			continue
+		}
+		wp, _ := filepath.Abs(w.Path)
+		if cwd == wp || strings.HasPrefix(cwd, wp+string(filepath.Separator)) {
+			if len(wp) > bestLen {
+				best = w.Name()
+				bestLen = len(wp)
+			}
+		}
+	}
+	return best
 }
 
 // parseServiceList resolves user input ("app,admin,api") to []Service.

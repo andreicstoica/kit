@@ -98,11 +98,12 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			err := s.run(emit)
 			if err != nil {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: fmt.Errorf("%w", err), Elapsed: time.Since(start)}
-				// best-effort: continue past DB, gtab, slot-free failures
-				if i >= 3 {
-					continue
+				// Steps: 0 stop, 1 worktree, 2 branch, 3 db, 4 gtab, 5 slot.
+				// Fatal: worktree-remove + branch-delete (1, 2). Best-effort: rest.
+				if i == 1 || i == 2 {
+					return
 				}
-				return
+				continue
 			}
 			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: time.Since(start)}
 		}

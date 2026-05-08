@@ -8,7 +8,7 @@ import (
 
 var designCmd = &cobra.Command{
 	Use:     "design",
-	Aliases: []string{"dress", "new"},
+	Aliases: []string{"new"},
 	Short:   "Design a fresh kit (create a new feature worktree)",
 	Long: "**design** walks you through creating a new Liftoff feature worktree:\n\n" +
 		"- `git fetch origin master:master` then `git worktree add ~/liftoff/<name> -b <name> master`\n" +
@@ -21,7 +21,7 @@ var designCmd = &cobra.Command{
 		"- allocates a port slot (recorded in `~/.config/kit/state.toml`)\n\n" +
 		"A leading `liftoff-` is stripped from your input. Worktrees land at\n" +
 		"`~/liftoff/<name>` with branch `<name>`.\n\n" +
-		"Aliases: `dress`, `new` (muscle-memory).",
+		"Alias: `new` (muscle-memory).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return tui.RunDesignTUI(liftoff.DefaultLayout())
 	},

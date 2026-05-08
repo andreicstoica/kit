@@ -170,6 +170,10 @@ func SpecFor(worktree, worktreePath string, svc Service, p Ports) LaunchSpec {
 // StartService spawns the service detached, writes pid+log+cmd files,
 // and returns the new PID. Does not wait for readiness; use WaitForPort/WaitForPID.
 func StartService(spec LaunchSpec) (int, error) {
+	// Make sure the run dir exists before we open the log file in it.
+	if _, err := RunDir(spec.Worktree); err != nil {
+		return 0, err
+	}
 	logPath, err := LogFile(spec.Worktree, string(spec.Service))
 	if err != nil {
 		return 0, err
