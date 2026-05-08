@@ -17,24 +17,21 @@ var swapCmd = &cobra.Command{
 	Long: "**swap** opens a kit's worktree in your editor.\n\n" +
 		"## Examples\n\n" +
 		"```\n" +
-		"kit swap                       # picker → default editor\n" +
-		"kit swap notebook              # default editor\n" +
+		"kit swap                       # picker (kit) → picker (editor)\n" +
+		"kit swap notebook              # default editor (auto-pick)\n" +
 		"kit swap notebook cursor       # force cursor\n" +
 		"kit swap notebook zed          # force zed\n" +
 		"```\n\n" +
-		"## Editor selection (first match wins)\n\n" +
-		"1. positional `[editor]` arg if provided\n" +
-		"2. `$KIT_EDITOR` env var\n" +
-		"3. `$VISUAL` / `$EDITOR`\n" +
-		"4. `zed` if installed\n" +
-		"5. `cursor` if installed\n" +
-		"6. `code` if installed",
+		"## Editor selection\n\n" +
+		"With 0 args: pick from installed editors (zed/cursor/code).\n" +
+		"With 1 arg (`<name>` only): first match wins among `$KIT_EDITOR`, " +
+		"`$VISUAL`, `$EDITOR`, zed, cursor, code.",
 	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 
 		var name string
-		var editorArg string
+		var editor string
 		switch len(args) {
 		case 0:
 			n, err := tui.PickWorktree(layout, "kit swap — pick a kit")
@@ -45,6 +42,14 @@ var swapCmd = &cobra.Command{
 				return nil // user esc'd
 			}
 			name = n
+			e, err := tui.PickEditor(installedEditors())
+			if err != nil {
+				return err
+			}
+			if e == "" {
+				return nil // user esc'd
+			}
+			editor = e
 		case 1, 2:
 			n, err := liftoff.NormalizeAndValidate(args[0])
 			if err != nil {
@@ -52,7 +57,9 @@ var swapCmd = &cobra.Command{
 			}
 			name = n
 			if len(args) == 2 {
-				editorArg = args[1]
+				editor = args[1]
+			} else {
+				editor = pickEditor()
 			}
 		}
 
@@ -66,10 +73,6 @@ var swapCmd = &cobra.Command{
 			}
 		}
 
-		editor := editorArg
-		if editor == "" {
-			editor = pickEditor()
-		}
 		if editor == "" {
 			return fmt.Errorf("no editor found — pass one as 2nd arg or set KIT_EDITOR")
 		}
@@ -93,6 +96,8 @@ var swapCmd = &cobra.Command{
 	},
 }
 
+// pickEditor picks the first installed editor by env-var order then default
+// candidates. Used when the user gives a name but no explicit editor arg.
 func pickEditor() string {
 	candidates := []string{
 		os.Getenv("KIT_EDITOR"),
@@ -111,6 +116,28 @@ func pickEditor() string {
 		}
 	}
 	return ""
+}
+
+// installedEditors returns the editor candidate list with install state
+// resolved, for the picker. Order is the recommended preference.
+func installedEditors() []tui.EditorCandidate {
+	defs := []tui.EditorCandidate{
+		{Name: "Zed", Binary: "zed", Desc: "open in Zed"},
+		{Name: "Cursor", Binary: "cursor", Desc: "open in Cursor"},
+		{Name: "VS Code", Binary: "code", Desc: "open in VS Code"},
+	}
+	// Optional: respect $KIT_EDITOR / $VISUAL / $EDITOR by promoting them.
+	if v := os.Getenv("KIT_EDITOR"); v != "" {
+		defs = append([]tui.EditorCandidate{
+			{Name: v, Binary: v, Desc: "from $KIT_EDITOR"},
+		}, defs...)
+	}
+	for i, e := range defs {
+		if _, err := exec.LookPath(e.Binary); err == nil {
+			defs[i].Installed = true
+		}
+	}
+	return defs
 }
 
 func init() {
