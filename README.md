@@ -36,9 +36,31 @@ single-command:
 - A picker with branch emoji and last-used recency sort makes it obvious
   which kit you've been working on lately
 
+## Requirements
+
+**Required**
+
+| Need | Why |
+|------|-----|
+| macOS | gtab uses AppleScript; symlink staleness check uses `stat -f` |
+| Liftoff repo at `~/liftoff/liftoff-app-master/` | default layout. Override with `KIT_ROOT` and `KIT_MASTER_DIR` env vars if your tree differs. |
+| Python venv at `~/.envs/py314` | backend services activate this venv before launch. Override with `KIT_PY_VENV`. |
+| `yarn` on PATH | Vite dev servers (`yarn dev --port N`) |
+| Go 1.22+ | only at install time if you `go install`; not needed if you grab a prebuilt binary |
+
+**Optional — features auto-disable when the binary is missing**
+
+| Tool | Unlocks |
+|------|---------|
+| Ghostty | `kit warmup` launches a 4-tab workspace per worktree |
+| `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
+| `gt` (graphite) | "Track in graphite" toggle |
+| `gh` (GitHub CLI) | `kit tear` checks PR state to flag merged/closed branches |
+| `zed` / `cursor` / `code` | any one suffices for `kit swap`. Override with `KIT_EDITOR`. |
+
 ## Install
 
-Requires Go 1.22+. From source:
+From source:
 
 ```sh
 git clone git@github.com:andreicstoica/kit.git ~/code/kit
@@ -54,7 +76,23 @@ go install github.com/andreicstoica/kit@latest
 
 Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`.
 
-## What `kit dress` does
+### Shell completion (zsh)
+
+```sh
+mkdir -p ~/.zfunc
+kit completion zsh > ~/.zfunc/_kit
+```
+
+Add to `~/.zshrc` (if not already):
+
+```sh
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
+```
+
+Then `exec zsh`. Tab-complete subcommands, services, worktree names. (`bash` and `fish` work the same way — see `kit completion --help`.)
+
+## What `kit design` does
 
 `kit dress` walks an interactive wizard, then runs (in order):
 
