@@ -76,21 +76,7 @@ go install github.com/andreicstoica/kit@latest
 
 Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`.
 
-### Shell completion (zsh)
-
-```sh
-mkdir -p ~/.zfunc
-kit completion zsh > ~/.zfunc/_kit
-```
-
-Add to `~/.zshrc` (if not already):
-
-```sh
-fpath=(~/.zfunc $fpath)
-autoload -Uz compinit && compinit
-```
-
-Then `exec zsh`. Tab-complete subcommands, services, worktree names. (`bash` and `fish` work the same way — see `kit completion --help`.)
+Run `kit completion --help` to wire shell tab-completion (zsh / bash / fish / powershell).
 
 ## What `kit design` does
 
