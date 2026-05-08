@@ -30,15 +30,15 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	}
 
 	type row struct {
-		name      string
-		slot      string
-		branch    string
-		status    string
-		statusOK  bool
-		running   string
+		name       string
+		slot       string
+		hasSlot    bool
+		running    string
 		hasRunning bool
-		lastUsed  string
-		sortKey   int64
+		branch     string
+		status     string
+		statusOK   bool
+		sortKey    int64
 	}
 	var rows []row
 
@@ -73,10 +73,8 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			runningStr = fmt.Sprintf("%d/%d", running, total)
 		}
 
-		lastUsed := "—"
 		var sortKey int64
 		if hasMeta && !meta.LastUsed.IsZero() {
-			lastUsed = relativeTime(meta.LastUsed)
 			sortKey = meta.LastUsed.Unix()
 		}
 
@@ -101,12 +99,12 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		rows = append(rows, row{
 			name:       nameDisp,
 			slot:       slotDisp,
+			hasSlot:    hasMeta && meta.Slot > 0,
+			running:    runningStr,
+			hasRunning: hasRunning,
 			branch:     branchDisp,
 			status:     stRaw,
 			statusOK:   !strings.Contains(stRaw, "dirty"),
-			running:    runningStr,
-			hasRunning: hasRunning,
-			lastUsed:   lastUsed,
 			sortKey:    sortKey,
 		})
 	}
@@ -135,34 +133,29 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			case 0: // NAME
 				return colCell
 			case 1: // SLOT
-				if data.slot == "—" {
+				if !data.hasSlot {
 					return colDim
 				}
 				return colCell.Foreground(colorAccent)
-			case 2: // BRANCH
-				return colCell.Foreground(colorMuted)
-			case 3: // STATUS
-				if data.statusOK {
-					return colCell.Foreground(colorOK)
-				}
-				return colCell.Foreground(colorWarn)
-			case 4: // RUNNING
+			case 2: // RUNNING
 				if !data.hasRunning {
 					return colDim
 				}
 				return colCell.Foreground(colorOK).Bold(true)
-			case 5: // LAST USED
-				if data.lastUsed == "—" {
-					return colDim
-				}
+			case 3: // BRANCH
 				return colCell.Foreground(colorMuted)
+			case 4: // STATUS
+				if data.statusOK {
+					return colCell.Foreground(colorOK)
+				}
+				return colCell.Foreground(colorWarn)
 			}
 			return colCell
 		}).
-		Headers("NAME", "SLOT", "BRANCH", "STATUS", "RUNNING", "LAST USED")
+		Headers("NAME", "SLOT", "RUNNING", "BRANCH", "STATUS")
 
 	for _, r := range rows {
-		tbl.Row(r.name, r.slot, r.branch, r.status, r.running, r.lastUsed)
+		tbl.Row(r.name, r.slot, r.running, r.branch, r.status)
 	}
 
 	b.WriteString(tbl.Render() + "\n")
@@ -173,24 +166,3 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	return b.String(), nil
 }
 
-// relativeTime converts a timestamp to "5m ago" / "3d ago" style.
-func relativeTime(t interface{ Unix() int64 }) string {
-	now := nowFn()
-	then := t.Unix()
-	diff := now - then
-	switch {
-	case diff < 60:
-		return "just now"
-	case diff < 3600:
-		return fmt.Sprintf("%dm ago", diff/60)
-	case diff < 86400:
-		return fmt.Sprintf("%dh ago", diff/3600)
-	case diff < 604800:
-		return fmt.Sprintf("%dd ago", diff/86400)
-	default:
-		return fmt.Sprintf("%dw ago", diff/604800)
-	}
-}
-
-// nowFn is a var so tests can stub it; default uses real time.
-var nowFn = func() int64 { return realNow() }
