@@ -41,14 +41,18 @@ func prettyHelp(cmd *cobra.Command, args []string) {
 
 	if cmd.Short != "" {
 		fmt.Fprintln(out, cmd.Short)
-		fmt.Fprintln(out)
+		// blank line goes BEFORE Long body only if there's no Long; otherwise
+		// glamour brings its own padding.
+		if cmd.Long == "" {
+			fmt.Fprintln(out)
+		}
 	}
 
 	// Glamour-rendered Long.
 	if cmd.Long != "" {
 		body := renderMarkdown(cmd.Long)
-		fmt.Fprintln(out, body)
-		fmt.Fprintln(out) // blank line before next section
+		fmt.Fprintln(out, strings.TrimSpace(body))
+		fmt.Fprintln(out)
 	}
 
 	// Usage.
@@ -103,13 +107,15 @@ func renderMarkdown(body string) string {
 		return strings.TrimRight(body, "\n")
 	}
 	width := termWidth()
-	wrap := width - 2
+	// Subtract a small margin so prose doesn't run flush against the right
+	// edge. Cap at 120 so paragraphs stay readable on ultra-wide terminals
+	// without breaking sentences mid-clause.
+	wrap := width - 4
 	if wrap < 40 {
 		wrap = 40
 	}
-	if wrap > 100 {
-		// Cap to keep prose readable on ultra-wide terminals.
-		wrap = 100
+	if wrap > 120 {
+		wrap = 120
 	}
 
 	opts := []glamour.TermRendererOption{
