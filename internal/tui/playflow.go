@@ -184,7 +184,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)
 	dlg.Styles.SelectedDesc = dlg.Styles.SelectedDesc.Foreground(colorAccent).BorderForeground(colorAccent)
 	pl := list.New(items, dlg, 0, 0)
-	pl.Title = "kit play — pick a kit to run"
+	pl.Title = "kit play — pick a kit to put on"
 	pl.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 	pl.SetShowHelp(true)
 	pl.SetFilteringEnabled(true)
