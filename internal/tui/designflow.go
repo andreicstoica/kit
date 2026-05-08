@@ -51,7 +51,7 @@ func runDesignForm(layout liftoff.Layout) (*designAnswers, error) {
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Feature name").
-				Description("kebab-case · used as the branch + worktree dir + ghostty tab title").
+				Description("kebab-case · used as initial branch, worktree, and ghostty tab layout names").
 				Placeholder("voice-agent").
 				CharLimit(60).
 				Value(&a.name).
