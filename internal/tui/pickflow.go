@@ -44,11 +44,17 @@ func (m *pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *pickModel) View() string { return m.list.View() }
 
 // EditorCandidate describes one possible editor + its install state.
+//
+// On macOS, an editor may be installed as a `.app` bundle without a
+// PATH binary. The cmd/swap.go detection layer handles the bundle vs
+// PATH distinction; this struct just carries the resolved Launch field.
 type EditorCandidate struct {
 	Name      string
-	Binary    string
+	Binary    string // CLI binary name (preferred when on PATH)
+	App       string // .app bundle name (e.g. "Zed.app") for `open -a`
 	Desc      string
 	Installed bool
+	UseOpen   bool   // true when launch is via `open -a App` not `binary`
 }
 
 // editorItem is a list entry for the editor picker.
@@ -62,7 +68,7 @@ func (e editorItem) FilterValue() string { return e.c.Name }
 
 type pickEditorModel struct {
 	list   list.Model
-	chosen string
+	chosen *EditorCandidate
 	cancel bool
 }
 
@@ -78,7 +84,8 @@ func (m *pickEditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "enter":
 			if it, ok := m.list.SelectedItem().(editorItem); ok {
-				m.chosen = it.c.Binary
+				c := it.c
+				m.chosen = &c
 				return m, tea.Quit
 			}
 		}
@@ -89,10 +96,11 @@ func (m *pickEditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *pickEditorModel) View() string { return m.list.View() }
 
-// PickEditor opens a Bubble Tea picker showing only editors found on PATH.
-// Returns the chosen binary name, or "" if the user pressed esc, or an error
+// PickEditor opens a Bubble Tea picker showing only installed editors
+// (PATH binary OR app bundle).
+// Returns the chosen candidate, or nil if the user pressed esc, or an error
 // if no candidates are installed.
-func PickEditor(editors []EditorCandidate) (string, error) {
+func PickEditor(editors []EditorCandidate) (*EditorCandidate, error) {
 	var items []list.Item
 	for _, e := range editors {
 		if e.Installed {
@@ -100,10 +108,11 @@ func PickEditor(editors []EditorCandidate) (string, error) {
 		}
 	}
 	if len(items) == 0 {
-		return "", errors.New("no supported editor on PATH (looked for zed, cursor, code)")
+		return nil, errors.New("no supported editor found (looked for Zed, Cursor, VS Code on PATH or in /Applications)")
 	}
 	if len(items) == 1 {
-		return items[0].(editorItem).c.Binary, nil
+		c := items[0].(editorItem).c
+		return &c, nil
 	}
 	dlg := list.NewDefaultDelegate()
 	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)
@@ -116,11 +125,11 @@ func PickEditor(editors []EditorCandidate) (string, error) {
 	m := &pickEditorModel{list: l}
 	final, runErr := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if runErr != nil {
-		return "", runErr
+		return nil, runErr
 	}
 	pm, ok := final.(*pickEditorModel)
 	if !ok || pm.cancel {
-		return "", nil
+		return nil, nil
 	}
 	return pm.chosen, nil
 }
