@@ -66,7 +66,7 @@ check covers the rare edge case where a port is squatted.
 ## Runtime env injection (no file mutation)
 
 Frontend services need to know which backend to talk to. Instead of writing
-ports to env files at `dress` time (which would dirty the worktree's git
+ports to env files at `design` time (which would dirty the worktree's git
 status), we inject env vars when spawning each service via `exec.Cmd.Env`:
 
 | Service       | Env vars set at launch |
@@ -77,7 +77,7 @@ status), we inject env vars when spawning each service via `exec.Cmd.Env`:
 | backend/admin | (none) |
 | celery, beat  | (none) |
 
-Env files are still copied from master at `dress` time as a baseline (keeps
+Env files are still copied from master at `design` time as a baseline (keeps
 secrets / feature flags / DB URL) but runtime ports are layered on top via
 `os.Environ() + spec.Env`.
 
@@ -121,7 +121,7 @@ so the python venv is active. Venv path configurable via `KIT_PY_VENV`.
 
 Adopted from coworker's `wt`: instead of `yarn install` per worktree
 (2 GB + 2 minutes), symlink `frontend/app/node_modules` and
-`frontend/admin/node_modules` to the master repo's. Done at `dress` time,
+`frontend/admin/node_modules` to the master repo's. Done at `design` time,
 toggleable.
 
 **Wrinkle**: if master's `package.json` drifts from the worktree's, the
@@ -148,7 +148,7 @@ Cosmetic touch from coworker's `wt`. Each worktree gets a deterministic
 emoji shown in `kit lineup`, the play picker, and the gtab tab title.
 
 - Keyword match first: `*-fix-*` → 🔧, `*-search-*` → 🔍, `*-auth-*` → 🔐, etc.
-- Hash fallback into a ~95-emoji pool for uniqueness without keyword meaning
+- Hash fallback into a ~90-emoji pool (fruits, animals, objects, plants) for uniqueness without keyword meaning
 - Pure function in `internal/liftoff/emoji.go`
 - Disabled via `KIT_NO_EMOJI=1`
 
@@ -160,7 +160,7 @@ emoji shown in `kit lineup`, the play picker, and the gtab tab title.
 - `kit swap <name>` opens the IDE
 - (deferred) shell hook on `cd` into a worktree
 
-`kit lineup` sorts rows by `last_used` desc.
+`kit lineup` sorts rows by `last_used` desc. Columns: `NAME · SLOT · RUNNING · BRANCH · STATUS`. SLOT and RUNNING sit adjacent because both describe the port-allocation lifecycle (slot = ports reserved, running = ports actually serving).
 
 ## Charm/bubble component map
 
@@ -253,7 +253,7 @@ Drops the `(legacy)` marker.
 ### `kit redress <name>` — rebuild from remote tip
 
 Stash local changes (saved to `~/.config/kit/stash/<name>-<ts>.diff`),
-hard-reset the branch to `origin/<name>`, re-run `dress` steps. For
+hard-reset the branch to `origin/<name>`, re-run `design` steps. For
 "PR isn't too far along, just rebuild fresh" cases.
 
 ### Shell hook for last-used tracking
@@ -272,7 +272,7 @@ flag mismatches between expected and actual.
   MBP. More than that risks swapping.
 - **Vite watcher load**: each Vite instance fully watches its tree. Document
   upper bound.
-- **node_modules symlink staleness**: surfaced at `dress` time, not at `play`
+- **node_modules symlink staleness**: surfaced at `design` time, not at `play`
   time. Long-lived worktrees can drift.
 - **State.toml race**: two terminals running `kit design` simultaneously
   could clobber the slot file. File-lock is on the roadmap if it bites.
