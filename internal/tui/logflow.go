@@ -465,9 +465,20 @@ func RunLogTUI(worktree string) error {
 		keys:        newLogKeys(),
 		filterInput: ti,
 		tagOn:       map[string]bool{},
+		tagOrder:    []string{},
 		incoming:    make(chan logLineMsg, 256),
 		done:        make(chan struct{}),
 	}
+	// Pre-populate the tag panel from filenames on disk so `t` shows a
+	// useful list even before the first log line streams in.
+	for _, p := range files {
+		tag := strings.TrimSuffix(filepath.Base(p), ".log")
+		if _, ok := m.tagOn[tag]; !ok {
+			m.tagOn[tag] = true
+			m.tagOrder = append(m.tagOrder, tag)
+		}
+	}
+
 	_, runErr := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return runErr
 }
