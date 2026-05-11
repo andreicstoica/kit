@@ -39,7 +39,7 @@ the service-selection screen.`,
 		_, _ = liftoff.SweepOldRunDirs(logRetention)
 
 		layout := liftoff.DefaultLayout()
-		name, err := resolveArgOrCwd(layout, args)
+		name, err := resolveArgOrCwdNonMaster(layout, args)
 		if err != nil {
 			return err
 		}

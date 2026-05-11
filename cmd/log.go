@@ -45,6 +45,9 @@ var logCmd = &cobra.Command{
 		if logDeleteAll {
 			return clearLogsFor(name)
 		}
+		if err := ensurePlaying(name); err != nil {
+			return err
+		}
 		if len(args) == 0 {
 			fmt.Fprintf(cmd.ErrOrStderr(), "tailing %s\n", name)
 		}
@@ -55,6 +58,30 @@ var logCmd = &cobra.Command{
 func init() {
 	logCmd.Flags().BoolVar(&logDeleteAll, "delete-all", false, "delete every .log for the worktree (confirms first)")
 	rootCmd.AddCommand(logCmd)
+}
+
+// ensurePlaying blocks `kit log` when no services are alive for the kit —
+// opening the viewer for a stopped worktree just shows stale lines with no
+// follow activity, which is more confusing than helpful. Master is allowed
+// through since master logs are written by ad-hoc dev processes, not kit
+// play, and have no slot to check.
+func ensurePlaying(name string) error {
+	if name == "master" {
+		return nil
+	}
+	cfg, err := liftoff.LoadConfig()
+	if err != nil || cfg == nil {
+		return fmt.Errorf("no kit config yet — run `kit play %s` first", name)
+	}
+	meta, ok := cfg.Worktrees[name]
+	if !ok || meta.Slot == 0 {
+		return fmt.Errorf("%s has no slot — run `kit play %s` first", name, name)
+	}
+	alive, _ := liftoff.RunningCount(name, liftoff.PortsForSlot(meta.Slot))
+	if alive == 0 {
+		return fmt.Errorf("nothing playing for %s — run `kit play %s` first", name, name)
+	}
+	return nil
 }
 
 // clearLogsFor truncates every .log under the worktree's run dir.

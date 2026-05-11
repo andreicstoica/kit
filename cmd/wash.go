@@ -19,7 +19,7 @@ from cwd when run from inside a worktree).`,
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
-		name, err := resolveArgOrCwd(layout, args)
+		name, err := resolveArgOrCwdNonMaster(layout, args)
 		if err != nil {
 			return err
 		}
