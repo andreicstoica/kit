@@ -5,8 +5,6 @@ per-worktree port allocation, one-command service spin-up, graphite-aware
 lineup. Inspired by [par](https://github.com/coplane/par), shaped for the
 Liftoff dev loop.
 
-![kit lineup demo](vhs/lineup.gif)
-
 ```
 kit                      # interactive menu
 kit guide                # daily-flow tour
