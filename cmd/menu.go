@@ -17,6 +17,7 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 	}
 	items := []item{
 		{"lineup", "see all my kits"},
+		{"formation", "see all my kits as a tree"},
 		{"play", "start a kit's dev servers"},
 		{"pause", "stop a kit's dev servers"},
 		{"swap", "open a kit in your editor"},
@@ -32,7 +33,7 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 	}
 	opts := make([]huh.Option[string], 0, len(items))
 	for _, it := range items {
-		label := fmt.Sprintf("%-9s — %s", it.verb, it.desc)
+		label := fmt.Sprintf("%-10s — %s", it.verb, it.desc)
 		opts = append(opts, huh.NewOption(label, it.verb))
 	}
 	var picked string
