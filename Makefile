@@ -2,7 +2,7 @@ PREFIX ?= $(HOME)/.local
 BIN := kit
 DIST := dist
 
-.PHONY: all build install uninstall test fmt vet tidy clean run
+.PHONY: all build install uninstall test fmt vet tidy clean run demo
 
 all: build
 
@@ -38,3 +38,8 @@ clean:
 
 run:
 	go run . $(ARGS)
+
+# Record demo GIFs from vhs/*.tape. Requires `brew install vhs`.
+demo:
+	@command -v vhs >/dev/null || { echo "vhs not installed — brew install vhs"; exit 1; }
+	@for tape in vhs/*.tape; do echo "→ $$tape"; vhs $$tape; done

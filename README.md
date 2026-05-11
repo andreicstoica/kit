@@ -283,7 +283,11 @@ make test            # go test ./...
 make vet             # go vet ./...
 make fmt             # go fmt ./...
 make run ARGS="lineup"
+make demo            # record GIFs from vhs/*.tape (needs `brew install vhs`)
 ```
+
+Recorded demos live in `vhs/`. Re-run `make demo` after a UI change so
+the GIFs in this README stay current.
 
 ## License
 
