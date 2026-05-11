@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/spf13/cobra"
@@ -27,15 +26,25 @@ var warmupCmd = &cobra.Command{
 		if name == "" {
 			return nil
 		}
-		if name == "master" {
-			// No per-feature gtab template; open Ghostty rooted at master.
-			c := exec.Command("open", "-a", "Ghostty.app", layout.Master)
-			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
-			return c.Start()
-		}
+		// Auto-write the gtab AppleScript if it's missing. Lets `kit warmup
+		// master` (or any adopted worktree that was never designed) work
+		// without forcing the user to re-run `kit design`.
 		if !layout.HasGtab(name) {
-			return fmt.Errorf("no gtab workspace at %s — re-run `kit design` or write one manually", layout.GtabFile(name))
+			path := layout.Master
+			if name != "master" {
+				path = layout.WorktreePath(name)
+				if _, err := os.Stat(path); err != nil {
+					legacy := layout.LegacyWorktreePath(name)
+					if _, err2 := os.Stat(legacy); err2 == nil {
+						path = legacy
+					} else {
+						return fmt.Errorf("worktree path missing: %s", path)
+					}
+				}
+			}
+			if _, err := layout.WriteGtab(name, path); err != nil {
+				return fmt.Errorf("write gtab: %w", err)
+			}
 		}
 		return layout.LaunchGtab(name)
 	},
