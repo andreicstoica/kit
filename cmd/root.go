@@ -6,6 +6,11 @@ import (
 
 var version = "0.1.0"
 
+func init() {
+	rootCmd.PersistentPreRunE = MaybeOfferSetup
+	rootCmd.RunE = runRootMenu
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "kit",
 	Short: "Manage Liftoff feature worktrees with port allocation + service spin-up",
@@ -21,6 +26,7 @@ var rootCmd = &cobra.Command{
 		"- `warmup` (`gtab`) — launch the ghostty workspace\n" +
 		"- `swap` (`open`) — open the worktree in your IDE\n" +
 		"- `links` (`urls`, `ports`) — print the worktree's URLs\n" +
+		"- `diff` — show the worktree's diff vs master (via lumen if installed)\n" +
 		"- `doctor` (`physio`) — check your setup\n" +
 		"- `setup` — install missing tools, clone master\n\n" +
 		"## What makes it useful\n\n" +

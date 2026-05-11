@@ -20,8 +20,8 @@ func TestLoadState_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Schema != stateSchema {
-		t.Errorf("Schema = %d, want %d", s.Schema, stateSchema)
+	if s.Schema != configSchema {
+		t.Errorf("Schema = %d, want %d", s.Schema, configSchema)
 	}
 	if len(s.Worktrees) != 0 {
 		t.Errorf("expected empty worktrees, got %d", len(s.Worktrees))
@@ -36,8 +36,8 @@ func TestState_RoundTrip(t *testing.T) {
 	if err := s.Save(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "state.toml")); err != nil {
-		t.Fatalf("state.toml not written: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "config.toml")); err != nil {
+		t.Fatalf("config.toml not written: %v", err)
 	}
 	s2, err := LoadState()
 	if err != nil {
@@ -130,6 +130,45 @@ func TestState_TouchLastUsed_Missing(t *testing.T) {
 	setStateDir(t)
 	s, _ := LoadState()
 	s.TouchLastUsed("nope") // should not panic
+}
+
+func TestConfig_Schema2_NewFieldsRoundTrip(t *testing.T) {
+	setStateDir(t)
+	c, _ := LoadConfig()
+	c.Worktrees["beta"] = WorktreeMeta{
+		Slot:    3,
+		Branch:  "acs/beta-cleanup",
+		Path:    "/Users/acs/liftoff/beta",
+		Adopted: true,
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := c2.Worktrees["beta"]
+	if m.Branch != "acs/beta-cleanup" || m.Path == "" || !m.Adopted {
+		t.Fatalf("schema-2 fields not preserved: %+v", m)
+	}
+	if c2.Schema != 2 {
+		t.Fatalf("schema not bumped to 2: %d", c2.Schema)
+	}
+}
+
+func TestConfig_SettingsRoundTrip(t *testing.T) {
+	setStateDir(t)
+	c, _ := LoadConfig()
+	c.Settings.Root = "/Users/acs/liftoff"
+	c.Settings.Editor = "zed"
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c2, _ := LoadConfig()
+	if c2.Settings.Root != "/Users/acs/liftoff" || c2.Settings.Editor != "zed" {
+		t.Fatalf("settings not preserved: %+v", c2.Settings)
+	}
 }
 
 func TestState_SortedNames_RecencyFirst(t *testing.T) {

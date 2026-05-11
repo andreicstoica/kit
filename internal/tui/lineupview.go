@@ -43,30 +43,30 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	var rows []row
 
 	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
+		if w.Bare {
 			continue
 		}
+		isMaster := w.IsMaster(layout)
 		name := w.Name()
+		if isMaster {
+			name = "master"
+		}
 		stRaw := "clean"
 		if liftoff.IsDirty(w.Path) {
 			stRaw = "dirty"
 		}
-		ahead, behind := layout.AheadBehind(w.Path)
-		if ahead > 0 || behind > 0 {
-			stRaw = fmt.Sprintf("%s ↑%d↓%d", stRaw, ahead, behind)
+		if !isMaster {
+			// Master is the reference; ahead/behind doesn't apply.
+			ahead, behind := layout.AheadBehind(w.Path)
+			if ahead > 0 || behind > 0 {
+				stRaw = fmt.Sprintf("%s ↑%d↓%d", stRaw, ahead, behind)
+			}
 		}
 
 		meta, hasMeta := state.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
 
-		// Count running services (out of 6 default services).
-		running := 0
-		total := len(liftoff.DefaultServices)
-		for _, svc := range liftoff.DefaultServices {
-			if liftoff.StatusOf(name, svc, ports).Alive {
-				running++
-			}
-		}
+		running, total := liftoff.RunningCount(name, ports)
 		runningStr := "—"
 		hasRunning := running > 0
 		if hasRunning {
@@ -74,20 +74,30 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		}
 
 		var sortKey int64
-		if hasMeta && !meta.LastUsed.IsZero() {
+		if isMaster {
+			// Pin master to the top regardless of LastUsed.
+			sortKey = 1<<62
+		} else if hasMeta && !meta.LastUsed.IsZero() {
 			sortKey = meta.LastUsed.Unix()
 		}
 
-		nameDisp := name
-		if e := liftoff.EmojiFor(name); e != "" {
-			nameDisp = e + " " + nameDisp
+		emoji := liftoff.EmojiFor(name)
+		if isMaster {
+			emoji = "🚀"
 		}
-		if w.HasLegacyPrefix() {
+		nameDisp := name
+		if emoji != "" {
+			nameDisp = emoji + " " + nameDisp
+		}
+		if !isMaster && w.HasLegacyPrefix() {
 			nameDisp = nameDisp + " " + StyleDim.Render("(legacy)")
 		}
 
 		slotDisp := "—"
-		if hasMeta && meta.Slot > 0 {
+		switch {
+		case isMaster:
+			slotDisp = "0"
+		case hasMeta && meta.Slot > 0:
 			slotDisp = fmt.Sprintf("%d", meta.Slot)
 		}
 
@@ -99,7 +109,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		rows = append(rows, row{
 			name:       nameDisp,
 			slot:       slotDisp,
-			hasSlot:    hasMeta && meta.Slot > 0,
+			hasSlot:    isMaster || (hasMeta && meta.Slot > 0),
 			running:    runningStr,
 			hasRunning: hasRunning,
 			branch:     branchDisp,
@@ -159,7 +169,6 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	}
 
 	b.WriteString(tbl.Render() + "\n")
-	b.WriteString(StyleDim.Render(fmt.Sprintf("master: %s", layout.Master)) + "\n")
 	if owner, pid := liftoff.FindCeleryOwner(); owner != "" {
 		b.WriteString(StyleDim.Render(fmt.Sprintf("celery: %s (pid %d)", owner, pid)) + "\n")
 	}

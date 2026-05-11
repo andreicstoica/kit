@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
@@ -133,47 +132,9 @@ func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
 }
 
 func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
-	wts, err := layout.ListWorktrees()
-	if err != nil {
-		return nil, err
-	}
-	st, _ := liftoff.LoadState()
-	if st == nil {
-		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
-	}
-	type row struct {
-		item playWtItem
-	}
-	var rows []row
-	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
-			continue
-		}
-		name := w.Name()
-		meta := st.Worktrees[name]
-		ports := liftoff.PortsForSlot(meta.Slot)
-		running := 0
-		for _, svc := range liftoff.AllServices {
-			if liftoff.StatusOf(name, svc, ports).Alive {
-				running++
-			}
-		}
-		if running == 0 {
-			continue
-		}
-		rows = append(rows, row{item: playWtItem{
-			name: name, path: w.Path, emoji: liftoff.EmojiFor(name),
-			slot: meta.Slot, lastUsed: meta.LastUsed, running: running,
-		}})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
+	return collectPlayWtItems(layout, func(it playWtItem) bool {
+		return it.running > 0
 	})
-	out := make([]list.Item, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, r.item)
-	}
-	return out, nil
 }
 
 func (m *pauseModel) Init() tea.Cmd { return m.spinner.Tick }
@@ -225,6 +186,17 @@ func (m *pauseModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.stage = pauseStageAborted
 			return m, tea.Quit
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			idx := int(k.String()[0] - '0' - 1)
+			items := m.picker.VisibleItems()
+			if idx >= 0 && idx < len(items) {
+				if it, ok := items[idx].(playWtItem); ok {
+					m.chosen = it
+					m.running = m.discoverRunning(it.name)
+					m.stage = pauseStageConfirm
+					return m, nil
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd

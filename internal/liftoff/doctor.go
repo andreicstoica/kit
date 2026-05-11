@@ -52,6 +52,7 @@ func DefaultChecks(layout Layout) []Check {
 		{ID: "postgres", Run: checkPostgres},
 		{ID: "ghostty", Run: checkGhostty},
 		{ID: "editor", Run: checkEditor},
+		{ID: "lumen", Run: checkLumen},
 		{ID: "liftoff-master", Run: func() CheckResult { return checkLiftoffMaster(layout) }},
 		{ID: "kit-config", Run: checkKitConfig},
 	}
@@ -381,6 +382,21 @@ func checkEditor() CheckResult {
 	r.FixHint = "brew install --cask zed"
 	r.FixCmd = []string{"zed"}
 	r.FixCask = true
+	return r
+}
+
+func checkLumen() CheckResult {
+	r := CheckResult{Name: "lumen"}
+	if _, err := exec.LookPath("lumen"); err != nil {
+		r.Status = CheckWarn
+		r.Detail = "not installed — `kit diff` falls back to plain `git diff`"
+		r.FixHint = "brew install jnsahaj/lumen/lumen"
+		r.FixCmd = []string{"jnsahaj/lumen/lumen"}
+		return r
+	}
+	ver, _ := ToolVersion("lumen", "--version")
+	r.Status = CheckOK
+	r.Detail = firstLine(ver)
 	return r
 }
 

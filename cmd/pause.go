@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -25,9 +26,21 @@ var pauseCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		if pauseAll {
+			accept := true
+			if err := huh.NewConfirm().
+				Title("Stop every running service across every worktree?").
+				Description("Destructive — kit-managed dev servers everywhere will be killed.").
+				Affirmative("Yes, stop all").
+				Negative("Cancel").
+				Value(&accept).Run(); err != nil {
+				return err
+			}
+			if !accept {
+				return nil
+			}
 			return tui.PauseAll(layout)
 		}
-		name, err := resolveArgOrCwd(layout, args, true)
+		name, err := resolveArgOrCwd(layout, args)
 		if err != nil {
 			return err
 		}

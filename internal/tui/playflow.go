@@ -22,6 +22,7 @@ type playStage int
 const (
 	playStagePicker playStage = iota
 	playStageToggle
+	playStageAdoptPrompt
 	playStageCeleryPrompt
 	playStageRun
 	playStageDone
@@ -77,6 +78,10 @@ type playModel struct {
 	celeryVictim string
 	celeryPID    int
 	celeryAccept bool // true if user said yes (default Y)
+
+	// Adopt prompt stage — fires when m.chosen has no slot yet.
+	adoptBranch string
+	adoptPath   string
 
 	// Run stage
 	runUpdates  <-chan liftoff.PlayUpdate
@@ -139,7 +144,9 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 			m.toggleOn[s] = true
 		}
 	}
-	m.toggleSvcs = liftoff.AllServices
+	// UI toggle shows display services only — beat is collapsed into celery
+	// (toggling celery flips both internally, see updateToggle).
+	m.toggleSvcs = liftoff.DisplayServices
 	name := cfg.Name
 	only := cfg.Only
 
@@ -198,6 +205,20 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 }
 
 func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
+	return collectPlayWtItems(layout, nil)
+}
+
+// playWtItemFilter, when non-nil, drops items that return false.
+type playWtItemFilter func(playWtItem) bool
+
+// collectPlayWtItems walks every git worktree, builds the canonical
+// playWtItem (with master folded in + 🚀 emoji, running service count,
+// state metadata), optionally filters, sorts by lineup order, assigns
+// numeric displayIdx, and returns a []list.Item ready for bubble list.
+//
+// Shared by play / pause / generic worktree pickers so the sort key
+// and master handling don't drift across surfaces.
+func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.Item, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
 		return nil, err
@@ -206,68 +227,79 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 	if st == nil {
 		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
-	type row struct {
-		item playWtItem
-	}
-	var rows []row
+	var items []playWtItem
 	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
+		if w.Bare {
 			continue
 		}
 		name := w.Name()
-		meta := st.Worktrees[name]
-		running := 0
-		ports := liftoff.PortsForSlot(meta.Slot)
-		for _, svc := range liftoff.AllServices {
-			s := liftoff.StatusOf(name, svc, ports)
-			if s.Alive {
-				running++
-			}
+		emoji := liftoff.EmojiFor(name)
+		if w.IsMaster(layout) {
+			name = "master"
+			emoji = "🚀"
 		}
-		rows = append(rows, row{item: playWtItem{
+		meta := st.Worktrees[name]
+		ports := liftoff.PortsForSlot(meta.Slot)
+		running, _ := liftoff.RunningCount(name, ports)
+		it := playWtItem{
 			name:     name,
 			path:     w.Path,
-			emoji:    liftoff.EmojiFor(name),
+			emoji:    emoji,
 			slot:     meta.Slot,
 			lastUsed: meta.LastUsed,
 			running:  running,
-		}})
+		}
+		if keep != nil && !keep(it) {
+			continue
+		}
+		items = append(items, it)
 	}
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
-	})
-	out := make([]list.Item, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, r.item)
+	sortPlayWtItems(items)
+	out := make([]list.Item, 0, len(items))
+	for i := range items {
+		items[i].displayIdx = i + 1
+		out = append(out, items[i])
 	}
 	return out, nil
 }
 
-// transitionAfterToggle resolves the slot, allocates if needed, then either
-// shows the celery prompt or jumps straight to run.
+// sortPlayWtItems orders items the same way kit lineup does: ascending
+// by slot (master is slot 0, always first), with lastUsed desc as the
+// tiebreaker for unadopted worktrees that share slot 0.
+func sortPlayWtItems(items []playWtItem) {
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].slot != items[j].slot {
+			return items[i].slot < items[j].slot
+		}
+		return items[i].lastUsed.After(items[j].lastUsed)
+	})
+}
+
+// transitionAfterToggle resolves the slot, prompts to adopt if the
+// worktree is unknown, then shows the celery prompt or jumps to run.
 func (m *playModel) transitionAfterToggle() tea.Cmd {
 	return func() tea.Msg {
-		// Lazy slot allocation if missing.
-		st, err := liftoff.LoadState()
+		st, err := liftoff.LoadConfig()
 		if err != nil {
 			return playSetupErrMsg{err}
 		}
 		meta, ok := st.Worktrees[m.chosen.name]
-		if !ok || meta.Slot == 0 {
-			slot, err := st.AllocateSlot(m.chosen.name, liftoff.PortsBindable)
-			if err != nil {
-				return playSetupErrMsg{err}
-			}
-			st.TouchLastUsed(m.chosen.name)
-			if err := st.Save(); err != nil {
-				return playSetupErrMsg{err}
-			}
-			m.chosen.slot = slot
-		} else {
-			st.TouchLastUsed(m.chosen.name)
-			_ = st.Save()
-			m.chosen.slot = meta.Slot
+		// Master is special: slot 0 is its assigned slot (master defaults), not a
+		// missing allocation. Adopt prompt only fires for unknown feature
+		// worktrees.
+		needsAdopt := !ok
+		if !needsAdopt && m.chosen.name != "master" && meta.Slot == 0 {
+			needsAdopt = true
 		}
+		if needsAdopt {
+			// Unadopted — bail to a confirm prompt. The user explicitly approves
+			// before kit allocates a slot + writes metadata.
+			branch, path := findBranchAndPath(m.layout, m.chosen.name)
+			return playAdoptPromptMsg{branch: branch, path: path}
+		}
+		st.TouchLastUsed(m.chosen.name)
+		_ = st.Save()
+		m.chosen.slot = meta.Slot
 
 		// Build the plan.
 		var selected []liftoff.Service
@@ -296,8 +328,30 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 	}
 }
 
+// findBranchAndPath looks up the on-disk branch + path for a kit name via
+// git worktree list. Returns ("", "") if not found.
+func findBranchAndPath(layout liftoff.Layout, name string) (string, string) {
+	wts, err := layout.ListWorktrees()
+	if err != nil {
+		return "", ""
+	}
+	for _, w := range wts {
+		if w.IsMaster(layout) || w.Bare {
+			continue
+		}
+		if w.Name() == name {
+			return w.Branch, w.Path
+		}
+	}
+	return "", ""
+}
+
 // Messages
 type playReadyMsg struct{ plan liftoff.PlayPlan }
+type playAdoptPromptMsg struct {
+	branch string
+	path   string
+}
 type playCeleryConflictMsg struct {
 	victim string
 	pid    int
@@ -361,6 +415,11 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.celeryAccept = true // default Y
 		m.stage = playStageCeleryPrompt
 		return m, nil
+	case playAdoptPromptMsg:
+		m.adoptBranch = msg.branch
+		m.adoptPath = msg.path
+		m.stage = playStageAdoptPrompt
+		return m, nil
 	}
 
 	switch m.stage {
@@ -368,6 +427,8 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updatePicker(msg)
 	case playStageToggle:
 		return m.updateToggle(msg)
+	case playStageAdoptPrompt:
+		return m.updateAdopt(msg)
 	case playStageCeleryPrompt:
 		return m.updateCelery(msg)
 	case playStageRun:
@@ -394,6 +455,16 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.stage = playStageAborted
 			return m, tea.Quit
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			idx := int(k.String()[0] - '0' - 1)
+			items := m.picker.VisibleItems()
+			if idx >= 0 && idx < len(items) {
+				if it, ok := items[idx].(playWtItem); ok {
+					m.chosen = it
+					m.stage = playStageToggle
+					return m, nil
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -415,6 +486,10 @@ func (m *playModel) updateToggle(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case " ", "tab":
 			s := m.toggleSvcs[m.toggleCursor]
 			m.toggleOn[s] = !m.toggleOn[s]
+			// Celery toggle controls beat too — they're paired.
+			if s == liftoff.SvcCelery {
+				m.toggleOn[liftoff.SvcBeat] = m.toggleOn[liftoff.SvcCelery]
+			}
 		case "enter":
 			return m, m.transitionAfterToggle()
 		case "esc":
@@ -425,6 +500,37 @@ func (m *playModel) updateToggle(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.stage = playStagePicker
 			}
 		}
+	}
+	return m, nil
+}
+
+func (m *playModel) updateAdopt(msg tea.Msg) (tea.Model, tea.Cmd) {
+	k, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch k.String() {
+	case "y", "Y", "enter":
+		// Run shared adopt; on success, retry transitionAfterToggle which
+		// will now find the new slot in config.
+		path := m.adoptPath
+		branch := m.adoptBranch
+		if path == "" {
+			path = m.chosen.path
+		}
+		opts := liftoff.AdoptOptions{
+			SymlinkNodeModules: false, // play is hot path; don't surprise-rewrite frontend
+			WriteGtab:          false,
+			GraphiteTrack:      false,
+		}
+		if _, err := m.layout.Adopt(m.chosen.name, branch, path, opts, nil); err != nil {
+			return m, func() tea.Msg { return playSetupErrMsg{err} }
+		}
+		m.stage = playStageToggle
+		return m, m.transitionAfterToggle()
+	case "n", "N", "esc":
+		m.stage = playStageAborted
+		return m, tea.Quit
 	}
 	return m, nil
 }
@@ -498,6 +604,8 @@ func (m *playModel) View() string {
 		body = m.picker.View()
 	case playStageToggle:
 		body = m.viewToggle()
+	case playStageAdoptPrompt:
+		body = m.viewAdopt()
 	case playStageCeleryPrompt:
 		body = m.viewCelery()
 	case playStageRun:
@@ -522,6 +630,7 @@ func (m *playModel) viewToggle() string {
 		b.WriteString(StyleDim.Render("slot will be allocated when you press Enter\n"))
 	}
 	b.WriteString("\n")
+	ports := liftoff.PortsForSlot(m.chosen.slot)
 	for i, svc := range m.toggleSvcs {
 		cursor := "  "
 		if i == m.toggleCursor {
@@ -535,9 +644,30 @@ func (m *playModel) viewToggle() string {
 		if svc == liftoff.SvcMCP {
 			label += StyleDim.Render(" (opt-in)")
 		}
-		b.WriteString(cursor + box + " " + label + "\n")
+		// Show whether the service is currently running so the user can tell
+		// "kit will (re)start these" apart from "these are already alive".
+		state := StyleDim.Render("○ stopped")
+		if liftoff.IsServiceAlive(m.chosen.name, svc, ports) {
+			state = StyleOK.Render("● running")
+		}
+		b.WriteString(cursor + box + " " + padRight(label, 12) + "  " + state + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("space/tab: toggle · enter: continue · backspace: back · esc: abort"))
+	return b.String()
+}
+
+func (m *playModel) viewAdopt() string {
+	var b strings.Builder
+	b.WriteString(StyleTitle.Render("kit play — adopt first") + "\n\n")
+	b.WriteString(fmt.Sprintf("worktree %s isn't adopted yet.\n", StyleHi.Render(m.chosen.name)))
+	if m.adoptBranch != "" {
+		b.WriteString(StyleDim.Render("  branch: "+m.adoptBranch) + "\n")
+	}
+	if m.adoptPath != "" {
+		b.WriteString(StyleDim.Render("  path:   "+m.adoptPath) + "\n")
+	}
+	b.WriteString("\nadopt now? this allocates a port slot + records it in config.toml.\n")
+	b.WriteString("\n" + StyleHelp.Render("[Y]es adopt and continue · [n] abort · esc abort"))
 	return b.String()
 }
 

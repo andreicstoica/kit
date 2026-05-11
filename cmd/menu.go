@@ -1,0 +1,56 @@
+package cmd
+
+import (
+	"fmt"
+
+	"github.com/charmbracelet/huh"
+	"github.com/spf13/cobra"
+)
+
+// runRootMenu fires when `kit` is invoked with no subcommand. Designers
+// don't have to memorize verbs — pick from a short list of common
+// actions and kit dispatches to the matching command.
+func runRootMenu(cmd *cobra.Command, args []string) error {
+	type item struct {
+		verb string
+		desc string
+	}
+	items := []item{
+		{"lineup", "see all my kits"},
+		{"play", "start a kit's dev servers"},
+		{"pause", "stop a kit's dev servers"},
+		{"swap", "open a kit in your editor"},
+		{"warmup", "open a kit's Ghostty workspace"},
+		{"log", "tail a kit's logs"},
+		{"links", "print a kit's URLs"},
+		{"diff", "see what changed vs master"},
+		{"design", "create a new kit"},
+		{"sync", "pull master + clean up merged branches"},
+		{"setup", "install/check required tools"},
+		{"doctor", "diagnose without changing anything"},
+		{"guide", "show the kit guide / daily flow"},
+	}
+	opts := make([]huh.Option[string], 0, len(items))
+	for _, it := range items {
+		label := fmt.Sprintf("%-9s — %s", it.verb, it.desc)
+		opts = append(opts, huh.NewOption(label, it.verb))
+	}
+	var picked string
+	if err := huh.NewSelect[string]().
+		Title("kit · what do you want to do?").
+		Description("pick an action, or Ctrl-C to exit").
+		Options(opts...).
+		Value(&picked).Run(); err != nil {
+		return err
+	}
+	if picked == "" {
+		return nil
+	}
+	// Dispatch by walking the cobra tree.
+	for _, sub := range rootCmd.Commands() {
+		if sub.Name() == picked {
+			return sub.RunE(sub, nil)
+		}
+	}
+	return fmt.Errorf("unknown action: %s", picked)
+}

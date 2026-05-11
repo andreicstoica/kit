@@ -62,6 +62,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	applied := 0
 	for _, r := range results {
 		if r.Status == liftoff.CheckOK || r.Status == liftoff.CheckSkip {
 			continue
@@ -69,19 +70,140 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		if err := applyFix(layout, r); err != nil {
 			fmt.Println(tui.StyleErr.Render("error: " + err.Error()))
 		}
+		applied++
 	}
 
-	fmt.Println()
-	fmt.Println(tui.StyleTitle.Render("re-checking…"))
-	results = liftoff.RunChecks(liftoff.DefaultChecks(layout))
-	fmt.Print(tui.RenderDoctor(results))
+	if applied > 0 {
+		fmt.Println()
+		fmt.Println(tui.StyleTitle.Render("re-checking…"))
+		results = liftoff.RunChecks(liftoff.DefaultChecks(layout))
+		fmt.Print(tui.RenderDoctor(results))
+	}
 
 	if liftoff.AnyFailed(results) {
 		fmt.Println(tui.StyleWarn.Render("still has failures — see hints above or re-run `kit setup`."))
 		os.Exit(1)
 	}
-	fmt.Println(tui.StyleOK.Render("✓ ready to go — try `kit design my-first-kit`"))
+
+	// Persist what setup learned to config.toml.
+	if err := persistSetupSettings(layout); err != nil {
+		fmt.Println(tui.StyleDim.Render("(could not save settings to config.toml: " + err.Error() + ")"))
+	}
+
+	// Offer bulk-adopt for unmanaged worktrees.
+	adopted, err := offerBulkAdopt(layout)
+	if err != nil {
+		fmt.Println(tui.StyleDim.Render("(adoption skipped: " + err.Error() + ")"))
+	}
+
+	fmt.Println()
+	if adopted > 0 {
+		fmt.Println(tui.StyleOK.Render("✓ existing worktrees ready to go."))
+		fmt.Println(tui.StyleDim.Render("to make a new one, try ") + tui.Code("kit design my-first-kit"))
+	} else {
+		fmt.Println(tui.StyleOK.Render("✓ ready to go.") + tui.StyleDim.Render(" make a new kit with ") + tui.Code("kit design my-first-kit"))
+	}
 	return nil
+}
+
+// persistSetupSettings writes Root + MasterDir + first installed editor
+// into config.Settings. Merges with existing settings — user-edited
+// fields aren't clobbered (only empty fields are filled in).
+func persistSetupSettings(layout liftoff.Layout) error {
+	c, err := liftoff.LoadConfig()
+	if err != nil {
+		return err
+	}
+	changed := false
+	if c.Settings.Root == "" {
+		c.Settings.Root = layout.Root
+		changed = true
+	}
+	if c.Settings.MasterDir == "" {
+		// Derive MasterDir from layout.Master minus layout.Root prefix.
+		if rel := relativeDir(layout.Root, layout.Master); rel != "" {
+			c.Settings.MasterDir = rel
+			changed = true
+		}
+	}
+	if c.Settings.Editor == "" {
+		if eds := installedEditors(); len(eds) > 0 {
+			c.Settings.Editor = eds[0].Binary
+			changed = true
+		}
+	}
+	if c.Settings.LiftoffRepo == "" {
+		c.Settings.LiftoffRepo = liftoffMasterRepoURL
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return c.Save()
+}
+
+// relativeDir returns the trailing path segment of full relative to base,
+// or "" when full isn't inside base.
+func relativeDir(base, full string) string {
+	if base == "" || full == "" {
+		return ""
+	}
+	if len(full) > len(base) && full[:len(base)] == base {
+		return full[len(base)+1:]
+	}
+	return ""
+}
+
+// offerBulkAdopt returns the number of worktrees actually adopted (0 on
+// skip or empty candidate list) so the caller can tailor the next-step
+// message.
+func offerBulkAdopt(layout liftoff.Layout) (int, error) {
+	c, err := liftoff.LoadConfig()
+	if err != nil {
+		return 0, err
+	}
+	cands, err := layout.FindAdoptCandidates(c)
+	if err != nil {
+		return 0, err
+	}
+	if len(cands) == 0 {
+		return 0, nil
+	}
+	fmt.Println()
+	fmt.Println(tui.StyleTitle.Render(fmt.Sprintf("found %d unmanaged worktree(s)", len(cands))))
+	for _, c := range cands {
+		fmt.Printf("  %s  %s\n", c.Name, tui.StyleDim.Render("("+c.Branch+")"))
+	}
+	fmt.Println()
+	fmt.Println(tui.StyleDim.Render("kit will allocate a port slot and write metadata for each. stop running dev servers first for accurate slot picks."))
+
+	accept := true
+	if err := huh.NewConfirm().
+		Title("Adopt all? (allocates port slots + writes metadata)").
+		Affirmative("Yes").
+		Negative("Skip").
+		Value(&accept).Run(); err != nil {
+		return 0, err
+	}
+	if !accept {
+		return 0, nil
+	}
+	opts := liftoff.AdoptOptions{
+		SymlinkNodeModules: false, // bulk adoption: don't mass-rewrite frontend trees
+		WriteGtab:          true,
+		GraphiteTrack:      false,
+	}
+	count := 0
+	for _, cand := range cands {
+		res, err := layout.Adopt(cand.Name, cand.Branch, cand.Path, opts, nil)
+		if err != nil {
+			fmt.Println(tui.StyleErr.Render("  ✗ " + cand.Name + ": " + err.Error()))
+			continue
+		}
+		fmt.Println(tui.StyleOK.Render(fmt.Sprintf("  ✓ %s — slot %d", res.Name, res.Slot)))
+		count++
+	}
+	return count, nil
 }
 
 func printDryRunPlan(layout liftoff.Layout, results []liftoff.CheckResult) {

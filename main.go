@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+	cmd.RenderMarkdownLongs()
 	if err := fang.Execute(
 		context.Background(),
 		cmd.Root(),
