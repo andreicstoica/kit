@@ -79,7 +79,9 @@ var swapCmd = &cobra.Command{
 
 		if chosen.Binary == warmupBinarySentinel {
 			if name == "master" {
-				// No per-feature gtab workspace; open Ghostty rooted at master.
+				// Master has no per-service log files, so the gtab layout
+				// templates (which tail .log files) don't apply. Open
+				// Ghostty rooted at master with a single shell tab.
 				c := exec.Command("open", "-a", "Ghostty.app", path)
 				c.Stdout = os.Stdout
 				c.Stderr = os.Stderr
@@ -87,8 +89,12 @@ var swapCmd = &cobra.Command{
 					return err
 				}
 			} else {
-				if !layout.HasGtab(name) {
-					return fmt.Errorf("no gtab workspace at %s — re-run `kit design` or write one manually", layout.GtabFile(name))
+				gl, err := tui.PickGtabLayout(false)
+				if err != nil {
+					return err
+				}
+				if _, err := layout.WriteGtabLayout(name, path, gl); err != nil {
+					return fmt.Errorf("write gtab: %w", err)
 				}
 				if err := layout.LaunchGtab(name); err != nil {
 					return err

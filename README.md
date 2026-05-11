@@ -51,6 +51,24 @@ single commands:
   them down.
 - `feat-a` and `feat-b` run side-by-side. No port conflicts.
 
+## Services — what each one is
+
+Liftoff runs five processes per kit. Mental model:
+
+| Service        | What it is                                                |
+|----------------|-----------------------------------------------------------|
+| app frontend   | The customer-facing app — Vite + React on port 3000+slot*10.       |
+| admin frontend | The internal admin tool — Vite + React on port 3001+slot*10.       |
+| app backend    | The customer API — FastAPI + uvicorn on port 9000+slot*10.         |
+| admin backend  | The admin API — FastAPI + uvicorn on port 9001+slot*10.            |
+| celery worker  | Background job runner (search indexing, enrichment, etc).           |
+| celery beat    | The scheduler that triggers periodic celery jobs.                   |
+| mcp            | Internal MCP server (optional; off by default in `kit play`).       |
+
+"Frontend" = what users click on. "Backend" = the API the frontend
+calls. "Celery" = stuff that runs out of band (no user is waiting on
+it). `kit play` boots all five (minus mcp) in parallel.
+
 ## Requirements
 
 **Required**

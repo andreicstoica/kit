@@ -413,6 +413,27 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 // RunDressTUI is kept as a back-compat alias.
 func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout, "") }
 
+// PickGtabLayout prompts for the Ghostty workspace layout. When
+// includeSkip is true, adds a "Skip" option that returns
+// liftoff.GtabLayout(""). Used by `kit design` (with skip) and
+// `kit swap` after picking Ghostty (without skip).
+func PickGtabLayout(includeSkip bool) (liftoff.GtabLayout, error) {
+	gl := liftoff.GtabSimple
+	opts := []huh.Option[liftoff.GtabLayout]{
+		huh.NewOption("Simple (2 tabs)", liftoff.GtabSimple),
+		huh.NewOption("Detailed (5 tabs)", liftoff.GtabDetailed),
+	}
+	if includeSkip {
+		opts = append(opts, huh.NewOption("Skip — don't open", liftoff.GtabLayout("")))
+	}
+	err := huh.NewSelect[liftoff.GtabLayout]().
+		Title("Ghostty workspace layout").
+		Description("Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.").
+		Options(opts...).
+		Value(&gl).Run()
+	return gl, err
+}
+
 // offerNextSteps asks both follow-up yes/no questions first, then runs
 // the chosen actions in order. Keeps the prompts grouped so the user
 // finishes the questionnaire before anything else opens.
@@ -421,16 +442,8 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
 	fmt.Println()
 
-	gl := liftoff.GtabSimple
-	if err := huh.NewSelect[liftoff.GtabLayout]().
-		Title("Open the Ghostty workspace?").
-		Description("Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.").
-		Options(
-			huh.NewOption("Simple (2 tabs)", liftoff.GtabSimple),
-			huh.NewOption("Detailed (5 tabs)", liftoff.GtabDetailed),
-			huh.NewOption("Skip — don't open", liftoff.GtabLayout("")),
-		).
-		Value(&gl).Run(); err != nil {
+	gl, err := PickGtabLayout(true)
+	if err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return nil
 		}

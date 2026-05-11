@@ -18,19 +18,27 @@ func resolveTarget(layout liftoff.Layout, args []string, pickerPrompt string) (s
 // resolveArgOrCwd is resolveTarget minus the picker — for commands whose
 // own TUI has a built-in picker (avoids two pickers in a row).
 func resolveArgOrCwd(layout liftoff.Layout, args []string) (string, error) {
-	return resolveArgOrCwdOpts(layout, args, false)
+	return resolveArgOrCwdOpts(layout, args, false, false)
 }
 
-// resolveArgOrCwdNonMaster ignores master from cwd. For play/pause/wash
-// where master is never a valid target.
-func resolveArgOrCwdNonMaster(layout liftoff.Layout, args []string) (string, error) {
-	return resolveArgOrCwdOpts(layout, args, true)
+// resolveArgOrCwdSkipMasterCwd ignores master when picked up from cwd
+// (still accepts an explicit `master` arg). Use for play/pause so
+// running from the master dir falls through to the picker, but
+// `kit play master` is honored.
+func resolveArgOrCwdSkipMasterCwd(layout liftoff.Layout, args []string) (string, error) {
+	return resolveArgOrCwdOpts(layout, args, true, false)
 }
 
-func resolveArgOrCwdOpts(layout liftoff.Layout, args []string, skipMaster bool) (string, error) {
+// resolveArgOrCwdNoMaster rejects master from both cwd and arg. For
+// wash where master would mean deleting the main repo.
+func resolveArgOrCwdNoMaster(layout liftoff.Layout, args []string) (string, error) {
+	return resolveArgOrCwdOpts(layout, args, true, true)
+}
+
+func resolveArgOrCwdOpts(layout liftoff.Layout, args []string, skipMasterCwd, rejectMasterArg bool) (string, error) {
 	if len(args) == 1 {
 		if args[0] == "master" {
-			if skipMaster {
+			if rejectMasterArg {
 				return "", fmt.Errorf("master isn't a kit — pick a worktree instead")
 			}
 			return "master", nil
@@ -38,7 +46,7 @@ func resolveArgOrCwdOpts(layout liftoff.Layout, args []string, skipMaster bool) 
 		return liftoff.NormalizeAndValidate(args[0])
 	}
 	if n := worktreeFromCwd(layout); n != "" {
-		if skipMaster && n == "master" {
+		if skipMasterCwd && n == "master" {
 			return "", nil
 		}
 		return n, nil

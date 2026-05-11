@@ -41,7 +41,7 @@ var pauseCmd = &cobra.Command{
 			}
 			return tui.PauseAll(layout)
 		}
-		name, err := resolveArgOrCwdNonMaster(layout, args)
+		name, err := resolveArgOrCwdSkipMasterCwd(layout, args)
 		if err != nil {
 			return err
 		}

@@ -205,16 +205,11 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 }
 
 func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
-	return collectPlayWtItems(layout, dropMaster)
+	return collectPlayWtItems(layout, nil)
 }
 
 // playWtItemFilter, when non-nil, drops items that return false.
 type playWtItemFilter func(playWtItem) bool
-
-// dropMaster keeps everything except the master entry. Used by play and
-// pause pickers since master has no slot/services. Generic worktree
-// pickers (swap, warmup, links, log) keep master and pass `nil`.
-func dropMaster(it playWtItem) bool { return it.name != "master" }
 
 // collectPlayWtItems walks every git worktree, builds the canonical
 // playWtItem with running-service count and state metadata, optionally
@@ -287,12 +282,12 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 			return playSetupErrMsg{err}
 		}
 		meta, ok := st.Worktrees[m.chosen.name]
-		// Master is special: slot 0 is its assigned slot (master defaults), not a
-		// missing allocation. Adopt prompt only fires for unknown feature
-		// worktrees.
-		needsAdopt := !ok
-		if !needsAdopt && m.chosen.name != "master" && meta.Slot == 0 {
-			needsAdopt = true
+		// Master is special: slot 0 is its assigned slot (master defaults),
+		// never needs adoption. Adopt prompt only fires for unknown
+		// feature worktrees.
+		needsAdopt := false
+		if m.chosen.name != "master" {
+			needsAdopt = !ok || meta.Slot == 0
 		}
 		if needsAdopt {
 			// Unadopted — bail to a confirm prompt. The user explicitly approves
