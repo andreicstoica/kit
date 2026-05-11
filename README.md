@@ -231,7 +231,10 @@ paths and marks them; gtab files from the legacy zshrc script are
 auto-detected so `kit warmup` works on old worktrees.
 
 Pass `--tree` to render the same data as a tree rooted at master, with
-running services as child rows under each worktree.
+running services as child rows under each worktree. When `gt`
+(Graphite) is installed, the tree reflects the graphite stack: each
+worktree appears under its parent branch. Untracked worktrees and
+branches whose parent is master land directly under the root.
 
 ### `kit play [name]` — run servers
 
@@ -309,7 +312,7 @@ grow unbounded on disk.
 - Optional shell hook so `cd` into a worktree updates `last_used`
 - Web/CLI port-conflict introspection — show what's listening on each
   expected slot port
-- Graphite stack column on `kit lineup` (parent branch + restack flag)
+- Restack-needed flag on `kit lineup --tree` (currently only shows the parent relationship)
 
 ## Development
 

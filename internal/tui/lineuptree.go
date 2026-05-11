@@ -4,17 +4,41 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/tree"
 )
 
-// RenderLineupTree prints the same lineup data as RenderLineup but laid
-// out as a tree rooted at master, with each worktree as a child and
-// (when running) services as grandchildren.
+// wtNode is one worktree row in the tree. Children are populated from the
+// graphite parent relationships when `gt` is available.
+type wtNode struct {
+	name     string
+	slot     int
+	running  int
+	total    int
+	dirty    bool
+	ahead    int
+	behind   int
+	legacy   bool
+	emoji    string
+	sortKey  int64
+	services []serviceRow
+	branch   string
+	gtParent string // graphite-tracked parent branch name, "" if untracked
+	children []*wtNode
+}
+
+// RenderLineupTree prints worktrees as a tree.
 //
-// Toggled via `kit lineup --tree`.
+// When `gt` is installed, the tree reflects the graphite stack hierarchy:
+// each worktree shows up under its parent branch. Untracked worktrees and
+// branches whose parent is master (or the configured main branch) land
+// directly under the master root.
+//
+// When `gt` isn't installed, every worktree is a direct child of master
+// (flat tree). Toggled via `kit lineup --tree`.
 func RenderLineupTree(layout liftoff.Layout) (string, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
@@ -25,63 +49,109 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		state = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
 
-	type wt struct {
-		name     string
-		slot     int
-		running  int
-		total    int
-		branch   string
-		dirty    bool
-		ahead    int
-		behind   int
-		legacy   bool
-		emoji    string
-		sortKey  int64
-		services []serviceRow
+	type wtIn struct {
+		w liftoff.Worktree
 	}
-	var rows []wt
+	var inputs []wtIn
 	for _, w := range wts {
 		if w.IsMaster(layout) || w.Bare {
 			continue
 		}
-		name := w.Name()
-		meta := state.Worktrees[name]
-		ports := liftoff.PortsForSlot(meta.Slot)
-		running := 0
-		var svcRows []serviceRow
-		for _, svc := range liftoff.DefaultServices {
-			s := liftoff.StatusOf(name, svc, ports)
-			svcRows = append(svcRows, serviceRow{name: string(svc), alive: s.Alive})
-			if s.Alive {
-				running++
-			}
-		}
-
-		ahead, behind := layout.AheadBehind(w.Path)
-		row := wt{
-			name:    name,
-			slot:    meta.Slot,
-			running: running,
-			total:   len(liftoff.DefaultServices),
-			branch:  w.Branch,
-			dirty:   liftoff.IsDirty(w.Path),
-			ahead:   ahead,
-			behind:  behind,
-			legacy:  w.HasLegacyPrefix(),
-			emoji:   liftoff.EmojiFor(name),
-		}
-		if !meta.LastUsed.IsZero() {
-			row.sortKey = meta.LastUsed.Unix()
-		}
-		if running > 0 {
-			row.services = svcRows
-		}
-		rows = append(rows, row)
+		inputs = append(inputs, wtIn{w})
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].sortKey > rows[j].sortKey })
-
-	if len(rows) == 0 {
+	if len(inputs) == 0 {
 		return StyleDim.Render("no kits available. start one with `kit design`.") + "\n", nil
+	}
+
+	// Build a node per worktree, populating service status + git stats. Run
+	// graphite parent queries in parallel (each is a small subprocess).
+	nodes := make([]*wtNode, len(inputs))
+	parents := make([]string, len(inputs))
+	hasGt := liftoff.HasGraphite()
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, in := range inputs {
+		i, in := i, in
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			name := in.w.Name()
+			meta := state.Worktrees[name]
+			ports := liftoff.PortsForSlot(meta.Slot)
+			running := 0
+			var svcRows []serviceRow
+			for _, svc := range liftoff.DefaultServices {
+				s := liftoff.StatusOf(name, svc, ports)
+				svcRows = append(svcRows, serviceRow{name: string(svc), alive: s.Alive})
+				if s.Alive {
+					running++
+				}
+			}
+			ahead, behind := layout.AheadBehind(in.w.Path)
+			n := &wtNode{
+				name:    name,
+				slot:    meta.Slot,
+				running: running,
+				total:   len(liftoff.DefaultServices),
+				dirty:   liftoff.IsDirty(in.w.Path),
+				ahead:   ahead,
+				behind:  behind,
+				legacy:  in.w.HasLegacyPrefix(),
+				emoji:   liftoff.EmojiFor(name),
+				branch:  in.w.Branch,
+			}
+			if !meta.LastUsed.IsZero() {
+				n.sortKey = meta.LastUsed.Unix()
+			}
+			if running > 0 {
+				n.services = svcRows
+			}
+			if hasGt {
+				n.gtParent = layout.GtParentOf(in.w.Path)
+			}
+			nodes[i] = n
+			parents[i] = n.gtParent
+		}()
+	}
+	wg.Wait()
+
+	// Index by branch name so children can find their parent worktrees.
+	byBranch := map[string]*wtNode{}
+	for _, n := range nodes {
+		byBranch[n.branch] = n
+	}
+
+	mainBranch := layout.MainBranch
+	if mainBranch == "" {
+		mainBranch = "master"
+	}
+
+	var roots []*wtNode
+	for _, n := range nodes {
+		// Anything whose parent is master (or empty / not a tracked branch we know
+		// about) goes to the top-level "under master" group.
+		if n.gtParent == "" || n.gtParent == mainBranch || n.gtParent == "main" {
+			roots = append(roots, n)
+			continue
+		}
+		parent, ok := byBranch[n.gtParent]
+		if !ok {
+			// Parent branch isn't one of our worktrees — surface under master and
+			// note the dangling parent in the label.
+			roots = append(roots, n)
+			continue
+		}
+		parent.children = append(parent.children, n)
+	}
+
+	sortNodes := func(s []*wtNode) {
+		sort.Slice(s, func(i, j int) bool { return s[i].sortKey > s[j].sortKey })
+	}
+	sortNodes(roots)
+	for _, n := range nodes {
+		sortNodes(n.children)
 	}
 
 	rootLabel := StyleHi.Render("🏠 master") + " " + StyleDim.Render(layout.Master)
@@ -90,15 +160,20 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		RootStyle(lipgloss.NewStyle()).
 		ItemStyle(lipgloss.NewStyle())
 
-	for _, r := range rows {
-		label := wtTreeLabel(r.emoji, r.name, r.slot, r.running, r.total, r.branch, r.dirty, r.ahead, r.behind, r.legacy)
+	var attach func(parent *tree.Tree, n *wtNode)
+	attach = func(parent *tree.Tree, n *wtNode) {
+		label := wtTreeLabel(n)
 		child := tree.Root(label)
-		if len(r.services) > 0 {
-			for _, s := range r.services {
-				child.Child(svcLabel(s))
-			}
+		for _, s := range n.services {
+			child.Child(svcLabel(s))
 		}
-		t.Child(child)
+		for _, gc := range n.children {
+			attach(child, gc)
+		}
+		parent.Child(child)
+	}
+	for _, r := range roots {
+		attach(t, r)
 	}
 
 	var b strings.Builder
@@ -114,32 +189,30 @@ type serviceRow struct {
 	alive bool
 }
 
-func wtTreeLabel(emoji, name string, slot, running, total int, branch string, dirty bool, ahead, behind int, legacy bool) string {
-	header := name
-	if emoji != "" {
-		header = emoji + " " + name
+func wtTreeLabel(n *wtNode) string {
+	header := n.name
+	if n.emoji != "" {
+		header = n.emoji + " " + n.name
 	}
 	parts := []string{lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(header)}
 
 	status := "clean"
-	if dirty {
+	if n.dirty {
 		status = "dirty"
 	}
-	if ahead > 0 || behind > 0 {
-		status = fmt.Sprintf("%s ↑%d↓%d", status, ahead, behind)
+	if n.ahead > 0 || n.behind > 0 {
+		status = fmt.Sprintf("%s ↑%d↓%d", status, n.ahead, n.behind)
 	}
-	if dirty {
+	if n.dirty {
 		parts = append(parts, StyleWarn.Render(status))
 	} else {
 		parts = append(parts, StyleOK.Render(status))
 	}
 
-	if slot > 0 {
-		parts = append(parts, StyleDim.Render(fmt.Sprintf("slot %d", slot)))
+	if n.slot > 0 {
+		parts = append(parts, StyleDim.Render(fmt.Sprintf("slot %d", n.slot)))
 	}
-	_ = total  // running is shown as child service rows instead of a count
-	_ = branch // tree view drops branch — `kit lineup` (table) shows it when needed
-	if legacy {
+	if n.legacy {
 		parts = append(parts, StyleDim.Render("(legacy)"))
 	}
 	return strings.Join(parts, "  ")
