@@ -6,20 +6,24 @@ import (
 	"strings"
 )
 
-// FetchMain runs `git fetch origin <main>:<main>` from the master repo.
-// Updates the local main branch ref to match origin so the worktree branches off latest.
+// FetchMain runs `git fetch origin` from the master repo. Avoids the
+// refspec form (`<main>:<main>`), which fails with exit 128 when the
+// local main branch is checked out anywhere (master worktree on a
+// feature branch, etc.). We branch off `origin/<main>` below, so the
+// local ref doesn't need to be touched.
 func (l Layout) FetchMain(onLine LineFn) error {
-	args := []string{"-C", l.Master, "fetch", "origin", l.MainBranch + ":" + l.MainBranch}
+	args := []string{"-C", l.Master, "fetch", "origin", l.MainBranch}
 	return RunStream("", "git", args, onLine)
 }
 
-// AddWorktree creates a new worktree at path with a new branch off main.
-// Errors if the path already exists or branch already exists.
+// AddWorktree creates a new worktree at path with a new branch off
+// origin/<main> (so it picks up the latest upstream commit even when
+// the local main ref hasn't been fast-forwarded).
 func (l Layout) AddWorktree(name, path string, onLine LineFn) error {
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("worktree path already exists: %s", path)
 	}
-	args := []string{"-C", l.Master, "worktree", "add", path, "-b", name, l.MainBranch}
+	args := []string{"-C", l.Master, "worktree", "add", path, "-b", name, "origin/" + l.MainBranch}
 	return RunStream("", "git", args, onLine)
 }
 

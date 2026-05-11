@@ -71,8 +71,10 @@ type Orb struct {
 }
 
 // NewOrb returns the penalty animation sized for the side panel.
+// Width is generous so the GOAL!/SAVE! flash beside row h/2 fits
+// without clipping against the rounded border.
 func NewOrb() Orb {
-	w, h := 30, 14
+	w, h := 38, 16
 	grid := make([][]rune, h)
 	style := make([][]int, h)
 	for i := range grid {
