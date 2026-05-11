@@ -145,3 +145,86 @@ func SweepStalePID(worktree, service string) {
 		_ = RemovePID(worktree, service)
 	}
 }
+
+// SweepOldRunDirs removes ~/.config/kit/run/<name>/ subdirs whose most-recent
+// file mtime is older than maxAge AND which have no live PID. Safe to call
+// passively — returns the count of dirs removed and a list of errors that
+// occurred (so the caller can log but not fail). 0/nil on a clean sweep.
+func SweepOldRunDirs(maxAge time.Duration) (int, []error) {
+	base := RunDirPath("")
+	base = filepath.Clean(base) // strip trailing "/"
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return 0, nil
+	}
+	cutoff := time.Now().Add(-maxAge)
+	var errs []error
+	removed := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		dir := filepath.Join(base, name)
+
+		// Don't sweep dirs that still own live PID files.
+		if hasLivePID(dir) {
+			continue
+		}
+
+		newest, ok := newestFileMtime(dir)
+		if !ok || newest.After(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s: %w", dir, err))
+			continue
+		}
+		removed++
+	}
+	return removed, errs
+}
+
+func newestFileMtime(dir string) (time.Time, bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return time.Time{}, false
+	}
+	var newest time.Time
+	any := false
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		any = true
+		if info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+	}
+	return newest, any
+}
+
+func hasLivePID(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".pid") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil {
+			continue
+		}
+		if IsAlive(pid) {
+			return true
+		}
+	}
+	return false
+}
