@@ -287,7 +287,7 @@ func PickWorktree(layout liftoff.Layout, prompt string) (string, error) {
 		running, _ := liftoff.RunningCount(name, ports)
 		emoji := liftoff.EmojiFor(name)
 		if name == "master" {
-			emoji = "🏠"
+			emoji = "🚀"
 		}
 		rows = append(rows, entry{item: playWtItem{
 			name:     name,
@@ -302,12 +302,10 @@ func PickWorktree(layout liftoff.Layout, prompt string) (string, error) {
 		return "", errors.New("no worktrees found — run `kit design` first")
 	}
 	sort.Slice(rows, func(i, j int) bool {
-		// Master always first (it's the natural home).
-		if rows[i].item.name == "master" {
-			return true
-		}
-		if rows[j].item.name == "master" {
-			return false
+		// Mirror lineup: ascending by slot (master is slot 0, always first).
+		si, sj := rows[i].item.slot, rows[j].item.slot
+		if si != sj {
+			return si < sj
 		}
 		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
 	})

@@ -225,7 +225,7 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 		emoji := liftoff.EmojiFor(name)
 		if w.IsMaster(layout) {
 			name = "master"
-			emoji = "🏠"
+			emoji = "🚀"
 		}
 		meta := st.Worktrees[name]
 		running := 0
@@ -246,6 +246,12 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 		}})
 	}
 	sort.Slice(rows, func(i, j int) bool {
+		// Mirror `kit lineup`: master (slot 0) first, then ascending by slot.
+		// Falls back to lastUsed when both slots are 0 (unadopted).
+		si, sj := rows[i].item.slot, rows[j].item.slot
+		if si != sj {
+			return si < sj
+		}
 		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
 	})
 	out := make([]list.Item, 0, len(rows))

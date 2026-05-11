@@ -167,6 +167,11 @@ func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
 		}})
 	}
 	sort.Slice(rows, func(i, j int) bool {
+		// Match lineup order: master first, ascending by slot.
+		si, sj := rows[i].item.slot, rows[j].item.slot
+		if si != sj {
+			return si < sj
+		}
 		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
 	})
 	out := make([]list.Item, 0, len(rows))
