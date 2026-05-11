@@ -1,7 +1,19 @@
 package main
 
-import "github.com/andreicstoica/kit/cmd"
+import (
+	"context"
+	"os"
+
+	"github.com/andreicstoica/kit/cmd"
+	"github.com/charmbracelet/fang"
+)
 
 func main() {
-	cmd.Execute()
+	if err := fang.Execute(
+		context.Background(),
+		cmd.Root(),
+		fang.WithVersion(cmd.Version()),
+	); err != nil {
+		os.Exit(1)
+	}
 }

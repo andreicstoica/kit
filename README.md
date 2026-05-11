@@ -6,19 +6,27 @@ matters for the Liftoff dev loop: clean naming, automatic env/db/dep wiring,
 graphite tracking, ghostty workspace generation, **automatic per-worktree
 port allocation**, and **one-command service spin-up/down**.
 
+![kit lineup demo](vhs/lineup.gif)
+
 ```
-kit dress voice-agent     # walks you through creating a worktree
-kit lineup                # show all kits on the field
+kit setup                 # one-time: install missing tools, clone master
+kit doctor                # check your setup is ready
+kit design voice-agent    # walks you through creating a worktree
+kit lineup                # show all kits available
+kit lineup --tree         # same data, hierarchical tree view
+kit links                 # print the current worktree's URLs (live status)
 kit play voice-agent      # start the kit's services (frontend + backend + celery)
 kit pause voice-agent     # stop them
 kit log voice-agent       # tail all service logs
 kit wash                  # picker → strip and clean up a kit
 kit prune                 # bulk-wash worktrees whose PR is merged/closed
-kit warmup voice-agent    # launch the ghostty workspace
-kit swap voice-agent      # open the worktree in your IDE
+kit warmup                # launch the ghostty workspace (cwd or picker)
+kit swap                  # open the current worktree in IDE or Ghostty
 ```
 
-Classic aliases work: `new`, `ls`, `rm`, `gtab`, `open`.
+Classic aliases work: `new`, `ls`, `rm`, `gtab`, `open`. Plus `physio` for `doctor`, `ports`/`urls` for `links`.
+
+Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`, `wash`, `links`) all support the same shape: pass a name, omit it to auto-pick the worktree you're `cd`'d into, or get a numbered picker (1-9 quick-select) when cwd is unrelated.
 
 ## Why
 
@@ -28,7 +36,7 @@ DB belonged to which feature. `kit` makes parallel feature work
 single-command:
 
 - Each worktree gets a unique **port slot** (e.g. slot 1 → app:3010,
-  admin:3011, api:9010, admin_be:9011) automatically at `dress` time
+  admin:3011, api:9010, admin_be:9011) automatically at `kit design` time
 - `kit play <name>` starts all dev servers on those ports, with frontend
   env vars wired to point at the matching backend
 - `kit pause <name>` cleans up
@@ -52,7 +60,7 @@ single-command:
 
 | Tool | Unlocks |
 |------|---------|
-| Ghostty | `kit warmup` launches a 4-tab workspace per worktree |
+| Ghostty | `kit warmup` launches a 4-tab workspace that auto-tails service logs |
 | `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
 | `gt` (graphite) | "Track in graphite" toggle |
 | `gh` (GitHub CLI) | `kit tear` checks PR state to flag merged/closed branches |
@@ -78,9 +86,27 @@ Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`.
 
 Run `kit completion --help` to wire shell tab-completion (zsh / bash / fish / powershell).
 
+## First-time setup
+
+![kit setup demo](vhs/setup.gif)
+
+```sh
+kit setup
+```
+
+`kit setup` walks through the tools kit depends on (Homebrew, git, gh, node,
+yarn, python, redis, postgres, Ghostty, an editor), offers to install
+missing ones via Homebrew, prompts for `gh auth login` if you're not
+authenticated, and clones the Liftoff master repo with `yarn install`
+already done so frontend node_modules symlinks work.
+
+It's interactive — nothing is changed without confirmation — and idempotent.
+Run it any time you suspect something's off. For a read-only report (no
+prompts), use `kit doctor`.
+
 ## What `kit design` does
 
-`kit dress` walks an interactive wizard, then runs (in order):
+`kit design` walks an interactive wizard, then runs (in order):
 
 1. `git fetch origin master:master` in the master repo
 2. `git worktree add ~/liftoff/<name> -b <name> master`
@@ -92,8 +118,8 @@ Run `kit completion --help` to wire shell tab-completion (zsh / bash / fish / po
 8. (optional) writes `~/.config/gtab/<name>.applescript` for ghostty
 9. **Allocates a port slot**, recorded in `~/.config/kit/state.toml`
 
-A leading `liftoff-` in your input is stripped automatically. So `kit dress
-liftoff-voice-agent` and `kit dress voice-agent` are equivalent.
+A leading `liftoff-` in your input is stripped automatically. So `kit design
+liftoff-voice-agent` and `kit design voice-agent` are equivalent.
 
 ## Run services with `kit play` / `kit pause`
 
@@ -141,7 +167,7 @@ Each worktree's slot determines its 5-port band:
 | MCP server       | `9002 + slot*10`  |
 
 Slot 0 is reserved for master defaults (3000/3001/9000/9001/9002). `kit
-dress` picks the lowest free slot ≥ 1; if any port in that band is
+design` picks the lowest free slot ≥ 1; if any port in that band is
 occupied by something outside `kit`, it bumps to the next slot. State lives
 in `~/.config/kit/state.toml`.
 
@@ -190,19 +216,25 @@ Override via env vars:
 
 ## Subcommands
 
-### `kit dress` (alias `new`) — put on a fresh kit
+### `kit design` (alias `new`) — put on a fresh kit
 
 Interactive wizard. Always prompts: name → DB clone? → backend deps? →
 symlink node_modules? → graphite track? → gtab? → review → run with live
 progress. Allocates a port slot at the end.
 
-### `kit lineup` (alias `ls`) — kits on the field
+### `kit lineup` (alias `ls`) — kits available
 
-Static table: `NAME · SLOT · BRANCH · STATUS · RUNNING · LAST USED`.
-Branch emoji prefix. Sorted by last-used desc. RUNNING shows `N/6` when at
-least one default service is alive, `—` otherwise. Detects legacy
-`liftoff-<name>` paths and marks them; gtab files from the legacy zshrc
-script are auto-detected so `kit warmup` works on old worktrees.
+Static table: `NAME · SLOT · RUNNING · BRANCH · STATUS`. Branch emoji
+prefix. Sorted by last-used desc. RUNNING shows `N/6` when at least one
+default service is alive, `—` otherwise. Detects legacy `liftoff-<name>`
+paths and marks them; gtab files from the legacy zshrc script are
+auto-detected so `kit warmup` works on old worktrees.
+
+Pass `--tree` to render the same data as a tree rooted at master, with
+running services as child rows under each worktree. When `gt`
+(Graphite) is installed, the tree reflects the graphite stack: each
+worktree appears under its parent branch. Untracked worktrees and
+branches whose parent is master land directly under the root.
 
 ### `kit play [name]` — run servers
 
@@ -229,15 +261,50 @@ services and frees the port slot.
 Scans for worktrees whose branch is merged into master or whose PR is
 MERGED/CLOSED (via `gh`). Multi-select picker → confirm → washes each.
 
-### `kit warmup <name>` (alias `gtab`) — launch ghostty
+### `kit warmup [name]` (alias `gtab`) — launch ghostty
 
-Runs `gtab <name>` if installed, otherwise falls back to `osascript`. Tab
-title now includes the branch emoji.
+Opens the worktree's Ghostty workspace: 4 tabs (root, frontend, backend,
+celery) with the per-pane terminals already `tail -F`ing the matching
+service log. `Ctrl-C` in a tab drops to a normal shell prompt.
 
-### `kit swap <name>` (alias `open`) — open in IDE
+With no arg, uses the worktree you're in; otherwise opens a numbered picker.
 
-Opens the worktree in the first available editor. Bumps `last_used` so the
-kit floats to the top of `lineup`.
+### `kit swap [name]` (alias `open`) — open in IDE or Ghostty
+
+Picker over installed editors (Zed, Cursor, VS Code) plus Ghostty as an
+extra target — pick Ghostty to launch the warmup workspace instead of an
+IDE. With no name, uses cwd or opens the kit picker. `-e zed` /
+`--editor=zed` skips the editor picker.
+
+### `kit links` (aliases `ports`, `urls`) — print worktree URLs
+
+Resolves the current worktree (from cwd) and prints its slot's URLs with
+a live/stopped indicator per service. Useful for pasting into Slack or
+Linear without recomputing `3000 + slot*10`.
+
+### `kit doctor` (alias `physio`) — diagnose your setup
+
+![kit doctor demo](vhs/doctor.gif)
+
+Read-only check of every tool kit depends on. Prints a colored report
+with a fix hint for each warning/failure. Exits non-zero on any failure
+(so CI can gate on it).
+
+### `kit setup` — install missing tools
+
+Interactive bootstrap. Same checks as `kit doctor`, but prompts to apply
+each fix: `brew install`, `gh auth login`, clone the Liftoff master repo,
+`yarn install`. Idempotent; re-run any time.
+
+Pass `--dry-run` (or `-n`) to walk the flow and see what setup would do
+without changing anything.
+
+## Log retention
+
+`~/.config/kit/run/<name>/` holds per-service PID + log files. `kit play`
+passively sweeps subdirectories whose most-recent file is older than
+30 days and which no longer own a live PID, so kit-managed logs don't
+grow unbounded on disk.
 
 ## Roadmap
 
@@ -245,6 +312,7 @@ kit floats to the top of `lineup`.
 - Optional shell hook so `cd` into a worktree updates `last_used`
 - Web/CLI port-conflict introspection — show what's listening on each
   expected slot port
+- Restack-needed flag on `kit lineup --tree` (currently only shows the parent relationship)
 
 ## Development
 
@@ -253,7 +321,11 @@ make test            # go test ./...
 make vet             # go vet ./...
 make fmt             # go fmt ./...
 make run ARGS="lineup"
+make demo            # record GIFs from vhs/*.tape (needs `brew install vhs`)
 ```
+
+Recorded demos live in `vhs/`. Re-run `make demo` after a UI change so
+the GIFs in this README stay current.
 
 ## License
 

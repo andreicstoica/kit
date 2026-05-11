@@ -26,6 +26,8 @@ var (
 	// Service-specific accents for log tags.
 	ColorAPI    = lipgloss.AdaptiveColor{Light: "#0060c0", Dark: "#89DCEB"}
 	ColorAdminBE = lipgloss.AdaptiveColor{Light: "#8b4fc6", Dark: "#cba6f7"}
+	// Liftoff brand purple — deep on light bg, pastel on dark bg.
+	ColorLiftoff = lipgloss.AdaptiveColor{Light: "#5B27C7", Dark: "#F6D9FA"}
 
 	// Internal aliases (lowercase) for legacy package-internal references.
 	colorAccent  = ColorAccent
@@ -43,7 +45,8 @@ var (
 	StyleErr   = lipgloss.NewStyle().Foreground(ColorErr)
 	StyleWarn  = lipgloss.NewStyle().Foreground(ColorWarn)
 	StyleDim   = lipgloss.NewStyle().Foreground(ColorDim)
-	StyleHi    = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	StyleHi      = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	StyleLiftoff = lipgloss.NewStyle().Foreground(ColorLiftoff).Bold(true)
 )
 
 // Glyph returns a unicode marker for a step status.

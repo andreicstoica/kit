@@ -36,34 +36,12 @@ var swapCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 
-		// Resolve worktree name.
-		var name string
-		if len(args) == 1 {
-			// Special-case master so users can `kit swap master -e zed`.
-			if args[0] == "master" {
-				name = "master"
-			} else {
-				n, err := liftoff.NormalizeAndValidate(args[0])
-				if err != nil {
-					return err
-				}
-				name = n
-			}
-		} else {
-			// No name arg: prefer cwd. If pwd is inside a worktree (or the
-			// master repo itself), skip the picker and go straight to editor.
-			if n := worktreeFromCwd(layout); n != "" {
-				name = n
-			} else {
-				n, err := tui.PickWorktree(layout, "kit swap — pick a kit")
-				if err != nil {
-					return err
-				}
-				if n == "" {
-					return nil
-				}
-				name = n
-			}
+		name, err := resolveTarget(layout, args, "kit swap — pick a kit", false)
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			return nil
 		}
 
 		// Resolve editor.
@@ -102,8 +80,20 @@ var swapCmd = &cobra.Command{
 			}
 		}
 
-		if err := launchEditor(*chosen, path); err != nil {
-			return err
+		if chosen.Binary == warmupBinarySentinel {
+			if name == "master" {
+				return fmt.Errorf("no gtab workspace for master — warmup is per-feature")
+			}
+			if !layout.HasGtab(name) {
+				return fmt.Errorf("no gtab workspace at %s — re-run `kit design` or write one manually", layout.GtabFile(name))
+			}
+			if err := layout.LaunchGtab(name); err != nil {
+				return err
+			}
+		} else {
+			if err := launchEditor(*chosen, path); err != nil {
+				return err
+			}
 		}
 		// Skip state touch for master — it has no entry in state.toml.
 		if name != "master" {
@@ -163,6 +153,9 @@ func editorDefs() []tui.EditorCandidate {
 // Known editors prioritize the .app bundle to avoid squatted PATH binaries
 // (e.g. `code` is often Cursor's shim, not VS Code). $KIT_EDITOR is promoted
 // to the front and resolved via PATH only.
+//
+// Always appends a "Ghostty (gtab workspace)" candidate when Ghostty.app
+// is present, so swap's picker can also launch the warmup flow.
 func installedEditors() []tui.EditorCandidate {
 	defs := editorDefs()
 	if v := os.Getenv("KIT_EDITOR"); v != "" {
@@ -189,8 +182,21 @@ func installedEditors() []tui.EditorCandidate {
 			out = append(out, c)
 		}
 	}
+	if appBundleExists("Ghostty.app") {
+		out = append(out, tui.EditorCandidate{
+			Name:      "Ghostty",
+			Binary:    warmupBinarySentinel,
+			App:       "Ghostty.app",
+			Desc:      "launch the 4-tab dev workspace",
+			Installed: true,
+		})
+	}
 	return out
 }
+
+// warmupBinarySentinel marks the synthetic Ghostty-warmup candidate so swap's
+// RunE can route to LaunchGtab instead of launchEditor.
+const warmupBinarySentinel = "__warmup__"
 
 // resolveEditor returns a candidate for an explicit user-supplied editor name.
 // Tries PATH first, then matching .app bundle alias.

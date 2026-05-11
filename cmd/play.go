@@ -5,11 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
+
+// logRetention is how long stale run dirs are kept before passive cleanup.
+const logRetention = 30 * 24 * time.Hour
 
 var (
 	playOnly      []string
@@ -30,6 +34,10 @@ If no <name> is given, you'll get a Bubble Tea picker. Use --only to skip
 the service-selection screen.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Passive log cleanup: drop run dirs whose newest file is >30 days old
+		// and which don't own a live PID. Cheap, fire-and-forget.
+		_, _ = liftoff.SweepOldRunDirs(logRetention)
+
 		layout := liftoff.DefaultLayout()
 		name := ""
 		if len(args) == 1 {
