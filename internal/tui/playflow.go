@@ -29,18 +29,22 @@ const (
 )
 
 type playWtItem struct {
-	name     string
-	path     string
-	emoji    string
-	slot     int
-	lastUsed time.Time
-	running  int
+	name       string
+	path       string
+	emoji      string
+	slot       int
+	lastUsed   time.Time
+	running    int
+	displayIdx int // 1-based for numeric quick-pick; 0 = no prefix
 }
 
 func (i playWtItem) Title() string {
 	t := i.name
 	if i.emoji != "" {
 		t = i.emoji + " " + t
+	}
+	if i.displayIdx > 0 && i.displayIdx < 10 {
+		t = StyleHi.Render(fmt.Sprintf("%d ", i.displayIdx)) + t
 	}
 	if i.slot > 0 {
 		t += StyleDim.Render(fmt.Sprintf("  slot %d", i.slot))
