@@ -160,7 +160,7 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		sortNodes(n.children)
 	}
 
-	rootLabel := StyleHi.Render("🏠 master") + " " + StyleDim.Render(layout.Master)
+	rootLabel := StyleDim.Render("🏠 master  " + layout.Master)
 	t := tree.Root(rootLabel).
 		EnumeratorStyle(lipgloss.NewStyle().Foreground(colorDim)).
 		RootStyle(lipgloss.NewStyle()).
@@ -291,9 +291,9 @@ func stackChildLabels(stack []liftoff.StackEntry) []string {
 		}
 		var line string
 		if e.Current {
-			line = StyleHi.Render(glyph+" "+e.Branch) + StyleHi.Render("  ← here")
+			line = StyleHi.Render(glyph + " " + e.Branch)
 		} else {
-			line = StyleDim.Render(glyph) + " " + lipgloss.NewStyle().Foreground(colorMuted).Render(e.Branch)
+			line = StyleDim.Render(glyph + " " + e.Branch)
 		}
 		if e.Hint != "" {
 			styled := StyleDim.Render(" " + e.Hint)
