@@ -611,6 +611,7 @@ func (m *playModel) viewToggle() string {
 		b.WriteString(StyleDim.Render("slot will be allocated when you press Enter\n"))
 	}
 	b.WriteString("\n")
+	ports := liftoff.PortsForSlot(m.chosen.slot)
 	for i, svc := range m.toggleSvcs {
 		cursor := "  "
 		if i == m.toggleCursor {
@@ -624,7 +625,13 @@ func (m *playModel) viewToggle() string {
 		if svc == liftoff.SvcMCP {
 			label += StyleDim.Render(" (opt-in)")
 		}
-		b.WriteString(cursor + box + " " + label + "\n")
+		// Show whether the service is currently running so the user can tell
+		// "kit will (re)start these" apart from "these are already alive".
+		state := StyleDim.Render("○ stopped")
+		if liftoff.IsServiceAlive(m.chosen.name, svc, ports) {
+			state = StyleOK.Render("● running")
+		}
+		b.WriteString(cursor + box + " " + padRight(label, 12) + "  " + state + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("space/tab: toggle · enter: continue · backspace: back · esc: abort"))
 	return b.String()
