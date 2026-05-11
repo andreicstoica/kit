@@ -421,16 +421,16 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
 	fmt.Println()
 
-	gtabChoice := "simple"
-	if err := huh.NewSelect[string]().
+	gl := liftoff.GtabSimple
+	if err := huh.NewSelect[liftoff.GtabLayout]().
 		Title("Open the Ghostty workspace?").
 		Description("Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.").
 		Options(
-			huh.NewOption("Simple (2 tabs)", "simple"),
-			huh.NewOption("Detailed (5 tabs)", "detailed"),
-			huh.NewOption("Skip — don't open", "skip"),
+			huh.NewOption("Simple (2 tabs)", liftoff.GtabSimple),
+			huh.NewOption("Detailed (5 tabs)", liftoff.GtabDetailed),
+			huh.NewOption("Skip — don't open", liftoff.GtabLayout("")),
 		).
-		Value(&gtabChoice).Run(); err != nil {
+		Value(&gl).Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return nil
 		}
@@ -450,11 +450,7 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		return err
 	}
 
-	if gtabChoice != "skip" {
-		gl := liftoff.GtabSimple
-		if gtabChoice == "detailed" {
-			gl = liftoff.GtabDetailed
-		}
+	if gl != "" {
 		if _, err := layout.WriteGtabLayout(name, layout.WorktreePath(name), gl); err != nil {
 			fmt.Println(StyleErr.Render("gtab write failed: " + err.Error()))
 		}

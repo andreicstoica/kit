@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/charmbracelet/bubbles/help"
@@ -388,30 +387,27 @@ func (m *washModel) viewConfirm() string {
 		b.WriteString(StyleWarn.Render("⚠ uncommitted changes will be lost") + "\n")
 	}
 	b.WriteString("\n")
-	type check struct {
-		label string
-		on    bool
-	}
-	var checks []check
-	if m.selected.hasDB {
-		checks = append(checks, check{"drop database " + liftoff.DBName(m.selected.name), m.dropDB})
-	}
-	if m.selected.hasGtab {
-		checks = append(checks, check{"remove gtab workspace " + m.selected.name + ".applescript", m.removeGtab})
-	}
-	if len(checks) == 0 {
+	toggles := m.visibleToggles()
+	if len(toggles) == 0 {
 		b.WriteString(StyleDim.Render("nothing extra to clean up beyond worktree + branch") + "\n")
 	}
-	for i, c := range checks {
+	for i, id := range toggles {
 		cursor := "  "
 		if m.confirmCursor == i {
 			cursor = "> "
 		}
 		box := "[ ]"
-		if c.on {
+		if (id == "db" && m.dropDB) || (id == "gtab" && m.removeGtab) {
 			box = StyleOK.Render("[x]")
 		}
-		b.WriteString(cursor + box + " " + c.label + "\n")
+		label := ""
+		switch id {
+		case "db":
+			label = "drop database " + liftoff.DBName(m.selected.name)
+		case "gtab":
+			label = "remove gtab workspace " + m.selected.name + ".applescript"
+		}
+		b.WriteString(cursor + box + " " + label + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("space: toggle · enter: confirm · backspace: back · esc: abort"))
 	return b.String()
@@ -473,6 +469,5 @@ func RunWashTUIFor(layout liftoff.Layout, preselected string) error {
 	if wm, ok := final.(*washModel); ok && wm.failed {
 		return errors.New("kit wash reported a failure")
 	}
-	_ = time.Second
 	return nil
 }

@@ -211,13 +211,10 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 // playWtItemFilter, when non-nil, drops items that return false.
 type playWtItemFilter func(playWtItem) bool
 
-// collectPlayWtItems walks every git worktree, builds the canonical
-// playWtItem (with master folded in + 🚀 emoji, running service count,
-// state metadata), optionally filters, sorts by lineup order, assigns
-// numeric displayIdx, and returns a []list.Item ready for bubble list.
-//
-// Shared by play / pause / generic worktree pickers so the sort key
-// and master handling don't drift across surfaces.
+// collectPlayWtItems walks every git worktree (skipping bare + master),
+// builds the canonical playWtItem with running-service count and state
+// metadata, optionally filters, sorts by lineup order, assigns numeric
+// displayIdx, and returns a []list.Item ready for bubble list.
 func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.Item, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {

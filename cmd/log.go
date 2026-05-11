@@ -75,10 +75,7 @@ func ensureRunDir(name string) error {
 	if _, err := liftoff.RunDir(name); err != nil {
 		return fmt.Errorf("create run dir: %w", err)
 	}
-	for _, svc := range []liftoff.Service{
-		liftoff.SvcApp, liftoff.SvcAdmin, liftoff.SvcAPI,
-		liftoff.SvcAdminBE, liftoff.SvcCelery,
-	} {
+	for _, svc := range liftoff.DisplayServices {
 		path, _ := liftoff.LogFile(name, string(svc))
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
