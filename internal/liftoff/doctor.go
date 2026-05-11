@@ -414,11 +414,10 @@ func checkKitConfig() CheckResult {
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, ".config", "kit")
 	if _, err := os.Stat(dir); err != nil {
-		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
-			r.Status = CheckFail
-			r.Detail = "cannot create " + dir + ": " + mkErr.Error()
-			return r
-		}
+		r.Status = CheckWarn
+		r.Detail = "missing: " + dir
+		r.FixHint = "run `kit setup` (creates it)"
+		return r
 	}
 	r.Status = CheckOK
 	r.Detail = dir

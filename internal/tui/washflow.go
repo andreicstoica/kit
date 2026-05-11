@@ -87,17 +87,25 @@ type washModel struct {
 }
 
 func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
+	return NewWashModelFor(layout, "")
+}
+
+// NewWashModelFor builds the wash model. If preselected is non-empty and
+// matches a worktree, the picker stage is skipped and the model jumps
+// straight to the confirm screen for that worktree.
+func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
 		return nil, err
 	}
 	items := []list.Item{}
+	var preselectedItem *washItem
 	for _, wt := range wts {
 		if wt.IsMaster(layout) || wt.Bare {
 			continue
 		}
 		name := wt.Name()
-		items = append(items, washItem{
+		it := washItem{
 			name:     name,
 			path:     wt.Path,
 			branch:   wt.Branch,
@@ -105,7 +113,12 @@ func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
 			hasDB:    liftoff.HasPostgres() && liftoff.HasDB(name),
 			hasGtab:  layout.HasGtab(name),
 			isLegacy: wt.HasLegacyPrefix(),
-		})
+		}
+		items = append(items, it)
+		if preselected != "" && name == preselected {
+			pinned := it
+			preselectedItem = &pinned
+		}
 	}
 	if len(items) == 0 {
 		return nil, errors.New("no removable worktrees found")
@@ -123,7 +136,7 @@ func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
 
-	return &washModel{
+	m := &washModel{
 		layout:     layout,
 		stage:      washStageSelect,
 		list:       l,
@@ -133,7 +146,18 @@ func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
 		help:       NewHelp(),
 		keys:       DefaultKeymap,
 		stepLines:  map[int][]string{},
-	}, nil
+	}
+	if preselectedItem != nil {
+		m.selected = *preselectedItem
+		if !preselectedItem.hasDB {
+			m.dropDB = false
+		}
+		if !preselectedItem.hasGtab {
+			m.removeGtab = false
+		}
+		m.stage = washStageConfirm
+	}
+	return m, nil
 }
 
 func (m *washModel) Init() tea.Cmd { return m.spinner.Tick }
@@ -221,6 +245,7 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stage = washStageRunning
 			plan := liftoff.WashPlan{
 				Name:         m.selected.name,
+				Branch:       m.selected.branch,
 				WorktreePath: m.selected.path,
 				DropDB:       m.dropDB,
 				RemoveGtab:   m.removeGtab,
@@ -240,9 +265,13 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func washStepTitles(p liftoff.WashPlan) []string {
+	branch := p.Branch
+	if branch == "" {
+		branch = p.Name
+	}
 	titles := []string{
 		"remove worktree " + p.WorktreePath,
-		"delete branch " + p.Name,
+		"delete branch " + branch,
 	}
 	if p.DropDB {
 		titles = append(titles, "drop database "+liftoff.DBName(p.Name))
@@ -384,12 +413,16 @@ func (m *washModel) viewDone() string {
 	return b.String()
 }
 
-// RunWashTUI is the cobra entry point.
-func RunWashTUI(layout liftoff.Layout) error {
+// RunWashTUI is the cobra entry point — full picker flow.
+func RunWashTUI(layout liftoff.Layout) error { return RunWashTUIFor(layout, "") }
+
+// RunWashTUIFor runs wash with an optional pre-selected worktree. Empty
+// preselected falls back to the picker (the original behavior).
+func RunWashTUIFor(layout liftoff.Layout, preselected string) error {
 	if !layout.MasterIsRepo() {
 		return fmt.Errorf("master repo not found at %s", layout.Master)
 	}
-	m, err := NewWashModel(layout)
+	m, err := NewWashModelFor(layout, preselected)
 	if err != nil {
 		return err
 	}

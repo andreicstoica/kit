@@ -13,13 +13,16 @@ var rootCmd = &cobra.Command{
 		"## Soccer-themed verbs (classic aliases work)\n\n" +
 		"- `design` (`new`) — create a fresh kit\n" +
 		"- `lineup` (`ls`) — show kits available\n" +
-		"- `play` — spin up dev servers (frontend + backend + celery)\n" +
-		"- `pause` — halt services\n" +
-		"- `log` — tail service logs\n" +
-		"- `wash` (`rm`) — strip a kit and clean up\n" +
+		"- `play` (`start`) — spin up dev servers\n" +
+		"- `pause` (`stop`) — halt services\n" +
+		"- `log` (`logs`) — tail service logs\n" +
+		"- `wash` (`rm`, `remove`, `delete`) — strip a kit and clean up\n" +
 		"- `tear` (`prune`) — bulk-wash merged/closed branches\n" +
 		"- `warmup` (`gtab`) — launch the ghostty workspace\n" +
-		"- `swap` (`open`) — open the worktree in your IDE\n\n" +
+		"- `swap` (`open`) — open the worktree in your IDE\n" +
+		"- `links` (`urls`, `ports`) — print the worktree's URLs\n" +
+		"- `doctor` (`physio`) — check your setup\n" +
+		"- `setup` — install missing tools, clone master\n\n" +
 		"## What makes it useful\n\n" +
 		"Each worktree gets a unique 5-port slot at `design` time. `kit play feat-a` " +
 		"and `kit play feat-b` run side-by-side without port conflicts. Frontend env vars " +

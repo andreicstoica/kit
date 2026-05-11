@@ -8,9 +8,19 @@ import (
 // WashPlan captures choices for a `kit wash` run.
 type WashPlan struct {
 	Name         string
+	Branch       string // actual git branch — may differ from Name (e.g. "acs/foo-cleanup")
 	WorktreePath string // resolved (could be clean ~/liftoff/<name> or legacy ~/liftoff/liftoff-<name>)
 	DropDB       bool
 	RemoveGtab   bool
+}
+
+// branchForDelete returns the actual branch to remove. Falls back to Name
+// only when Branch is unset (pre-existing washflow callers, tests).
+func branchForDelete(p WashPlan) string {
+	if p.Branch != "" {
+		return p.Branch
+	}
+	return p.Name
 }
 
 // RunWash executes removal: stop services → worktree → branch → DB → gtab → free slot.
@@ -54,9 +64,9 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 				},
 			},
 			{
-				title: "delete branch " + p.Name,
+				title: "delete branch " + branchForDelete(p),
 				run: func(emit func(string)) error {
-					return l.DeleteBranch(p.Name, emit)
+					return l.DeleteBranch(branchForDelete(p), emit)
 				},
 			},
 			{

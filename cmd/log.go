@@ -9,8 +9,9 @@ import (
 )
 
 var logCmd = &cobra.Command{
-	Use:   "log [name]",
-	Short: "Tail all service logs for a kit",
+	Use:     "log [name]",
+	Aliases: []string{"logs"},
+	Short:   "Tail all service logs for a kit",
 	Long: "Tails every `.log` under `~/.config/kit/run/<name>/` in a scrollable viewport.\n\n" +
 		"Each line is prefixed with its service tag. Service tags are color-coded.\n\n" +
 		"Keys:\n\n" +
@@ -22,27 +23,17 @@ var logCmd = &cobra.Command{
 		"- `q` / `ctrl+c` exit",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var name string
-		if len(args) == 1 {
-			n, err := liftoff.NormalizeAndValidate(args[0])
-			if err != nil {
-				return err
-			}
-			name = n
-		} else {
-			st, _ := liftoff.LoadState()
-			if st == nil || len(st.Worktrees) == 0 {
-				return fmt.Errorf("no worktrees in state — run `kit play` first or pass a name")
-			}
-			// Pick the most recently used worktree.
-			names := st.SortedNames()
-			if len(names) == 0 {
-				return fmt.Errorf("no worktrees in state")
-			}
-			name = names[0]
-			fmt.Fprintf(cmd.ErrOrStderr(), "tailing %s (most recent)\n", name)
+		layout := liftoff.DefaultLayout()
+		name, err := resolveTarget(layout, args, "kit log — pick a kit", true)
+		if err != nil {
+			return err
 		}
-		// RunLogTUI does its own ReadDir + error path; no extra stat needed.
+		if name == "" {
+			return nil
+		}
+		if len(args) == 0 {
+			fmt.Fprintf(cmd.ErrOrStderr(), "tailing %s\n", name)
+		}
 		return tui.RunLogTUI(name)
 	},
 }

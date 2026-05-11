@@ -7,7 +7,7 @@ import (
 )
 
 var designCmd = &cobra.Command{
-	Use:     "design",
+	Use:     "design [name]",
 	Aliases: []string{"new"},
 	Short:   "Design a fresh kit (create a new feature worktree)",
 	Long: "**design** walks you through creating a new Liftoff feature worktree:\n\n" +
@@ -19,11 +19,17 @@ var designCmd = &cobra.Command{
 		"- (opt) registers the branch with graphite (`gt track`)\n" +
 		"- writes a gtab AppleScript workspace\n" +
 		"- allocates a port slot (recorded in `~/.config/kit/state.toml`)\n\n" +
-		"A leading `liftoff-` is stripped from your input. Worktrees land at\n" +
-		"`~/liftoff/<name>` with branch `<name>`.\n\n" +
+		"Passing `name` pre-fills the wizard's first field. A leading `liftoff-`\n" +
+		"is stripped from your input. Worktrees land at `~/liftoff/<name>` with\n" +
+		"branch `<name>`.\n\n" +
 		"Alias: `new` (muscle-memory).",
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return tui.RunDesignTUI(liftoff.DefaultLayout())
+		prefill := ""
+		if len(args) == 1 {
+			prefill = args[0]
+		}
+		return tui.RunDesignTUI(liftoff.DefaultLayout(), prefill)
 	},
 }
 

@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,8 +19,9 @@ var (
 )
 
 var playCmd = &cobra.Command{
-	Use:   "play [name]",
-	Short: "Spin up the kit's services (frontend/app, frontend/admin, backend, celery)",
+	Use:     "play [name]",
+	Aliases: []string{"start"},
+	Short:   "Spin up the kit's services (frontend/app, frontend/admin, backend, celery)",
 	Long: `play starts the dev servers for a worktree:
 
   app, admin (Vite), api, admin_be (uvicorn --reload), celery worker, beat
@@ -39,19 +38,12 @@ the service-selection screen.`,
 		_, _ = liftoff.SweepOldRunDirs(logRetention)
 
 		layout := liftoff.DefaultLayout()
-		name := ""
-		if len(args) == 1 {
-			n, err := liftoff.NormalizeAndValidate(args[0])
-			if err != nil {
-				return err
-			}
-			name = n
-		} else {
-			// No name given: try to detect from cwd.
-			if n := worktreeNameFromCwd(layout); n != "" {
-				name = n
-				fmt.Fprintf(cmd.ErrOrStderr(), "playing %s (from cwd)\n", name)
-			}
+		name, err := resolveArgOrCwd(layout, args, true)
+		if err != nil {
+			return err
+		}
+		if name != "" && len(args) == 0 {
+			fmt.Fprintf(cmd.ErrOrStderr(), "playing %s (from cwd)\n", name)
 		}
 		only, err := parseServiceList(playOnly)
 		if err != nil {
@@ -73,35 +65,6 @@ func init() {
 	rootCmd.AddCommand(playCmd)
 }
 
-// worktreeNameFromCwd returns the worktree name if the current directory is
-// inside one of the worktrees registered for the layout, else "".
-func worktreeNameFromCwd(layout liftoff.Layout) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	cwd, _ = filepath.Abs(cwd)
-	wts, err := layout.ListWorktrees()
-	if err != nil {
-		return ""
-	}
-	// Pick the longest matching worktree path (handles nested dirs correctly).
-	best := ""
-	bestLen := 0
-	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
-			continue
-		}
-		wp, _ := filepath.Abs(w.Path)
-		if cwd == wp || strings.HasPrefix(cwd, wp+string(filepath.Separator)) {
-			if len(wp) > bestLen {
-				best = w.Name()
-				bestLen = len(wp)
-			}
-		}
-	}
-	return best
-}
 
 // parseServiceList resolves user input ("app,admin,api") to []Service.
 func parseServiceList(raw []string) ([]liftoff.Service, error) {

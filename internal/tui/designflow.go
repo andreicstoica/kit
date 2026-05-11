@@ -27,8 +27,11 @@ type designAnswers struct {
 }
 
 // runDesignForm presents the huh form, validates everything, and returns answers.
-func runDesignForm(layout liftoff.Layout) (*designAnswers, error) {
+// If prefillName is non-empty (e.g. from `kit design voice-agent`), the name
+// input is pre-populated so the user only has to confirm or edit.
+func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, error) {
 	a := &designAnswers{
+		name:     prefillName,
 		cloneDB:  true,
 		backend:  true,
 		symlink:  true,
@@ -361,12 +364,13 @@ func truncate(s string, w int) string {
 }
 
 // RunDesignTUI is the cobra entry point: huh form → bubble tea progress.
-func RunDesignTUI(layout liftoff.Layout) error {
+// prefillName is empty for `kit design`, set for `kit design <name>`.
+func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 	if !layout.MasterIsRepo() {
 		return fmt.Errorf("master repo not found at %s (set KIT_ROOT/KIT_MASTER_DIR)", layout.Master)
 	}
 
-	answers, err := runDesignForm(layout)
+	answers, err := runDesignForm(layout, prefillName)
 	if err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return nil
@@ -409,4 +413,4 @@ func RunDesignTUI(layout liftoff.Layout) error {
 }
 
 // RunDressTUI is kept as a back-compat alias.
-func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout) }
+func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout, "") }

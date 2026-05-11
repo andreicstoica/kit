@@ -7,13 +7,22 @@ import (
 )
 
 var washCmd = &cobra.Command{
-	Use:     "wash",
-	Aliases: []string{"rm", "remove"},
+	Use:     "wash [name]",
+	Aliases: []string{"rm", "remove", "delete"},
 	Short:   "Strip a kit and clean up (remove worktree + branch + DB + gtab)",
-	Long: `wash opens a picker of active kits. Select one to remove its worktree,
-delete the branch, optionally drop the DB, and remove the gtab workspace.`,
+	Long: `wash removes a worktree's worktree dir, deletes the actual git branch,
+optionally drops the DB, and removes the gtab workspace.
+
+Pass a name to skip the picker; omit to pick from a list (or auto-resolve
+from cwd when run from inside a worktree).`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return tui.RunWashTUI(liftoff.DefaultLayout())
+		layout := liftoff.DefaultLayout()
+		name, err := resolveArgOrCwd(layout, args, true)
+		if err != nil {
+			return err
+		}
+		return tui.RunWashTUIFor(layout, name)
 	},
 }
 

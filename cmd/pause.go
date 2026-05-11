@@ -12,8 +12,9 @@ var (
 )
 
 var pauseCmd = &cobra.Command{
-	Use:   "pause [name]",
-	Short: "Halt the kit's services",
+	Use:     "pause [name]",
+	Aliases: []string{"stop"},
+	Short:   "Halt the kit's services",
 	Long: `pause stops services for a worktree.
 
   kit pause            picker → confirm → kill
@@ -26,13 +27,9 @@ var pauseCmd = &cobra.Command{
 		if pauseAll {
 			return tui.PauseAll(layout)
 		}
-		name := ""
-		if len(args) == 1 {
-			n, err := liftoff.NormalizeAndValidate(args[0])
-			if err != nil {
-				return err
-			}
-			name = n
+		name, err := resolveArgOrCwd(layout, args, true)
+		if err != nil {
+			return err
 		}
 		only, err := parseServiceList(pauseOnly)
 		if err != nil {
