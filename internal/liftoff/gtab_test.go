@@ -25,13 +25,10 @@ func TestWriteGtab(t *testing.T) {
 	s := string(body)
 	for _, want := range []string{
 		`set initial working directory of cfg1 to "` + wt + `"`,
-		`set initial working directory of cfg2 to "` + wt + `/frontend/app"`,
-		`set initial working directory of cfgSplit2 to "` + wt + `/frontend/admin"`,
-		`set initial working directory of cfg3 to "` + wt + `/backend"`,
+		`set initial working directory of cfg2 to "` + wt + `"`,
+		`set command of cfg2 to "tail -F `,
 		`perform action "set_tab_title:🎤 voice-agent"`,
-		`perform action "set_tab_title:frontend"`,
-		`perform action "set_tab_title:backend"`,
-		`perform action "set_tab_title:celery"`,
+		`perform action "set_tab_title:logs"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("template missing %q\n--- got ---\n%s", want, s)

@@ -66,7 +66,7 @@ swapping branches, restarting Vite, and tracking which version your DB was on.
 
 | Tool | Unlocks |
 |------|---------|
-| Ghostty | `kit warmup` 4-tab workspace with auto-tailing logs |
+| Ghostty | `kit warmup` 2-tab workspace (shell + combined log tail) |
 | `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
 | `gt` (graphite) | "Track in graphite" toggle, `kit sync`, gt stack in lineup |
 | `gh` (GitHub CLI) | `kit prune` checks PR state |
@@ -322,8 +322,8 @@ MERGED/CLOSED. Multi-select → washes each.
 
 ### `kit warmup [name]` (alias `gtab`) — Ghostty workspace
 
-4 tabs (root, frontend split, backend split, celery) with each pane already
-`tail -F`ing the matching service log. Auto-writes the template if missing.
+2 tabs: the worktree root (run Claude / git / CLI here) and a `logs` tab that
+`tail -F`s every service log in one stream. Auto-writes the template if missing.
 
 ### `kit swap [name]` (alias `open`) — open in IDE or Ghostty
 

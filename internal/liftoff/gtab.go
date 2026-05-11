@@ -6,16 +6,14 @@ import (
 	"text/template"
 )
 
-// gtabTemplate lays out a Ghostty workspace per worktree:
-//   - tab 1: worktree root, bare shell (no auto-command)
-//   - tab 2: frontend/app + frontend/admin split, each pane auto-tails the
-//     matching kit-managed log
-//   - tab 3: backend (api) + backend (admin_be) split, each tails its log
-//   - tab 4: backend, tails celery worker log
+// gtabTemplate lays out a 2-tab Ghostty workspace per worktree:
+//   - tab 1: worktree root, bare shell (run claude / cli / git here)
+//   - tab 2: `tail -F` over every service .log
 //
-// Each auto-tail pane uses `tail -F` so the surface waits if the log
-// hasn't been created yet (kit play not run). `wait after command true`
-// keeps the surface open at a shell prompt once tail exits (Ctrl-C).
+// `kit play` runs servers in the background and writes stdout to .log
+// files, so per-service tabs were always just `tail -F` stubs. One
+// combined tail tab covers all of them and tail -F waits if the file
+// doesn't exist yet — works fine even before kit play runs.
 const gtabTemplate = `tell application "Ghostty"
     activate
 
@@ -26,38 +24,12 @@ const gtabTemplate = `tell application "Ghostty"
     perform action "set_tab_title:{{.TabTitle}}" on p1
 
     set cfg2 to new surface configuration
-    set initial working directory of cfg2 to "{{.Worktree}}/frontend/app"
-    set command of cfg2 to "tail -F {{.AppLog}}"
+    set initial working directory of cfg2 to "{{.Worktree}}"
+    set command of cfg2 to "tail -F {{.AppLog}} {{.AdminLog}} {{.APILog}} {{.AdminBELog}} {{.CeleryLog}}"
     set wait after command of cfg2 to true
     set newtab1 to new tab in win with configuration cfg2
     set p2 to focused terminal of newtab1
-    perform action "set_tab_title:frontend" on p2
-    set cfgSplit2 to new surface configuration
-    set initial working directory of cfgSplit2 to "{{.Worktree}}/frontend/admin"
-    set command of cfgSplit2 to "tail -F {{.AdminLog}}"
-    set wait after command of cfgSplit2 to true
-    set p2b to split p2 direction right with configuration cfgSplit2
-
-    set cfg3 to new surface configuration
-    set initial working directory of cfg3 to "{{.Worktree}}/backend"
-    set command of cfg3 to "tail -F {{.APILog}}"
-    set wait after command of cfg3 to true
-    set newtab2 to new tab in win with configuration cfg3
-    set p3 to focused terminal of newtab2
-    perform action "set_tab_title:backend" on p3
-    set cfgSplit3 to new surface configuration
-    set initial working directory of cfgSplit3 to "{{.Worktree}}/backend"
-    set command of cfgSplit3 to "tail -F {{.AdminBELog}}"
-    set wait after command of cfgSplit3 to true
-    set p3b to split p3 direction right with configuration cfgSplit3
-
-    set cfg4 to new surface configuration
-    set initial working directory of cfg4 to "{{.Worktree}}/backend"
-    set command of cfg4 to "tail -F {{.CeleryLog}}"
-    set wait after command of cfg4 to true
-    set newtab3 to new tab in win with configuration cfg4
-    set p4 to focused terminal of newtab3
-    perform action "set_tab_title:celery" on p4
+    perform action "set_tab_title:logs" on p2
 end tell
 `
 
