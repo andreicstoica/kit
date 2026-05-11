@@ -137,10 +137,8 @@ func wtTreeLabel(emoji, name string, slot, running, total int, branch string, di
 	if slot > 0 {
 		parts = append(parts, StyleDim.Render(fmt.Sprintf("slot %d", slot)))
 	}
-	_ = total // running is shown as child service rows instead of a count
-	if branch != name {
-		parts = append(parts, StyleDim.Render("on "+branch))
-	}
+	_ = total  // running is shown as child service rows instead of a count
+	_ = branch // tree view drops branch — `kit lineup` (table) shows it when needed
 	if legacy {
 		parts = append(parts, StyleDim.Render("(legacy)"))
 	}
