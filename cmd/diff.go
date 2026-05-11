@@ -30,6 +30,9 @@ var diffCmd = &cobra.Command{
 		if name == "" {
 			return nil
 		}
+		if name == "master" {
+			return fmt.Errorf("nothing to diff — master is the baseline")
+		}
 		path := layout.WorktreePath(name)
 		if _, err := os.Stat(path); err != nil {
 			legacy := layout.LegacyWorktreePath(name)
