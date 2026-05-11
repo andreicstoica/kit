@@ -83,7 +83,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 
 		emoji := liftoff.EmojiFor(name)
 		if isMaster {
-			emoji = "🚀"
+			emoji = liftoff.MasterEmoji
 		}
 		nameDisp := name
 		if emoji != "" {

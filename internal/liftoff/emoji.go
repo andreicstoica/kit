@@ -56,15 +56,22 @@ var hashPool = []string{
 	"🪕", "🥁", "🎺", "🎻", "🎤", "🎬", "🎢", "🛸", "🪂", "🎰",
 	// plants / weather
 	"🌻", "🌺", "🌸", "🌼", "🍀", "🌴", "🌲", "🌿",
-	// random fun
-	"🧃", "🧊", "🪅", "🦴", "🪞", "🧸", "🪲", "🐌",
+	// random fun (🪲 dropped — ew)
+	"🧃", "🧊", "🪅", "🦴", "🪞", "🧸", "🐌",
 }
+
+// MasterEmoji is the fixed glyph used for the main repo across every
+// surface (lineup, tree, pickers, gtab titles).
+const MasterEmoji = "🧊"
 
 // EmojiFor returns a stable emoji for a branch name.
 // Returns "" if KIT_NO_EMOJI is set in the environment.
 func EmojiFor(branch string) string {
 	if os.Getenv("KIT_NO_EMOJI") != "" {
 		return ""
+	}
+	if branch == "master" {
+		return MasterEmoji
 	}
 	low := strings.ToLower(branch)
 	for _, kv := range keywordEmoji {

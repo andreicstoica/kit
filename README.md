@@ -36,7 +36,7 @@ Aliases: `new` (design), `ls`/`list` (lineup), `tree` (formation), `start`
 Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`,
 `wash`, `links`, `diff`, `adopt`) accept the same three shapes: pass a name,
 omit to auto-pick from cwd, or get a numbered picker (1-9 quick-select)
-otherwise. Master appears in every picker as 🚀 slot 0.
+otherwise. Master appears in every picker as 🧊 slot 0.
 
 ## Why
 
@@ -298,7 +298,7 @@ layout (simple / detailed / skip) and offers to start servers.
 ### `kit lineup` (alias `ls`) — list kits
 
 Table: `NAME · SLOT · RUNNING · BRANCH · STATUS`. Branch emoji prefix.
-Master at slot 0 with 🚀.
+Master at slot 0 with 🧊.
 
 ### `kit formation` (alias `tree`) — tree view
 

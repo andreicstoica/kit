@@ -173,7 +173,7 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		sortNodes(n.children)
 	}
 
-	rootLabel := StyleDim.Render("🚀 master  " + layout.Master)
+	rootLabel := StyleDim.Render(liftoff.MasterEmoji + " master  " + layout.Master)
 	t := tree.Root(rootLabel).
 		EnumeratorStyle(lipgloss.NewStyle().Foreground(colorDim)).
 		RootStyle(lipgloss.NewStyle()).

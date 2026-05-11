@@ -215,7 +215,7 @@ type playWtItemFilter func(playWtItem) bool
 // playWtItem with running-service count and state metadata, optionally
 // filters, sorts by lineup order, assigns numeric displayIdx, and
 // returns a []list.Item ready for bubble list. Master is included
-// (with the 🚀 emoji + name "master"); pass `dropMaster` to filter it.
+// (with liftoff.MasterEmoji + name "master").
 func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.Item, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
@@ -231,11 +231,10 @@ func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.It
 			continue
 		}
 		name := w.Name()
-		emoji := liftoff.EmojiFor(name)
 		if w.IsMaster(layout) {
 			name = "master"
-			emoji = "🚀"
 		}
+		emoji := liftoff.EmojiFor(name)
 		meta := st.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
 		running, _ := liftoff.RunningCount(name, ports)
