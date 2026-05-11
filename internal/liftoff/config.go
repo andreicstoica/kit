@@ -12,10 +12,9 @@ import (
 )
 
 const (
-	configSchema    = 2
-	configFileName  = "config.toml"
-	legacyStateFile = "state.toml" // pre-schema-2 filename
-	maxSlot         = 99
+	configSchema   = 2
+	configFileName = "config.toml"
+	maxSlot        = 99
 )
 
 // Settings is the durable, user-facing config block. Each field maps to an
@@ -71,36 +70,18 @@ func configDir() string {
 	return filepath.Join(home, ".config", "kit")
 }
 
-// LoadConfig reads config.toml. If the file is absent but a legacy
-// state.toml exists in the same dir, it's renamed in place before loading
-// (a one-time migration). Missing file or both-missing returns an empty
-// Config.
+// LoadConfig reads config.toml. Missing file returns an empty Config.
 func LoadConfig() (*Config, error) {
-	dir := configDir()
-	path := filepath.Join(dir, configFileName)
-	legacy := filepath.Join(dir, legacyStateFile)
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		if _, lerr := os.Stat(legacy); lerr == nil {
-			// One-time rename. Ignore failure — fall back to reading legacy directly.
-			_ = os.Rename(legacy, path)
-		}
-	}
 	c := &Config{Schema: configSchema, Worktrees: map[string]WorktreeMeta{}}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(ConfigPath())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			// Last-chance: read the legacy file if rename failed (permissions, etc.).
-			if d2, e2 := os.ReadFile(legacy); e2 == nil {
-				data = d2
-			} else {
-				return c, nil
-			}
-		} else {
-			return nil, err
+			return c, nil
 		}
+		return nil, err
 	}
 	if _, err := toml.Decode(string(data), c); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, fmt.Errorf("parse %s: %w", ConfigPath(), err)
 	}
 	if c.Worktrees == nil {
 		c.Worktrees = map[string]WorktreeMeta{}

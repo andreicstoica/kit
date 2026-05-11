@@ -1,7 +1,6 @@
 package liftoff
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -131,29 +130,6 @@ func TestState_TouchLastUsed_Missing(t *testing.T) {
 	setStateDir(t)
 	s, _ := LoadState()
 	s.TouchLastUsed("nope") // should not panic
-}
-
-func TestConfig_MigrateFromStateToml(t *testing.T) {
-	dir := setStateDir(t)
-	legacy := filepath.Join(dir, "state.toml")
-	body := "schema = 1\n[worktrees.alpha]\nslot = 7\n"
-	if err := os.WriteFile(legacy, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	c, err := LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Worktrees["alpha"].Slot != 7 {
-		t.Fatalf("legacy worktree not loaded: %+v", c.Worktrees)
-	}
-	// After load, the file should have been renamed.
-	if _, err := os.Stat(filepath.Join(dir, "config.toml")); err != nil {
-		t.Fatalf("config.toml not created after migration: %v", err)
-	}
-	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("state.toml still present after migration: %v", err)
-	}
 }
 
 func TestConfig_Schema2_NewFieldsRoundTrip(t *testing.T) {

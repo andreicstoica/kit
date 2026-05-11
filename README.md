@@ -350,9 +350,6 @@ supported; re-running `kit setup` won't clobber non-empty fields.
 Env vars (`KIT_ROOT`, `KIT_MASTER_DIR`, etc.) still override config-file
 values, so power users and CI environments don't have to write to disk.
 
-Legacy `state.toml` files from earlier kit versions are auto-renamed to
-`config.toml` on first load.
-
 ## Log retention
 
 `~/.config/kit/run/<name>/` holds per-service PID + log files. `kit play`
