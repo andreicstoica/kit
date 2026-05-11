@@ -294,7 +294,7 @@ func (o Orb) View() string {
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorAccent).
-		Padding(0, 1)
+		Padding(1, 2)
 	return box.Render(sb.String())
 }
 
