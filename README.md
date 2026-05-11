@@ -140,7 +140,7 @@ Leading `liftoff-` in your input is stripped.
 `kit play [name]`:
 
 1. **Picker** — if no name, pick from worktrees (sorted by slot)
-2. **Service toggle** — defaults: `app_front admin_front app_back admin_back celery` (MCP off). Each row shows current running state.
+2. **Service toggle** — defaults: `app frontend, admin frontend, app backend, admin backend, celery worker` (MCP off). Each row shows current running state.
 3. **Celery prompt** — if another worktree owns celery, confirm kill-and-replace
 4. **Adopt prompt** — if the worktree isn't in `config.toml` yet, confirm before allocating
 5. **Live progress** — services start in parallel, ✓ when port responds
@@ -149,11 +149,11 @@ Leading `liftoff-` in your input is stripped.
 ```
 $ kit play voice-agent
 ✓ voice-agent playing — slot 1
-  app_front:   http://localhost:3010
-  admin_front: http://localhost:3011
-  app_back:    http://localhost:9010
-  admin_back:  http://localhost:9011
-  celery:      pid 41234
+  app frontend:    http://localhost:3010
+  admin frontend:  http://localhost:3011
+  app backend:     http://localhost:9010
+  admin backend:   http://localhost:9011
+  celery worker:   pid 41234
 
 logs: ~/.config/kit/run/voice-agent/
 ```
@@ -172,10 +172,10 @@ kit pause --all          # confirms before killing everything
 
 | Service          | Formula           |
 |------------------|-------------------|
-| app_front        | `3000 + slot*10`  |
-| admin_front      | `3001 + slot*10`  |
-| app_back         | `9000 + slot*10`  |
-| admin_back       | `9001 + slot*10`  |
+| app frontend     | `3000 + slot*10`  |
+| admin frontend   | `3001 + slot*10`  |
+| app backend      | `9000 + slot*10`  |
+| admin backend    | `9001 + slot*10`  |
 | MCP              | `9002 + slot*10`  |
 
 Slot 0 is master (3000/3001/9000/9001/9002). `kit design` picks the lowest

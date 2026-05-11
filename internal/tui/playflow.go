@@ -728,7 +728,7 @@ func (m *playModel) viewDone() string {
 	} else {
 		b.WriteString(StyleOK.Render("✓ "+m.chosen.name+" playing — slot "+fmt.Sprint(m.chosen.slot)) + "\n\n")
 		for _, svc := range m.runOrder {
-			line := fmt.Sprintf("  %-15s ", svc.Label()+":")
+			line := fmt.Sprintf("  %-17s ", svc.Label()+":")
 			if u, ok := m.runURLs[svc]; ok {
 				line += u
 			} else if pid, ok := m.runPIDs[svc]; ok {

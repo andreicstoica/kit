@@ -32,7 +32,7 @@ func newLogKeys() logKeys {
 		KeyMap: DefaultKeymap,
 		Follow: key.NewBinding(
 			key.WithKeys("f"),
-			key.WithHelp("f", "follow"),
+			key.WithHelp("f", "auto-scroll"),
 		),
 		Filter: key.NewBinding(
 			key.WithKeys("/"),
@@ -40,7 +40,7 @@ func newLogKeys() logKeys {
 		),
 		Tags: key.NewBinding(
 			key.WithKeys("t"),
-			key.WithHelp("t", "services"),
+			key.WithHelp("t", "filter services"),
 		),
 	}
 }
@@ -342,12 +342,12 @@ var tagStyles = map[string]lipgloss.Style{
 // tagDisplay translates filename stems to the designer-facing service
 // names. Keeps logs readable for non-engineers without renaming files.
 var tagDisplay = map[string]string{
-	"app":      "app_front",
-	"admin":    "admin_front",
-	"api":      "app_back",
-	"admin_be": "admin_back",
-	"celery":   "celery",
-	"beat":     "celery",
+	"app":      "app frontend",
+	"admin":    "admin frontend",
+	"api":      "app backend",
+	"admin_be": "admin backend",
+	"celery":   "celery worker",
+	"beat":     "celery beat",
 	"mcp":      "mcp",
 }
 
@@ -364,7 +364,7 @@ func stylizeLine(tag, line string) string {
 	if !ok {
 		style = defaultTagStyle
 	}
-	const tagWidth = 11
+	const tagWidth = 17
 	label := "[" + display + "]"
 	if len(label) < tagWidth {
 		label += strings.Repeat(" ", tagWidth-len(label))
@@ -374,9 +374,9 @@ func stylizeLine(tag, line string) string {
 
 func (m *logModel) View() string {
 	header := StyleTitle.Render("kit log — " + m.worktree)
-	follow := StyleDim.Render("follow: off")
+	follow := StyleDim.Render("auto-scroll: off")
 	if m.follow {
-		follow = StyleOK.Render("follow: on")
+		follow = StyleOK.Render("auto-scroll: on")
 	}
 	header += "  " + follow + "  " + StyleDim.Render(fmt.Sprintf("%d lines", len(m.lines)))
 	if m.pattern != "" && !m.filterMode {
@@ -411,7 +411,7 @@ func (m *logModel) hiddenTagCount() int {
 
 func (m *logModel) viewTagPanel() string {
 	var b strings.Builder
-	b.WriteString(StyleTitle.Render("services") + "\n")
+	b.WriteString(StyleTitle.Render("filter services") + "\n")
 	for i, t := range m.tagOrder {
 		cursor := "  "
 		if i == m.tagCursor {

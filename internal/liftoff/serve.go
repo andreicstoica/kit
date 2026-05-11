@@ -30,22 +30,22 @@ var AllServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcMCP, SvcCel
 var DefaultServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcCelery, SvcBeat}
 
 // Label returns the user-facing name used in pickers, lineup, and the
-// tree view. Designer-friendly: front/back instead of frontend/backend +
-// api/admin_be, and "celery" rolls celery + beat into one display row.
+// tree view. Designer-friendly: full "frontend"/"backend" words and
+// "celery worker" so the picker reads naturally for non-engineers.
 func (s Service) Label() string {
 	switch s {
 	case SvcApp:
-		return "app_front"
+		return "app frontend"
 	case SvcAdmin:
-		return "admin_front"
+		return "admin frontend"
 	case SvcAPI:
-		return "app_back"
+		return "app backend"
 	case SvcAdminBE:
-		return "admin_back"
+		return "admin backend"
 	case SvcMCP:
 		return "mcp"
 	case SvcCelery:
-		return "celery"
+		return "celery worker"
 	case SvcBeat:
 		return "celery beat"
 	}
