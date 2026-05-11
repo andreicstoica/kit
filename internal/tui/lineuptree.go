@@ -305,16 +305,16 @@ func dbLabel(n *wtNode) string {
 	if n.hasOwnDB {
 		return StyleOK.Render("● ") + muted.Render(pad("db", 10)) + StyleDim.Render(liftoff.DBName(n.name))
 	}
-	return StyleDim.Render("◇ "+pad("db", 10)) + StyleDim.Render("shared (liftoff)")
+	return StyleDim.Render("◇ "+pad("db", 10)) + StyleDim.Render("shared from master")
 }
 
 // symlinkLabel renders the frontend node_modules wiring row.
 func symlinkLabel(n *wtNode) string {
 	muted := lipgloss.NewStyle().Foreground(colorMuted)
 	if n.symlinked {
-		return StyleOK.Render("● ") + muted.Render(pad("frontend", 10)) + StyleDim.Render("symlinked from master")
+		return StyleOK.Render("● ") + muted.Render(pad("frontend", 10)) + StyleDim.Render("symlinked to master")
 	}
-	return StyleDim.Render("◇ "+pad("frontend", 10)) + StyleDim.Render("real node_modules")
+	return StyleDim.Render("◇ "+pad("frontend", 10)) + StyleDim.Render("own copy")
 }
 
 func svcLabel(s serviceRow) string {
