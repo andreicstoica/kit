@@ -326,9 +326,8 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// tagStyles maps the on-disk log filename (= internal service id) to a
-// lipgloss style. File names stay app.log/admin.log/api.log/admin_be.log
-// for compatibility; display labels come from tagDisplay below.
+// tagStyles colors each service's log lines. Keys are the on-disk
+// filename stems; display names come from tagDisplay.
 var tagStyles = map[string]lipgloss.Style{
 	"app":      lipgloss.NewStyle().Foreground(ColorAccent).Bold(true),
 	"admin":    lipgloss.NewStyle().Foreground(ColorWarn).Bold(true),
@@ -339,8 +338,7 @@ var tagStyles = map[string]lipgloss.Style{
 	"mcp":      lipgloss.NewStyle().Foreground(ColorMuted).Bold(true),
 }
 
-// tagDisplay translates filename stems to the designer-facing service
-// names. Keeps logs readable for non-engineers without renaming files.
+// tagDisplay maps filename stems to user-facing service names.
 var tagDisplay = map[string]string{
 	"app":      "app frontend",
 	"admin":    "admin frontend",
@@ -353,8 +351,7 @@ var tagDisplay = map[string]string{
 
 var defaultTagStyle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
 
-// stylizeLine prefixes the service tag with a color and pads to keep
-// the message column aligned across log streams.
+// stylizeLine prefixes a colored, padded service tag to the log line.
 func stylizeLine(tag, line string) string {
 	display := tagDisplay[tag]
 	if display == "" {

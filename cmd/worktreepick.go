@@ -5,14 +5,7 @@ import (
 	"github.com/andreicstoica/kit/internal/tui"
 )
 
-// resolveTarget walks the standard "find a worktree to act on" flow used by
-// swap, warmup, links, log, and any future command that operates on one kit:
-//
-//  1. If args has one entry, normalize it (special-case "master").
-//  2. Else, prefer the worktree the user is currently inside (cwd).
-//  3. Else, open the numbered picker.
-//
-// Returns ("", nil) when the user aborts the picker.
+// resolveTarget resolves arg → cwd → picker. Returns ("", nil) on abort.
 func resolveTarget(layout liftoff.Layout, args []string, pickerPrompt string) (string, error) {
 	if name, err := resolveArgOrCwd(layout, args); name != "" || err != nil {
 		return name, err
@@ -20,19 +13,14 @@ func resolveTarget(layout liftoff.Layout, args []string, pickerPrompt string) (s
 	return tui.PickWorktree(layout, pickerPrompt)
 }
 
-// resolveArgOrCwd is resolveTarget without the picker fallback. Use for
-// commands whose own TUI flow has a built-in picker (play, pause, wash) so
-// users don't see two pickers in a row.
-//
-// Returns ("", nil) when no arg and cwd is unrelated — caller's TUI takes
-// over from there.
+// resolveArgOrCwd is resolveTarget minus the picker — for commands whose
+// own TUI has a built-in picker (avoids two pickers in a row).
 func resolveArgOrCwd(layout liftoff.Layout, args []string) (string, error) {
 	return resolveArgOrCwdOpts(layout, args, false)
 }
 
-// resolveArgOrCwdNonMaster is the same as resolveArgOrCwd but ignores master
-// when resolving from cwd. Use for play/pause/wash where master is never a
-// valid target — the caller's TUI picker takes over instead.
+// resolveArgOrCwdNonMaster ignores master from cwd. For play/pause/wash
+// where master is never a valid target.
 func resolveArgOrCwdNonMaster(layout liftoff.Layout, args []string) (string, error) {
 	return resolveArgOrCwdOpts(layout, args, true)
 }

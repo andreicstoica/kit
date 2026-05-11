@@ -29,9 +29,7 @@ var AllServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcMCP, SvcCel
 // DefaultServices are the ones turned on by `kit play` defaults.
 var DefaultServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcCelery, SvcBeat}
 
-// Label returns the user-facing name used in pickers, lineup, and the
-// tree view. Designer-friendly: full "frontend"/"backend" words and
-// "celery worker" so the picker reads naturally for non-engineers.
+// Label is the user-facing service name shown in pickers, lineup, and tree.
 func (s Service) Label() string {
 	switch s {
 	case SvcApp:
@@ -52,22 +50,15 @@ func (s Service) Label() string {
 	return string(s)
 }
 
-// DisplayServices is the deduped list used by UI surfaces (toggle,
-// lineup running count, tree). Beat is hidden — celery and beat are
-// always paired; toggling "celery" in the UI flips both, and a worktree
-// counts as "celery running" when either celery OR beat is alive.
+// DisplayServices is the deduped UI list — beat is folded into celery
+// (always paired; toggling "celery" flips both).
 var DisplayServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcCelery}
 
-// IsServiceAlive returns whether a display-level service is up.
-//
-// For services with a port (app/admin/api/admin_be/mcp), the source of
-// truth is "something is listening on 127.0.0.1:<port>" — not kit's
-// recorded PID. `uvicorn --reload` and similar reloaders re-exec into
-// a fresh process, leaving the recorded PID dead even though the
-// service is healthy.
-//
-// For celery (which has no port), fall back to PID liveness. The
-// celery display row collapses celery + beat: alive if either is up.
+// IsServiceAlive treats port-listening as truth for ported services —
+// `uvicorn --reload` re-execs into a fresh process, leaving kit's
+// recorded PID dead even though the service is healthy. Celery (no
+// port) falls back to PID liveness and is alive if either celery or
+// beat is up.
 func IsServiceAlive(name string, svc Service, ports Ports) bool {
 	if svc == SvcCelery {
 		return StatusOf(name, SvcCelery, ports).Alive || StatusOf(name, SvcBeat, ports).Alive

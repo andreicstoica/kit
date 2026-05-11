@@ -60,11 +60,8 @@ func init() {
 	rootCmd.AddCommand(logCmd)
 }
 
-// ensurePlaying blocks `kit log` when no services are alive for the kit —
-// opening the viewer for a stopped worktree just shows stale lines with no
-// follow activity, which is more confusing than helpful. Master is allowed
-// through since master logs are written by ad-hoc dev processes, not kit
-// play, and have no slot to check.
+// ensurePlaying blocks `kit log` when no services are alive — a stopped
+// worktree just shows stale lines with no follow activity.
 func ensurePlaying(name string) error {
 	if name == "master" {
 		return nil
