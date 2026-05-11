@@ -44,7 +44,7 @@ swapping branches, restarting Vite, and tracking which version your DB was on.
 `kit` reduces all of that to single commands:
 
 - Each worktree gets a 5-port slot (e.g. slot 1 → app:3010, admin:3011,
-  api:9010, admin_be:9011) at `kit design` time (or when setting up `kit` for the first time.
+  api:9010, admin_be:9011) at `kit design` time - or when setting up `kit` for the first time.
 - `kit play <name>` starts every dev server on those ports with frontend env
   vars pointing at the matching backend.
 - `kit pause <name>` tears them down.
