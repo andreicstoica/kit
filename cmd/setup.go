@@ -17,6 +17,8 @@ const liftoffMasterRepoURL = "https://github.com/liftoff-inc/liftoff-app.git"
 const brewInstallScript = `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
 const zshrcFenceComment = "# kit-setup: brew shellenv"
 
+var setupDryRun bool
+
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Install missing tools and bootstrap your kit environment",
@@ -25,24 +27,40 @@ var setupCmd = &cobra.Command{
 		"the Liftoff master repo, and runs `yarn install` so worktree node_modules " +
 		"symlinks work.\n\n" +
 		"You'll be asked before anything is changed. Setup is idempotent — re-run " +
-		"any time.",
+		"any time.\n\n" +
+		"Pass `--dry-run` (or `-n`) to walk the flow and see what setup would do " +
+		"without actually changing anything.",
 	RunE: runSetup,
 }
 
 func init() {
+	setupCmd.Flags().BoolVarP(&setupDryRun, "dry-run", "n", false, "preview actions without running them")
 	rootCmd.AddCommand(setupCmd)
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
 	layout := liftoff.DefaultLayout()
 
-	fmt.Println(tui.StyleTitle.Render("kit setup — check & install"))
-	fmt.Println(tui.StyleDim.Render("nothing is changed without your confirmation."))
+	banner := "kit setup — check & install"
+	if setupDryRun {
+		banner += "  (dry run)"
+	}
+	fmt.Println(tui.StyleTitle.Render(banner))
+	if setupDryRun {
+		fmt.Println(tui.StyleDim.Render("nothing will be changed — preview only."))
+	} else {
+		fmt.Println(tui.StyleDim.Render("nothing is changed without your confirmation."))
+	}
 	fmt.Println()
 
 	results := liftoff.RunChecks(liftoff.DefaultChecks(layout))
 	fmt.Print(tui.RenderDoctor(results))
 	fmt.Println()
+
+	if setupDryRun {
+		printDryRunPlan(layout, results)
+		return nil
+	}
 
 	for _, r := range results {
 		if r.Status == liftoff.CheckOK || r.Status == liftoff.CheckSkip {
@@ -64,6 +82,52 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println(tui.StyleOK.Render("✓ ready to go — try `kit design my-first-kit`"))
 	return nil
+}
+
+func printDryRunPlan(layout liftoff.Layout, results []liftoff.CheckResult) {
+	fmt.Println(tui.StyleTitle.Render("planned actions"))
+	any := false
+	for _, r := range results {
+		if r.Status == liftoff.CheckOK || r.Status == liftoff.CheckSkip {
+			continue
+		}
+		any = true
+		fmt.Printf("  %s\n", tui.StyleHi.Render("• "+r.Name))
+		switch r.ID {
+		case "brew":
+			fmt.Printf("      print Homebrew install command, exit (no auto-run)\n")
+		case "brew-path":
+			st := liftoff.DetectBrew()
+			fmt.Printf("      prompt to append %q to ~/.zshrc\n", liftoff.BrewShellenvLine(st.BinaryAt))
+		case "gh":
+			if len(r.FixCmd) > 0 {
+				fmt.Printf("      brew install %s\n", strings.Join(r.FixCmd, " "))
+			} else {
+				fmt.Printf("      run `gh auth login` interactively\n")
+			}
+		case "liftoff-master":
+			if _, err := os.Stat(layout.Master); err != nil {
+				fmt.Printf("      git clone %s %s, then yarn install in frontend/app + frontend/admin\n", liftoffMasterRepoURL, layout.Master)
+			} else {
+				fmt.Printf("      yarn install in master's frontend/app + frontend/admin\n")
+			}
+		default:
+			if len(r.FixCmd) > 0 {
+				casFlag := ""
+				if r.FixCask {
+					casFlag = "--cask "
+				}
+				fmt.Printf("      brew install %s%s\n", casFlag, strings.Join(r.FixCmd, " "))
+			} else {
+				fmt.Printf("      manual: %s\n", r.FixHint)
+			}
+		}
+	}
+	if !any {
+		fmt.Println(tui.StyleOK.Render("  nothing to do — all checks pass."))
+	}
+	fmt.Println()
+	fmt.Println(tui.StyleDim.Render("rerun without --dry-run to apply."))
 }
 
 func applyFix(layout liftoff.Layout, r liftoff.CheckResult) error {
