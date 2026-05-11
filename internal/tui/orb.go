@@ -280,15 +280,21 @@ func (o Orb) View() string {
 			sb.WriteString(s.Render(string(r)))
 			_ = x
 		}
-		if y == 0 && o.totalShots > 0 {
-			sb.WriteString("  " + StyleDim.Render(scoreLine(o)))
-		}
 		if y == h/2 && resultText != "" {
 			sb.WriteString(resultText)
 		}
 		if y < h-1 {
 			sb.WriteString("\n")
 		}
+	}
+	// Arcade-style scoreline under the shooter: centered to the grid width.
+	if o.totalShots > 0 {
+		score := scoreLine(o)
+		pad := (o.width - lipgloss.Width(score)) / 2
+		if pad < 0 {
+			pad = 0
+		}
+		sb.WriteString("\n" + strings.Repeat(" ", pad) + StyleDim.Render(score))
 	}
 
 	box := lipgloss.NewStyle().
