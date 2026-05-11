@@ -32,8 +32,8 @@ type designAnswers struct {
 func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, error) {
 	a := &designAnswers{
 		name:     prefillName,
-		cloneDB:  true,
-		backend:  true,
+		cloneDB:  false, // DB clones are heavy; opt-in only
+		backend:  true,  // backend deps always installed (not prompted)
 		symlink:  true,
 		graphite: liftoff.HasGraphite(),
 	}
@@ -50,6 +50,9 @@ func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, e
 	// Force-set huh theme to honor lipgloss adaptive colors.
 	theme := huh.ThemeCharm()
 
+	// One question per group — huh advances groups individually, so each
+	// prompt occupies its own screen. Backend pip install isn't prompted
+	// anymore; it's always run.
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -73,29 +76,23 @@ func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, e
 					return nil
 				}),
 		),
-
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Clone local database?").
-				Description(databaseHelp(dbDisabled)).
+				Description(databaseHelp(dbDisabled) + "\n\nDefault is No — DB clones take significant disk space. Say Yes if this worktree needs its own data.").
 				Affirmative("Yes").
 				Negative("No").
 				Value(&a.cloneDB),
-
-			huh.NewConfirm().
-				Title("Install backend deps (pip)?").
-				Description("`pip install -r requirements.txt -r requirements_test.txt` in `backend/`").
-				Affirmative("Yes").
-				Negative("No").
-				Value(&a.backend),
-
+		),
+		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Symlink frontend node_modules from master?").
 				Description("Saves ~2GB + skips a 2-min yarn install. (You can run yarn install in the worktree later if you need worktree-specific deps.)").
 				Affirmative("Yes").
 				Negative("No").
 				Value(&a.symlink),
-
+		),
+		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Track in graphite?").
 				Description(graphiteHelp(gtDisabled)).
