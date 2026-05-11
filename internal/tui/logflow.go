@@ -24,6 +24,7 @@ type logKeys struct {
 	KeyMap
 	Follow key.Binding
 	Filter key.Binding
+	Tags   key.Binding
 }
 
 func newLogKeys() logKeys {
@@ -35,18 +36,22 @@ func newLogKeys() logKeys {
 		),
 		Filter: key.NewBinding(
 			key.WithKeys("/"),
-			key.WithHelp("/", "filter"),
+			key.WithHelp("/", "search"),
+		),
+		Tags: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "services"),
 		),
 	}
 }
 
 func (k logKeys) ShortHelp() []key.Binding {
-	return []key.Binding{k.Follow, k.Filter, k.HelpKey, k.Quit}
+	return []key.Binding{k.Follow, k.Filter, k.Tags, k.HelpKey, k.Quit}
 }
 func (k logKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Follow},
-		{k.Filter, k.HelpKey, k.Quit},
+		{k.Filter, k.Tags, k.HelpKey, k.Quit},
 	}
 }
 
@@ -68,32 +73,40 @@ type logModel struct {
 	help     help.Model
 	keys     logKeys
 
-	lines  []string // raw, full backlog (capped)
-	buf    strings.Builder // joined content; rebuilt only on trim
+	// Parallel slices: same length, both rebuild together. tags[i] is the
+	// raw service tag for the styled line lines[i].
+	lines  []string
+	tags   []string
+	buf    strings.Builder
 	width  int
 	height int
 
-	// Filter state: pattern is the active substring; filterInput is the
-	// edit widget shown when filterMode is true.
+	// Search (text substring) filter.
 	filterMode  bool
 	filterInput textinput.Model
 	pattern     string
+
+	// Service tag filter — when a tag is false in tagOn, lines with that
+	// tag are hidden. Initial state: all on. The overlay panel toggled
+	// via `t` lets the user pick which streams to show.
+	tagMode   bool
+	tagOn     map[string]bool
+	tagOrder  []string
+	tagCursor int
 
 	// channel where tail goroutines push lines, plus a done channel so they exit.
 	incoming chan logLineMsg
 	done     chan struct{}
 }
 
-// rebuildBuf reassembles m.buf from m.lines, applying the active filter
-// pattern (case-insensitive substring) if set. Called when the rolling
-// window trims or when the filter pattern changes; per-line appends use
-// a cheap WriteString.
+// rebuildBuf reassembles m.buf from m.lines, applying both the active
+// substring filter (m.pattern) and the per-tag filter (m.tagOn).
 func (m *logModel) rebuildBuf() {
 	m.buf.Reset()
 	m.buf.Grow(len(m.lines) * 80)
 	first := true
-	for _, ln := range m.lines {
-		if !m.matchFilter(ln) {
+	for i, ln := range m.lines {
+		if !m.matchVisible(m.tags[i], ln) {
 			continue
 		}
 		if !first {
@@ -104,7 +117,12 @@ func (m *logModel) rebuildBuf() {
 	}
 }
 
-func (m *logModel) matchFilter(ln string) bool {
+func (m *logModel) matchVisible(tag, ln string) bool {
+	if m.tagOn != nil {
+		if on, known := m.tagOn[tag]; known && !on {
+			return false
+		}
+	}
 	if m.pattern == "" {
 		return true
 	}
@@ -190,6 +208,45 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Height = msg.Height - 5
 		m.filterInput.Width = msg.Width - 12
 	case tea.KeyMsg:
+		// Tag-picker overlay owns input when open.
+		if m.tagMode {
+			switch msg.String() {
+			case "esc", "enter", "t":
+				m.tagMode = false
+				return m, nil
+			case "up", "k":
+				if m.tagCursor > 0 {
+					m.tagCursor--
+				}
+			case "down", "j":
+				if m.tagCursor < len(m.tagOrder)-1 {
+					m.tagCursor++
+				}
+			case " ", "tab":
+				if m.tagCursor < len(m.tagOrder) {
+					t := m.tagOrder[m.tagCursor]
+					m.tagOn[t] = !m.tagOn[t]
+					m.rebuildBuf()
+					m.viewport.SetContent(m.buf.String())
+					if m.follow {
+						m.viewport.GotoBottom()
+					}
+				}
+			case "a":
+				for _, t := range m.tagOrder {
+					m.tagOn[t] = true
+				}
+				m.rebuildBuf()
+				m.viewport.SetContent(m.buf.String())
+			case "n":
+				for _, t := range m.tagOrder {
+					m.tagOn[t] = false
+				}
+				m.rebuildBuf()
+				m.viewport.SetContent(m.buf.String())
+			}
+			return m, nil
+		}
 		// Filter-editing mode owns most key input.
 		if m.filterMode {
 			switch msg.Type {
@@ -233,16 +290,26 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterInput.SetValue(m.pattern)
 			m.filterInput.Focus()
 			return m, textinput.Blink
+		case key.Matches(msg, m.keys.Tags):
+			m.tagMode = true
+			return m, nil
 		case msg.String() == "?":
 			m.help.ShowAll = !m.help.ShowAll
 		}
 	case logLineMsg:
 		styled := stylizeLine(msg.tag, msg.line)
 		m.lines = append(m.lines, styled)
+		m.tags = append(m.tags, msg.tag)
+		// Register newly-seen tags so they appear in the tag panel.
+		if _, ok := m.tagOn[msg.tag]; !ok {
+			m.tagOn[msg.tag] = true
+			m.tagOrder = append(m.tagOrder, msg.tag)
+		}
 		if len(m.lines) > 5000 {
 			m.lines = m.lines[len(m.lines)-5000:]
+			m.tags = m.tags[len(m.tags)-5000:]
 			m.rebuildBuf()
-		} else if m.matchFilter(styled) {
+		} else if m.matchVisible(msg.tag, styled) {
 			if m.buf.Len() > 0 {
 				m.buf.WriteByte('\n')
 			}
@@ -313,17 +380,55 @@ func (m *logModel) View() string {
 	}
 	header += "  " + follow + "  " + StyleDim.Render(fmt.Sprintf("%d lines", len(m.lines)))
 	if m.pattern != "" && !m.filterMode {
-		header += "  " + StyleWarn.Render("filter: "+m.pattern)
+		header += "  " + StyleWarn.Render("search: "+m.pattern)
+	}
+	if hidden := m.hiddenTagCount(); hidden > 0 {
+		header += "  " + StyleWarn.Render(fmt.Sprintf("%d service(s) hidden", hidden))
 	}
 
 	var footer string
-	if m.filterMode {
-		footer = StyleHi.Render("filter: ") + m.filterInput.View() +
+	switch {
+	case m.tagMode:
+		footer = m.viewTagPanel()
+	case m.filterMode:
+		footer = StyleHi.Render("search: ") + m.filterInput.View() +
 			"\n" + StyleDim.Render("enter: apply · esc: clear")
-	} else {
+	default:
 		footer = m.help.View(m.keys)
 	}
 	return header + "\n" + m.viewport.View() + "\n" + footer
+}
+
+func (m *logModel) hiddenTagCount() int {
+	n := 0
+	for _, on := range m.tagOn {
+		if !on {
+			n++
+		}
+	}
+	return n
+}
+
+func (m *logModel) viewTagPanel() string {
+	var b strings.Builder
+	b.WriteString(StyleTitle.Render("services") + "\n")
+	for i, t := range m.tagOrder {
+		cursor := "  "
+		if i == m.tagCursor {
+			cursor = "> "
+		}
+		box := "[ ]"
+		if m.tagOn[t] {
+			box = StyleOK.Render("[x]")
+		}
+		display := tagDisplay[t]
+		if display == "" {
+			display = t
+		}
+		b.WriteString(cursor + box + " " + display + "\n")
+	}
+	b.WriteString(StyleDim.Render("space toggle · a all · n none · enter/t/esc close"))
+	return b.String()
 }
 
 // RunLogTUI is the cobra entry point for `kit log`.
@@ -359,6 +464,7 @@ func RunLogTUI(worktree string) error {
 		help:        NewHelp(),
 		keys:        newLogKeys(),
 		filterInput: ti,
+		tagOn:       map[string]bool{},
 		incoming:    make(chan logLineMsg, 256),
 		done:        make(chan struct{}),
 	}
