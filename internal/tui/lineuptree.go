@@ -177,7 +177,7 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 	attach = func(parent *tree.Tree, n *wtNode) {
 		label := wtTreeLabel(n, sizeByName[n.name])
 		child := tree.Root(label)
-		for _, entry := range stackChildLabels(n.gtStack) {
+		for _, entry := range stackChildLabels(n.gtStack, mainBranch) {
 			child.Child(entry)
 		}
 		for _, s := range n.services {
@@ -275,25 +275,34 @@ func svcLabel(s serviceRow) string {
 }
 
 // stackChildLabels renders the gt stack as one tree child per branch.
-// Returns nil for stacks of <2 (boring: just trunk + self). Each entry
-// keeps gt's glyph (◉ current, ◯ other) plus any "(needs restack)" /
-// "(liftoff-X)" hint inline. Current-branch row gets the accent color
-// + bold via StyleHi.
-func stackChildLabels(stack []liftoff.StackEntry) []string {
+// Returns nil for stacks of <2 (boring: just trunk + self).
+//
+// Styling rules:
+//   - trunk (master/main): dim grey — structural
+//   - current branch: accent + bold
+//   - other branches: accent, not bold
+//
+// "(needs restack)" / "(liftoff-X)" hints stay inline.
+func stackChildLabels(stack []liftoff.StackEntry, trunk string) []string {
 	if len(stack) < 2 {
 		return nil
 	}
+	branchStyle := lipgloss.NewStyle().Foreground(colorAccent)
 	out := make([]string, len(stack))
 	for i, e := range stack {
 		glyph := e.Glyph
 		if glyph == "" {
 			glyph = "◯"
 		}
+		body := glyph + " " + e.Branch
 		var line string
-		if e.Current {
-			line = StyleHi.Render(glyph + " " + e.Branch)
-		} else {
-			line = StyleDim.Render(glyph + " " + e.Branch)
+		switch {
+		case e.Branch == trunk || e.Branch == "master" || e.Branch == "main":
+			line = StyleDim.Render(body)
+		case e.Current:
+			line = StyleHi.Render(body)
+		default:
+			line = branchStyle.Render(body)
 		}
 		if e.Hint != "" {
 			styled := StyleDim.Render(" " + e.Hint)
