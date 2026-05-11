@@ -36,34 +36,12 @@ var swapCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 
-		// Resolve worktree name.
-		var name string
-		if len(args) == 1 {
-			// Special-case master so users can `kit swap master -e zed`.
-			if args[0] == "master" {
-				name = "master"
-			} else {
-				n, err := liftoff.NormalizeAndValidate(args[0])
-				if err != nil {
-					return err
-				}
-				name = n
-			}
-		} else {
-			// No name arg: prefer cwd. If pwd is inside a worktree (or the
-			// master repo itself), skip the picker and go straight to editor.
-			if n := worktreeFromCwd(layout); n != "" {
-				name = n
-			} else {
-				n, err := tui.PickWorktree(layout, "kit swap — pick a kit")
-				if err != nil {
-					return err
-				}
-				if n == "" {
-					return nil
-				}
-				name = n
-			}
+		name, err := resolveTarget(layout, args, "kit swap — pick a kit", false)
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			return nil
 		}
 
 		// Resolve editor.
