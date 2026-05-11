@@ -13,6 +13,7 @@ import (
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -72,22 +73,42 @@ type logModel struct {
 	width  int
 	height int
 
+	// Filter state: pattern is the active substring; filterInput is the
+	// edit widget shown when filterMode is true.
+	filterMode  bool
+	filterInput textinput.Model
+	pattern     string
+
 	// channel where tail goroutines push lines, plus a done channel so they exit.
 	incoming chan logLineMsg
 	done     chan struct{}
 }
 
-// rebuildBuf reassembles m.buf from m.lines. Called only when the rolling
-// window trims old lines; new-line appends use a cheap WriteString.
+// rebuildBuf reassembles m.buf from m.lines, applying the active filter
+// pattern (case-insensitive substring) if set. Called when the rolling
+// window trims or when the filter pattern changes; per-line appends use
+// a cheap WriteString.
 func (m *logModel) rebuildBuf() {
 	m.buf.Reset()
 	m.buf.Grow(len(m.lines) * 80)
-	for i, ln := range m.lines {
-		if i > 0 {
+	first := true
+	for _, ln := range m.lines {
+		if !m.matchFilter(ln) {
+			continue
+		}
+		if !first {
 			m.buf.WriteByte('\n')
 		}
 		m.buf.WriteString(ln)
+		first = false
 	}
+}
+
+func (m *logModel) matchFilter(ln string) bool {
+	if m.pattern == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(ln), strings.ToLower(m.pattern))
 }
 
 // pumpLines is the tea.Cmd that reads from the channel.
@@ -167,7 +188,37 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.Width = msg.Width
 		m.viewport.Width = msg.Width - 2
 		m.viewport.Height = msg.Height - 5
+		m.filterInput.Width = msg.Width - 12
 	case tea.KeyMsg:
+		// Filter-editing mode owns most key input.
+		if m.filterMode {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.filterMode = false
+				m.filterInput.Blur()
+				if m.pattern != "" {
+					m.pattern = ""
+					m.rebuildBuf()
+					m.viewport.SetContent(m.buf.String())
+				}
+				return m, nil
+			case tea.KeyEnter:
+				m.filterMode = false
+				m.filterInput.Blur()
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.filterInput, cmd = m.filterInput.Update(msg)
+			if m.filterInput.Value() != m.pattern {
+				m.pattern = m.filterInput.Value()
+				m.rebuildBuf()
+				m.viewport.SetContent(m.buf.String())
+				if m.follow {
+					m.viewport.GotoBottom()
+				}
+			}
+			return m, cmd
+		}
 		switch {
 		case key.Matches(msg, m.keys.Quit), msg.Type == tea.KeyCtrlC:
 			close(m.done) // signal tail goroutines to exit
@@ -177,6 +228,11 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.follow {
 				m.viewport.GotoBottom()
 			}
+		case key.Matches(msg, m.keys.Filter):
+			m.filterMode = true
+			m.filterInput.SetValue(m.pattern)
+			m.filterInput.Focus()
+			return m, textinput.Blink
 		case msg.String() == "?":
 			m.help.ShowAll = !m.help.ShowAll
 		}
@@ -186,7 +242,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.lines) > 5000 {
 			m.lines = m.lines[len(m.lines)-5000:]
 			m.rebuildBuf()
-		} else {
+		} else if m.matchFilter(styled) {
 			if m.buf.Len() > 0 {
 				m.buf.WriteByte('\n')
 			}
@@ -256,8 +312,17 @@ func (m *logModel) View() string {
 		follow = StyleOK.Render("follow: on")
 	}
 	header += "  " + follow + "  " + StyleDim.Render(fmt.Sprintf("%d lines", len(m.lines)))
+	if m.pattern != "" && !m.filterMode {
+		header += "  " + StyleWarn.Render("filter: "+m.pattern)
+	}
 
-	footer := m.help.View(m.keys)
+	var footer string
+	if m.filterMode {
+		footer = StyleHi.Render("filter: ") + m.filterInput.View() +
+			"\n" + StyleDim.Render("enter: apply · esc: clear")
+	} else {
+		footer = m.help.View(m.keys)
+	}
 	return header + "\n" + m.viewport.View() + "\n" + footer
 }
 
@@ -281,15 +346,21 @@ func RunLogTUI(worktree string) error {
 	vp := viewport.New(80, 20)
 	vp.Style = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colorDim)
 
+	ti := textinput.New()
+	ti.Placeholder = "substring (case-insensitive)…"
+	ti.Prompt = ""
+	ti.CharLimit = 80
+
 	m := &logModel{
-		worktree: worktree,
-		files:    files,
-		follow:   true,
-		viewport: vp,
-		help:     NewHelp(),
-		keys:     newLogKeys(),
-		incoming: make(chan logLineMsg, 256),
-		done:     make(chan struct{}),
+		worktree:    worktree,
+		files:       files,
+		follow:      true,
+		viewport:    vp,
+		help:        NewHelp(),
+		keys:        newLogKeys(),
+		filterInput: ti,
+		incoming:    make(chan logLineMsg, 256),
+		done:        make(chan struct{}),
 	}
 	_, runErr := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return runErr
