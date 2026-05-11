@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var lineupTree bool
-
 var lineupCmd = &cobra.Command{
 	Use:     "lineup",
 	Aliases: []string{"ls", "list"},
@@ -19,15 +17,7 @@ var lineupCmd = &cobra.Command{
 		if !layout.MasterIsRepo() {
 			return fmt.Errorf("master repo not found at %s (set KIT_ROOT/KIT_MASTER_DIR)", layout.Master)
 		}
-		var (
-			out string
-			err error
-		)
-		if lineupTree {
-			out, err = tui.RenderLineupTree(layout)
-		} else {
-			out, err = tui.RenderLineup(layout)
-		}
+		out, err := tui.RenderLineup(layout)
 		if err != nil {
 			return err
 		}
@@ -37,6 +27,5 @@ var lineupCmd = &cobra.Command{
 }
 
 func init() {
-	lineupCmd.Flags().BoolVarP(&lineupTree, "tree", "t", false, "render as a tree (master → worktrees → running services)")
 	rootCmd.AddCommand(lineupCmd)
 }
