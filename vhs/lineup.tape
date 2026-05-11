@@ -7,7 +7,7 @@ Set Shell "zsh"
 Set FontSize 16
 Set Width 1200
 Set Height 700
-Set Theme "Catppuccin Mocha"
+Set Theme "ayu_light"
 Set Padding 24
 Set TypingSpeed 50ms
 

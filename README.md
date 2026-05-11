@@ -9,25 +9,29 @@ port allocation**, and **one-command service spin-up/down**.
 ![kit lineup demo](vhs/lineup.gif)
 
 ```
+kit                       # interactive menu — pick an action without memorizing verbs
+kit guide                 # one-screen tour of the daily flow
 kit setup                 # one-time: install tools, clone master, adopt existing worktrees
 kit doctor                # check your setup is ready
 kit adopt <name>          # register an existing worktree with kit
 kit design voice-agent    # walks you through creating a worktree
 kit lineup                # show all kits available
-kit lineup --tree         # same data, hierarchical tree view
+kit lineup --tree         # tree view with gt stack + running services
 kit links                 # print the current worktree's URLs (live status)
 kit play voice-agent      # start the kit's services (frontend + backend + celery)
 kit pause voice-agent     # stop them
-kit log voice-agent       # tail all service logs
+kit log voice-agent       # tail all service logs (/ search, t services, --delete-all)
+kit diff                  # interactive diff vs master (lumen-aware)
+kit sync                  # gt sync + prompt to prune merged worktrees
 kit wash                  # picker → strip and clean up a kit
 kit prune                 # bulk-wash worktrees whose PR is merged/closed
 kit warmup                # launch the ghostty workspace (cwd or picker)
 kit swap                  # open the current worktree in IDE or Ghostty
 ```
 
-Classic aliases work: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause), `logs` (log), `rm`/`remove`/`delete` (wash), `gtab` (warmup), `open` (swap), `urls`/`ports` (links), `physio` (doctor).
+Classic aliases work: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause), `logs` (log), `rm`/`remove`/`delete` (wash), `gtab` (warmup), `open` (swap), `urls`/`ports` (links), `physio` (doctor), `register` (adopt), `prune` (tear).
 
-Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`, `wash`, `links`) all support the same shape: pass a name, omit it to auto-pick the worktree you're `cd`'d into, or get a numbered picker (1-9 quick-select) when cwd is unrelated.
+Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`, `wash`, `links`, `diff`, `adopt`) all support the same shape: pass a name, omit it to auto-pick the worktree you're `cd`'d into, or get a numbered picker (1-9 quick-select) when cwd is unrelated. Master appears in every picker as 🚀 slot 0.
 
 ## Why
 
@@ -247,10 +251,46 @@ injection.
 Picker → confirm → kill in reverse start order. `--all` stops everything
 across every worktree.
 
-### `kit log [name]` — tail logs
+### `kit log [name]` (alias `logs`) — tail logs
 
 Multi-tail of all `.log` files in `~/.config/kit/run/<name>/`. Each line
-prefixed with the service name. Ctrl-C to exit.
+prefixed with the service name. Service tags are color-coded + padded
+for column alignment.
+
+Keys:
+
+- `f` toggle follow (auto-scroll)
+- `/` open search (case-insensitive substring)
+- `t` open services panel — multi-toggle which streams show
+- `↑/↓ k/j` scroll, `pgup/pgdn` page, `g/G` top/bottom
+- `q` / `ctrl+c` exit
+
+Pass `--delete-all` to truncate every `.log` for the worktree (with
+confirm). Files stay in place so running tails keep their FD.
+
+### `kit diff [name]` — see what changed
+
+Interactive diff of the worktree against master. Uses
+[lumen](https://github.com/jnsahaj/lumen) for a side-by-side viewer
+with syntax highlight when installed; falls back to plain `git diff`.
+
+### `kit sync` — daily refresh
+
+Runs `gt sync` inside master (pulls trunk, restacks, prunes merged
+local branches), then scans worktrees for merged/closed PRs and
+offers to run `kit tear` on whatever remains. Requires `gt`.
+
+### `kit adopt [name]` (alias `register`) — register an existing worktree
+
+For worktrees that exist on disk + in git but aren't in kit's
+`config.toml` yet. Allocates a port slot, writes metadata, optionally
+symlinks frontend node_modules, writes gtab, runs `gt track`. `kit
+setup` runs this automatically for legacy worktrees during onboarding.
+
+### `kit guide` — daily-flow tour
+
+Single-screen markdown guide of every command and when to use it.
+Glamour-styled for terminal readability.
 
 ### `kit wash` (alias `rm`) — strip a kit
 
