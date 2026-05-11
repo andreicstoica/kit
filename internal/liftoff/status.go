@@ -106,8 +106,11 @@ func (l Layout) AheadBehind(worktreePath string) (ahead, behind int) {
 }
 
 // HasDB returns true if a postgres DB named DBName(name) exists locally.
+// Connects to the maintenance "postgres" database so psql doesn't fail
+// when the user's $USER database doesn't exist.
 func HasDB(name string) bool {
-	cmd := exec.Command("psql", "-Atc", "SELECT 1 FROM pg_database WHERE datname='"+DBName(name)+"'")
+	cmd := exec.Command("psql", "-d", "postgres", "-Atc",
+		"SELECT 1 FROM pg_database WHERE datname='"+DBName(name)+"'")
 	out, err := cmd.Output()
 	if err != nil {
 		return false

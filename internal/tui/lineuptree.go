@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -26,9 +28,11 @@ type wtNode struct {
 	sortKey      int64
 	services     []serviceRow
 	branch       string
-	gtParent     string                // graphite-tracked parent branch name, "" if untracked
-	needsRestack bool                  // parent has moved forward; branch should `gt restack`
-	gtStack      []liftoff.StackEntry  // full stack (trunk → ... → self), empty if untracked
+	gtParent     string               // graphite-tracked parent branch name, "" if untracked
+	needsRestack bool                 // parent has moved forward; branch should `gt restack`
+	gtStack      []liftoff.StackEntry // full stack (trunk → ... → self), empty if untracked
+	hasOwnDB     bool                 // dedicated postgres DB (liftoff_<name>)
+	symlinked    bool                 // frontend/app/node_modules is a symlink to master
 	children     []*wtNode
 }
 
@@ -117,6 +121,15 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 					n.gtStack = layout.GtStackOf(in.w.Path)
 				}
 			}
+			if name != "master" {
+				if liftoff.HasPostgres() {
+					n.hasOwnDB = liftoff.HasDB(name)
+				}
+				appNodeModules := filepath.Join(in.w.Path, "frontend", "app", "node_modules")
+				if fi, err := os.Lstat(appNodeModules); err == nil {
+					n.symlinked = fi.Mode()&os.ModeSymlink != 0
+				}
+			}
 			nodes[i] = n
 			parents[i] = n.gtParent
 		}()
@@ -179,6 +192,15 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		child := tree.Root(label)
 		for _, entry := range stackChildLabels(n.gtStack, mainBranch) {
 			child.Child(entry)
+		}
+		// Setup sub-node shows DB ownership + node_modules wiring so the
+		// user can tell at a glance whether the worktree is sharing
+		// master's DB or has its own, and whether yarn was actually run.
+		if n.name != "master" {
+			setupGroup := tree.Root(StyleDim.Render("setup"))
+			setupGroup.Child(dbLabel(n))
+			setupGroup.Child(symlinkLabel(n))
+			child.Child(setupGroup)
 		}
 		// Services nest under their own "services" subnode so the
 		// enumerator clearly separates them from gt branch rows.
@@ -277,6 +299,24 @@ func stackSizeFor(n *wtNode, byBranch map[string]*wtNode) int {
 // svcLabel renders a service row distinctly from gt branch rows.
 // Branches use ◯/◉ circles; services use ▶/▷ triangles so they don't
 // blend together visually. Port number sits dim after the service name.
+// dbLabel renders the DB-ownership row for a worktree.
+func dbLabel(n *wtNode) string {
+	muted := lipgloss.NewStyle().Foreground(colorMuted)
+	if n.hasOwnDB {
+		return StyleOK.Render("● ") + muted.Render(pad("db", 10)) + StyleDim.Render(liftoff.DBName(n.name))
+	}
+	return StyleDim.Render("◇ "+pad("db", 10)) + StyleDim.Render("shared (liftoff)")
+}
+
+// symlinkLabel renders the frontend node_modules wiring row.
+func symlinkLabel(n *wtNode) string {
+	muted := lipgloss.NewStyle().Foreground(colorMuted)
+	if n.symlinked {
+		return StyleOK.Render("● ") + muted.Render(pad("frontend", 10)) + StyleDim.Render("symlinked from master")
+	}
+	return StyleDim.Render("◇ "+pad("frontend", 10)) + StyleDim.Render("real node_modules")
+}
+
 func svcLabel(s serviceRow) string {
 	glyph := "▷"
 	style := StyleDim
