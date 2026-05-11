@@ -6,6 +6,8 @@ matters for the Liftoff dev loop: clean naming, automatic env/db/dep wiring,
 graphite tracking, ghostty workspace generation, **automatic per-worktree
 port allocation**, and **one-command service spin-up/down**.
 
+![kit lineup demo](vhs/lineup.gif)
+
 ```
 kit setup                 # one-time: install missing tools, clone master
 kit doctor                # check your setup is ready
@@ -81,6 +83,8 @@ Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`.
 Run `kit completion --help` to wire shell tab-completion (zsh / bash / fish / powershell).
 
 ## First-time setup
+
+![kit setup demo](vhs/setup.gif)
 
 ```sh
 kit setup
@@ -258,6 +262,8 @@ Opens the worktree in the first available editor. Bumps `last_used` so the
 kit floats to the top of `lineup`.
 
 ### `kit doctor` — diagnose your setup
+
+![kit doctor demo](vhs/doctor.gif)
 
 Read-only check of every tool kit depends on. Prints a colored report with
 a fix hint for each warning/failure. Exits non-zero on any failure (so CI
