@@ -26,9 +26,9 @@ type wtNode struct {
 	sortKey      int64
 	services     []serviceRow
 	branch       string
-	gtParent     string   // graphite-tracked parent branch name, "" if untracked
-	needsRestack bool     // parent has moved forward; branch should `gt restack`
-	gtStack      []string // full stack (trunk → ... → self), empty if untracked
+	gtParent     string                // graphite-tracked parent branch name, "" if untracked
+	needsRestack bool                  // parent has moved forward; branch should `gt restack`
+	gtStack      []liftoff.StackEntry  // full stack (trunk → ... → self), empty if untracked
 	children     []*wtNode
 }
 
@@ -177,8 +177,8 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 	attach = func(parent *tree.Tree, n *wtNode) {
 		label := wtTreeLabel(n, sizeByName[n.name])
 		child := tree.Root(label)
-		if len(n.gtStack) >= 2 {
-			child.Child(stackLabel(n.gtStack, n.branch))
+		for _, entry := range stackChildLabels(n.gtStack) {
+			child.Child(entry)
 		}
 		for _, s := range n.services {
 			child.Child(svcLabel(s))
@@ -274,33 +274,35 @@ func svcLabel(s serviceRow) string {
 	return StyleDim.Render("○ " + s.name)
 }
 
-// stackLabel renders a horizontal "trunk → ... → here" chain. Each entry
-// may carry trailing parenthetical hints from `gt ls -s` (e.g. "branch
-// (needs restack)") which are kept inline. The current branch is bolded.
-func stackLabel(stack []string, current string) string {
-	parts := make([]string, len(stack))
-	for i, label := range stack {
-		branch := label
-		hint := ""
-		if p := strings.Index(label, " ("); p >= 0 {
-			branch = label[:p]
-			hint = label[p:]
-		}
-		var styled string
-		if branch == current {
-			styled = StyleHi.Render(branch)
-		} else {
-			styled = lipgloss.NewStyle().Foreground(colorMuted).Render(branch)
-		}
-		if hint != "" {
-			if strings.Contains(hint, "needs restack") {
-				styled += StyleWarn.Render(hint)
-			} else {
-				styled += StyleDim.Render(hint)
-			}
-		}
-		parts[i] = styled
+// stackChildLabels renders the gt stack as one tree child per branch.
+// Returns nil for stacks of <2 (boring: just trunk + self). Each entry
+// keeps gt's glyph (◉ current, ◯ other) plus any "(needs restack)" /
+// "(liftoff-X)" hint inline. Current-branch row gets the accent color
+// + bold via StyleHi.
+func stackChildLabels(stack []liftoff.StackEntry) []string {
+	if len(stack) < 2 {
+		return nil
 	}
-	arrow := StyleDim.Render(" → ")
-	return StyleDim.Render("stack: ") + strings.Join(parts, arrow)
+	out := make([]string, len(stack))
+	for i, e := range stack {
+		glyph := e.Glyph
+		if glyph == "" {
+			glyph = "◯"
+		}
+		var line string
+		if e.Current {
+			line = StyleHi.Render(glyph+" "+e.Branch) + StyleHi.Render("  ← here")
+		} else {
+			line = StyleDim.Render(glyph) + " " + lipgloss.NewStyle().Foreground(colorMuted).Render(e.Branch)
+		}
+		if e.Hint != "" {
+			styled := StyleDim.Render(" " + e.Hint)
+			if strings.Contains(e.Hint, "needs restack") {
+				styled = StyleWarn.Render(" " + e.Hint)
+			}
+			line += styled
+		}
+		out[i] = line
+	}
+	return out
 }
