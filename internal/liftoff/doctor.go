@@ -312,12 +312,12 @@ func checkRabbitMQ() CheckResult {
 	}
 	if err := exec.Command(bin, "status").Run(); err != nil {
 		r.Status = CheckWarn
-		r.Detail = "installed at " + bin + " but not running"
+		r.Detail = "not running — only needed if you run celery tasks"
 		r.FixHint = "brew services start rabbitmq"
 		return r
 	}
 	r.Status = CheckOK
-	r.Detail = "running (" + bin + ")"
+	r.Detail = "running"
 	return r
 }
 
