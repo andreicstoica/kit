@@ -82,13 +82,20 @@ var swapCmd = &cobra.Command{
 
 		if chosen.Binary == warmupBinarySentinel {
 			if name == "master" {
-				return fmt.Errorf("no gtab workspace for master — warmup is per-feature")
-			}
-			if !layout.HasGtab(name) {
-				return fmt.Errorf("no gtab workspace at %s — re-run `kit design` or write one manually", layout.GtabFile(name))
-			}
-			if err := layout.LaunchGtab(name); err != nil {
-				return err
+				// No per-feature gtab workspace; open Ghostty rooted at master.
+				c := exec.Command("open", "-a", "Ghostty.app", path)
+				c.Stdout = os.Stdout
+				c.Stderr = os.Stderr
+				if err := c.Start(); err != nil {
+					return err
+				}
+			} else {
+				if !layout.HasGtab(name) {
+					return fmt.Errorf("no gtab workspace at %s — re-run `kit design` or write one manually", layout.GtabFile(name))
+				}
+				if err := layout.LaunchGtab(name); err != nil {
+					return err
+				}
 			}
 		} else {
 			if err := launchEditor(*chosen, path); err != nil {
