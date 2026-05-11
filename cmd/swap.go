@@ -39,20 +39,31 @@ var swapCmd = &cobra.Command{
 		// Resolve worktree name.
 		var name string
 		if len(args) == 1 {
-			n, err := liftoff.NormalizeAndValidate(args[0])
-			if err != nil {
-				return err
+			// Special-case master so users can `kit swap master -e zed`.
+			if args[0] == "master" {
+				name = "master"
+			} else {
+				n, err := liftoff.NormalizeAndValidate(args[0])
+				if err != nil {
+					return err
+				}
+				name = n
 			}
-			name = n
 		} else {
-			n, err := tui.PickWorktree(layout, "kit swap — pick a kit")
-			if err != nil {
-				return err
+			// No name arg: prefer cwd. If pwd is inside a worktree (or the
+			// master repo itself), skip the picker and go straight to editor.
+			if n := worktreeFromCwd(layout); n != "" {
+				name = n
+			} else {
+				n, err := tui.PickWorktree(layout, "kit swap — pick a kit")
+				if err != nil {
+					return err
+				}
+				if n == "" {
+					return nil
+				}
+				name = n
 			}
-			if n == "" {
-				return nil
-			}
-			name = n
 		}
 
 		// Resolve editor.
@@ -74,27 +85,69 @@ var swapCmd = &cobra.Command{
 			chosen = c
 		}
 
-		// Resolve worktree path (handle legacy).
-		path := layout.WorktreePath(name)
-		if _, err := os.Stat(path); err != nil {
-			legacy := layout.LegacyWorktreePath(name)
-			if _, err2 := os.Stat(legacy); err2 == nil {
-				path = legacy
-			} else {
-				return fmt.Errorf("worktree not found: %s", path)
+		// Resolve worktree path. Special-case "master" (the main repo);
+		// otherwise try the clean path then fall back to the legacy prefix.
+		var path string
+		if name == "master" {
+			path = layout.Master
+		} else {
+			path = layout.WorktreePath(name)
+			if _, err := os.Stat(path); err != nil {
+				legacy := layout.LegacyWorktreePath(name)
+				if _, err2 := os.Stat(legacy); err2 == nil {
+					path = legacy
+				} else {
+					return fmt.Errorf("worktree not found: %s", path)
+				}
 			}
 		}
 
 		if err := launchEditor(*chosen, path); err != nil {
 			return err
 		}
-		if st, err := liftoff.LoadState(); err == nil {
-			st.TouchLastUsed(name)
-			_ = st.Save()
+		// Skip state touch for master — it has no entry in state.toml.
+		if name != "master" {
+			if st, err := liftoff.LoadState(); err == nil {
+				st.TouchLastUsed(name)
+				_ = st.Save()
+			}
 		}
 		fmt.Printf("opened %s in %s\n", path, chosen.Name)
 		return nil
 	},
+}
+
+// worktreeFromCwd returns the worktree name if pwd is inside one. Includes
+// master (returned as "master"). Returns "" if pwd is unrelated.
+func worktreeFromCwd(layout liftoff.Layout) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	cwd, _ = filepath.Abs(cwd)
+	wts, err := layout.ListWorktrees()
+	if err != nil {
+		return ""
+	}
+	best := ""
+	bestLen := 0
+	for _, w := range wts {
+		if w.Bare {
+			continue
+		}
+		wp, _ := filepath.Abs(w.Path)
+		if cwd == wp || strings.HasPrefix(cwd, wp+string(filepath.Separator)) {
+			if len(wp) > bestLen {
+				if w.IsMaster(layout) {
+					best = "master"
+				} else {
+					best = w.Name()
+				}
+				bestLen = len(wp)
+			}
+		}
+	}
+	return best
 }
 
 // editorDefs is the canonical candidate list, ordered by preference.
