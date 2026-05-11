@@ -75,16 +75,28 @@ swapping branches, restarting Vite, and tracking which version your DB was on.
 
 ## Install
 
+Requires Go. If you don't have it:
+
+```sh
+brew install go
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Then install kit and run setup:
+
+```sh
+go install github.com/andreicstoica/kit@latest
+kit setup
+```
+
+Or from a clone:
+
 ```sh
 git clone git@github.com:andreicstoica/kit.git ~/code/kit
 cd ~/code/kit
 make install                  # → ~/.local/bin/kit
-```
-
-Or:
-
-```sh
-go install github.com/andreicstoica/kit@latest
+kit setup
 ```
 
 Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`. Run
