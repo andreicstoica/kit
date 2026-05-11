@@ -300,7 +300,7 @@ func stackChildLabels(stack []liftoff.StackEntry, trunk string) []string {
 		case e.Branch == trunk || e.Branch == "master" || e.Branch == "main":
 			line = StyleDim.Render(body)
 		case e.Current:
-			line = StyleHi.Render(body)
+			line = lipgloss.NewStyle().Foreground(ColorLiftoff).Render(body)
 		default:
 			line = branchStyle.Render(body)
 		}
