@@ -11,7 +11,7 @@ import (
 var lineupCmd = &cobra.Command{
 	Use:     "lineup",
 	Aliases: []string{"ls", "list"},
-	Short:   "Show the kits currently on the field",
+	Short:   "Show the kits currently available",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		if !layout.MasterIsRepo() {

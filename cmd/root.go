@@ -33,7 +33,7 @@ var rootCmd = &cobra.Command{
 	Long: "**kit** creates, lists, and runs isolated git-worktree feature environments for Liftoff.\n\n" +
 		"## Soccer-themed verbs (classic aliases work)\n\n" +
 		"- `design` (`new`) — create a fresh kit\n" +
-		"- `lineup` (`ls`) — show kits on the field\n" +
+		"- `lineup` (`ls`) — show kits available\n" +
 		"- `play` — spin up dev servers (frontend + backend + celery)\n" +
 		"- `pause` — halt services\n" +
 		"- `log` — tail service logs\n" +

@@ -10,8 +10,9 @@ import (
 )
 
 var doctorCmd = &cobra.Command{
-	Use:   "doctor",
-	Short: "Diagnose your kit setup",
+	Use:     "doctor",
+	Aliases: []string{"physio"},
+	Short:   "Diagnose your kit setup",
 	Long: "**doctor** runs a series of read-only checks to confirm your toolchain " +
 		"is ready for `kit`.\n\nChecks:\n\n" +
 		"- Homebrew (and whether brew is on PATH)\n" +

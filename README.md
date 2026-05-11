@@ -10,7 +10,7 @@ port allocation**, and **one-command service spin-up/down**.
 kit setup                 # one-time: install missing tools, clone master
 kit doctor                # check your setup is ready
 kit design voice-agent    # walks you through creating a worktree
-kit lineup                # show all kits on the field
+kit lineup                # show all kits available
 kit play voice-agent      # start the kit's services (frontend + backend + celery)
 kit pause voice-agent     # stop them
 kit log voice-agent       # tail all service logs
@@ -214,7 +214,7 @@ Interactive wizard. Always prompts: name → DB clone? → backend deps? →
 symlink node_modules? → graphite track? → gtab? → review → run with live
 progress. Allocates a port slot at the end.
 
-### `kit lineup` (alias `ls`) — kits on the field
+### `kit lineup` (alias `ls`) — kits available
 
 Static table: `NAME · SLOT · BRANCH · STATUS · RUNNING · LAST USED`.
 Branch emoji prefix. Sorted by last-used desc. RUNNING shows `N/6` when at

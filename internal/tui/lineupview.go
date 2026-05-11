@@ -116,7 +116,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	var b strings.Builder
 
 	if len(rows) == 0 {
-		b.WriteString(StyleDim.Render("no kits on the field. start one with `kit design`.") + "\n")
+		b.WriteString(StyleDim.Render("no kits available. start one with `kit design`.") + "\n")
 		return b.String(), nil
 	}
 
