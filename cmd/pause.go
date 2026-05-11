@@ -22,7 +22,8 @@ var pauseCmd = &cobra.Command{
   kit pause <name>     skip picker
   kit pause <name> --only celery   stop only specific services
   kit pause --all      stop every running service across every worktree`,
-	Args: cobra.MaximumNArgs(1),
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		if pauseAll {

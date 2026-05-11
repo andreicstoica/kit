@@ -26,8 +26,9 @@ var adoptCmd = &cobra.Command{
 		"recognize it.\n\n" +
 		"Pass a name, or run from inside the worktree, or pick from a list of " +
 		"adoptable candidates.",
-	Args: cobra.MaximumNArgs(1),
-	RunE: runAdopt,
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeAdoptCandidates,
+	RunE:              runAdopt,
 }
 
 func init() {

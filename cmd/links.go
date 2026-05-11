@@ -19,8 +19,9 @@ var linksCmd = &cobra.Command{
 		"slot. Pass a name, or run from inside a worktree, or pick one from " +
 		"the list. Useful for pasting into Slack/Linear/notes without " +
 		"recomputing `3000 + slot*10`.",
-	Args: cobra.MaximumNArgs(1),
-	RunE: runLinks,
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
+	RunE:              runLinks,
 }
 
 func init() {
