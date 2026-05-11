@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const liftoffMasterRepoURL = "https://github.com/liftoffinc/liftoff-app.git"
+const liftoffMasterRepoURL = "https://github.com/liftoff-inc/liftoff-app.git"
 const brewInstallScript = `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
 const zshrcFenceComment = "# kit-setup: brew shellenv"
 

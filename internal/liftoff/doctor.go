@@ -48,6 +48,7 @@ func DefaultChecks(layout Layout) []Check {
 		{ID: "node-yarn", Run: checkNodeYarn},
 		{ID: "python", Run: checkPython},
 		{ID: "redis", Run: checkRedis},
+		{ID: "rabbitmq", Run: checkRabbitMQ},
 		{ID: "postgres", Run: checkPostgres},
 		{ID: "ghostty", Run: checkGhostty},
 		{ID: "editor", Run: checkEditor},
@@ -278,19 +279,39 @@ func checkPostgres() CheckResult {
 	if _, err := exec.LookPath("pg_isready"); err != nil {
 		r.Status = CheckFail
 		r.Detail = "postgres not installed"
-		r.FixHint = "brew install postgresql@16"
-		r.FixCmd = []string{"postgresql@16"}
+		r.FixHint = "brew install postgresql@17 pgvector postgis"
+		r.FixCmd = []string{"postgresql@17", "pgvector", "postgis"}
 		return r
 	}
 	if err := exec.Command("pg_isready", "-h", "127.0.0.1", "-p", "5432").Run(); err != nil {
 		r.Status = CheckWarn
 		r.Detail = "installed but not reachable on :5432"
-		r.FixHint = "brew services start postgresql@16"
+		r.FixHint = "brew services start postgresql@17"
 		return r
 	}
 	ver, _ := ToolVersion("psql", "--version")
 	r.Status = CheckOK
 	r.Detail = ver + "  reachable on :5432"
+	return r
+}
+
+func checkRabbitMQ() CheckResult {
+	r := CheckResult{Name: "rabbitmq"}
+	if _, err := exec.LookPath("rabbitmqctl"); err != nil {
+		r.Status = CheckFail
+		r.Detail = "rabbitmq not installed"
+		r.FixHint = "brew install rabbitmq"
+		r.FixCmd = []string{"rabbitmq"}
+		return r
+	}
+	if err := exec.Command("rabbitmqctl", "status").Run(); err != nil {
+		r.Status = CheckWarn
+		r.Detail = "installed but not running"
+		r.FixHint = "brew services start rabbitmq"
+		return r
+	}
+	r.Status = CheckOK
+	r.Detail = "running"
 	return r
 }
 
