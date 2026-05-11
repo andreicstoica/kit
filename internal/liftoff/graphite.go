@@ -34,3 +34,22 @@ func (l Layout) GtParentOf(worktreePath string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// NeedsRestack reports whether the branch in worktreePath needs to be
+// rebased on top of its parent. True when parent's HEAD is NOT an
+// ancestor of the worktree's HEAD (parent has moved forward since this
+// branch was last restacked).
+//
+// parent should be the graphite parent branch name. Returns false if
+// parent is empty.
+func (l Layout) NeedsRestack(worktreePath, parent string) bool {
+	if parent == "" {
+		return false
+	}
+	cmd := exec.Command("git", "merge-base", "--is-ancestor", parent, "HEAD")
+	cmd.Dir = worktreePath
+	if err := cmd.Run(); err != nil {
+		return true
+	}
+	return false
+}

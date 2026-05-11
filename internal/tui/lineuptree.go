@@ -14,20 +14,21 @@ import (
 // wtNode is one worktree row in the tree. Children are populated from the
 // graphite parent relationships when `gt` is available.
 type wtNode struct {
-	name     string
-	slot     int
-	running  int
-	total    int
-	dirty    bool
-	ahead    int
-	behind   int
-	legacy   bool
-	emoji    string
-	sortKey  int64
-	services []serviceRow
-	branch   string
-	gtParent string // graphite-tracked parent branch name, "" if untracked
-	children []*wtNode
+	name         string
+	slot         int
+	running      int
+	total        int
+	dirty        bool
+	ahead        int
+	behind       int
+	legacy       bool
+	emoji        string
+	sortKey      int64
+	services     []serviceRow
+	branch       string
+	gtParent     string // graphite-tracked parent branch name, "" if untracked
+	needsRestack bool   // parent has moved forward; branch should `gt restack`
+	children     []*wtNode
 }
 
 // RenderLineupTree prints worktrees as a tree.
@@ -110,6 +111,9 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 			}
 			if hasGt {
 				n.gtParent = layout.GtParentOf(in.w.Path)
+				if n.gtParent != "" {
+					n.needsRestack = layout.NeedsRestack(in.w.Path, n.gtParent)
+				}
 			}
 			nodes[i] = n
 			parents[i] = n.gtParent
@@ -160,9 +164,16 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		RootStyle(lipgloss.NewStyle()).
 		ItemStyle(lipgloss.NewStyle())
 
+	// Pre-compute stack size for each node so labels can render it without
+	// re-walking the graph during render.
+	sizeByName := map[string]int{}
+	for _, n := range nodes {
+		sizeByName[n.name] = stackSizeFor(n, byBranch)
+	}
+
 	var attach func(parent *tree.Tree, n *wtNode)
 	attach = func(parent *tree.Tree, n *wtNode) {
-		label := wtTreeLabel(n)
+		label := wtTreeLabel(n, sizeByName[n.name])
 		child := tree.Root(label)
 		for _, s := range n.services {
 			child.Child(svcLabel(s))
@@ -189,7 +200,7 @@ type serviceRow struct {
 	alive bool
 }
 
-func wtTreeLabel(n *wtNode) string {
+func wtTreeLabel(n *wtNode, stackSize int) string {
 	header := n.name
 	if n.emoji != "" {
 		header = n.emoji + " " + n.name
@@ -212,10 +223,46 @@ func wtTreeLabel(n *wtNode) string {
 	if n.slot > 0 {
 		parts = append(parts, StyleDim.Render(fmt.Sprintf("slot %d", n.slot)))
 	}
+	if stackSize >= 2 {
+		parts = append(parts, StyleDim.Render(fmt.Sprintf("stack %d", stackSize)))
+	}
+	if n.needsRestack {
+		parts = append(parts, StyleWarn.Render("⚠ restack"))
+	}
 	if n.legacy {
 		parts = append(parts, StyleDim.Render("(legacy)"))
 	}
 	return strings.Join(parts, "  ")
+}
+
+// stackSizeFor returns the total number of worktree nodes in n's connected
+// graphite-component (ancestors via gtParent chain + n itself + descendants).
+// Worktrees not tracked in graphite count as a stack of 1.
+func stackSizeFor(n *wtNode, byBranch map[string]*wtNode) int {
+	count := 1
+	// Walk up the parent chain.
+	cur := n
+	for {
+		if cur.gtParent == "" {
+			break
+		}
+		parent, ok := byBranch[cur.gtParent]
+		if !ok {
+			break
+		}
+		count++
+		cur = parent
+	}
+	// Walk down all descendants.
+	var descend func(x *wtNode)
+	descend = func(x *wtNode) {
+		for _, c := range x.children {
+			count++
+			descend(c)
+		}
+	}
+	descend(n)
+	return count
 }
 
 func svcLabel(s serviceRow) string {
