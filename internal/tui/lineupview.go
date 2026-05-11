@@ -55,11 +55,6 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		if ahead > 0 || behind > 0 {
 			stRaw = fmt.Sprintf("%s ↑%d↓%d", stRaw, ahead, behind)
 		}
-		if liftoff.HasGraphite() {
-			if parent := layout.GtParentOf(w.Path); parent != "" && layout.NeedsRestack(w.Path, parent) {
-				stRaw += " ⚠ restack"
-			}
-		}
 
 		meta, hasMeta := state.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
@@ -109,7 +104,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			hasRunning: hasRunning,
 			branch:     branchDisp,
 			status:     stRaw,
-			statusOK:   !strings.Contains(stRaw, "dirty") && !strings.Contains(stRaw, "restack"),
+			statusOK:   !strings.Contains(stRaw, "dirty"),
 			sortKey:    sortKey,
 		})
 	}
