@@ -12,10 +12,13 @@ var warmupCmd = &cobra.Command{
 	Use:     "warmup [name]",
 	Aliases: []string{"gtab"},
 	Short:   "Pre-match warmup: launch the gtab ghostty workspace for a kit",
-	Long: "**warmup** opens the kit's pre-built ghostty workspace (4 tabs " +
-		"laid out for frontend + backend + celery + scratch).\n\n" +
+	Long: "**warmup** opens the kit's ghostty workspace (2 tabs: the " +
+		"worktree root + a combined `tail -F` over every service log).\n\n" +
 		"With no arg, uses the worktree you're in (or the numbered picker if " +
-		"cwd is unrelated or master).",
+		"cwd is unrelated or master).\n\n" +
+		"The AppleScript is regenerated each run so it stays in sync with " +
+		"the current layout — safe to remove `~/.config/gtab/<name>.applescript` " +
+		"any time.",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -27,25 +30,20 @@ var warmupCmd = &cobra.Command{
 		if name == "" {
 			return nil
 		}
-		// Auto-write the gtab AppleScript if it's missing. Lets `kit warmup
-		// master` (or any adopted worktree that was never designed) work
-		// without forcing the user to re-run `kit design`.
-		if !layout.HasGtab(name) {
-			path := layout.Master
-			if name != "master" {
-				path = layout.WorktreePath(name)
-				if _, err := os.Stat(path); err != nil {
-					legacy := layout.LegacyWorktreePath(name)
-					if _, err2 := os.Stat(legacy); err2 == nil {
-						path = legacy
-					} else {
-						return fmt.Errorf("worktree path missing: %s", path)
-					}
+		path := layout.Master
+		if name != "master" {
+			path = layout.WorktreePath(name)
+			if _, err := os.Stat(path); err != nil {
+				legacy := layout.LegacyWorktreePath(name)
+				if _, err2 := os.Stat(legacy); err2 == nil {
+					path = legacy
+				} else {
+					return fmt.Errorf("worktree path missing: %s", path)
 				}
 			}
-			if _, err := layout.WriteGtab(name, path); err != nil {
-				return fmt.Errorf("write gtab: %w", err)
-			}
+		}
+		if _, err := layout.WriteGtab(name, path); err != nil {
+			return fmt.Errorf("write gtab: %w", err)
 		}
 		return layout.LaunchGtab(name)
 	},

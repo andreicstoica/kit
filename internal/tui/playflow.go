@@ -229,15 +229,11 @@ func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.It
 	}
 	var items []playWtItem
 	for _, w := range wts {
-		if w.Bare {
+		if w.Bare || w.IsMaster(layout) {
 			continue
 		}
 		name := w.Name()
 		emoji := liftoff.EmojiFor(name)
-		if w.IsMaster(layout) {
-			name = "master"
-			emoji = "🚀"
-		}
 		meta := st.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
 		running, _ := liftoff.RunningCount(name, ports)
@@ -685,7 +681,7 @@ func (m *playModel) viewRun() string {
 	b.WriteString(StyleTitle.Render("kit play — "+m.chosen.name) + "  " +
 		StyleDim.Render(m.stopwatch.View()) + "\n\n")
 	if m.plan.ReplaceCelery {
-		b.WriteString(StyleDim.Render(fmt.Sprintf("replaced %s's celery\n", m.plan.ReplaceVictim)))
+		b.WriteString(StyleDim.Render(fmt.Sprintf("replaced %s's celery", m.plan.ReplaceVictim)) + "\n")
 	}
 	for _, svc := range m.runOrder {
 		st := m.runStatuses[svc]
