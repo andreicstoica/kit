@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -406,8 +407,87 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 	if dm, ok := final.(*designModel); ok && dm.failed {
 		return errors.New("kit design reported a failure")
 	}
-	return nil
+	// Post-design "what's next?" prompt — offers to launch the gtab
+	// workspace, start dev servers, and/or open URLs in the browser
+	// so the user lands on a ready-to-go feature with one extra step
+	// instead of having to remember three more commands.
+	return offerNextSteps(layout, answers.name)
 }
 
 // RunDressTUI is kept as a back-compat alias.
 func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout, "") }
+
+// offerNextSteps prompts after a successful design run. Multi-select
+// over the three things people usually want next; runs each in
+// sequence. Skips entirely if the user picks nothing.
+func offerNextSteps(layout liftoff.Layout, name string) error {
+	const (
+		actGtab    = "gtab"
+		actPlay    = "play"
+		actBrowser = "browser"
+	)
+	var picks []string
+	if err := huh.NewMultiSelect[string]().
+		Title(fmt.Sprintf("✓ %s is ready. anything else?", name)).
+		Description("space to toggle · enter to run · esc to skip").
+		Options(
+			huh.NewOption("Open Ghostty workspace  (`kit warmup`)", actGtab),
+			huh.NewOption("Start dev servers       (`kit play`)", actPlay),
+			huh.NewOption("Open frontend URLs in browser", actBrowser),
+		).
+		Value(&picks).Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
+		return err
+	}
+	wantGtab := false
+	wantPlay := false
+	wantBrowser := false
+	for _, p := range picks {
+		switch p {
+		case actGtab:
+			wantGtab = true
+		case actPlay:
+			wantPlay = true
+		case actBrowser:
+			wantBrowser = true
+		}
+	}
+	// gtab first so the workspace is open when servers boot.
+	if wantGtab {
+		if !layout.HasGtab(name) {
+			if _, err := layout.WriteGtab(name, layout.WorktreePath(name)); err != nil {
+				fmt.Println(StyleErr.Render("gtab write failed: " + err.Error()))
+			}
+		}
+		if err := layout.LaunchGtab(name); err != nil {
+			fmt.Println(StyleErr.Render("gtab launch failed: " + err.Error()))
+		}
+	}
+	if wantPlay {
+		if err := RunPlayTUI(layout, PlayConfig{Name: name}); err != nil {
+			fmt.Println(StyleErr.Render("play failed: " + err.Error()))
+		}
+	}
+	if wantBrowser {
+		cfg, _ := liftoff.LoadConfig()
+		slot := 0
+		if cfg != nil {
+			if m, ok := cfg.Worktrees[name]; ok {
+				slot = m.Slot
+			}
+		}
+		ports := liftoff.PortsForSlot(slot)
+		for _, url := range []string{
+			fmt.Sprintf("http://localhost:%d", ports.App),
+			fmt.Sprintf("http://localhost:%d", ports.Admin),
+		} {
+			c := exec.Command("open", url)
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			_ = c.Start()
+		}
+	}
+	return nil
+}
