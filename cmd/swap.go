@@ -53,14 +53,22 @@ var swapCmd = &cobra.Command{
 			}
 			chosen = c
 		} else {
-			c, err := tui.PickEditor(installedEditors())
-			if err != nil {
-				return err
+			eds := installedEditors()
+			// Skip the picker when there's only one real editor (Ghostty is a
+			// secondary target, not an editor). One installed editor + Ghostty
+			// = still pick, since two distinct intents.
+			if soleEditor := loneEditor(eds); soleEditor != nil {
+				chosen = soleEditor
+			} else {
+				c, err := tui.PickEditor(eds)
+				if err != nil {
+					return err
+				}
+				if c == nil {
+					return nil
+				}
+				chosen = c
 			}
-			if c == nil {
-				return nil
-			}
-			chosen = c
 		}
 
 		// Resolve worktree path. Special-case "master" (the main repo);
@@ -204,6 +212,27 @@ func installedEditors() []tui.EditorCandidate {
 // warmupBinarySentinel marks the synthetic Ghostty-warmup candidate so swap's
 // RunE can route to LaunchGtab instead of launchEditor.
 const warmupBinarySentinel = "__warmup__"
+
+// loneEditor returns the single installed editor candidate when no
+// editor picker is necessary. Returns nil when there are zero installed
+// editors, two or more editors, or any number plus the Ghostty target
+// (Ghostty represents a distinct intent so the picker still appears).
+func loneEditor(eds []tui.EditorCandidate) *tui.EditorCandidate {
+	var editors []tui.EditorCandidate
+	hasGhostty := false
+	for _, e := range eds {
+		if e.Binary == warmupBinarySentinel {
+			hasGhostty = true
+			continue
+		}
+		editors = append(editors, e)
+	}
+	if len(editors) == 1 && !hasGhostty {
+		c := editors[0]
+		return &c
+	}
+	return nil
+}
 
 // resolveEditor returns a candidate for an explicit user-supplied editor name.
 // Tries PATH first, then matching .app bundle alias.

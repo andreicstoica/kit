@@ -6,6 +6,11 @@ import (
 
 var version = "0.1.0"
 
+func init() {
+	rootCmd.PersistentPreRunE = MaybeOfferSetup
+	rootCmd.RunE = runRootMenu
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "kit",
 	Short: "Manage Liftoff feature worktrees with port allocation + service spin-up",
