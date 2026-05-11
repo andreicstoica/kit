@@ -91,11 +91,18 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Offer bulk-adopt for unmanaged worktrees.
-	if err := offerBulkAdopt(layout); err != nil {
+	adopted, err := offerBulkAdopt(layout)
+	if err != nil {
 		fmt.Println(tui.StyleDim.Render("(adoption skipped: " + err.Error() + ")"))
 	}
 
-	fmt.Println(tui.StyleOK.Render("✓ ready to go — try `kit design my-first-kit`"))
+	fmt.Println()
+	if adopted > 0 {
+		fmt.Println(tui.StyleOK.Render("✓ existing worktrees ready to go."))
+		fmt.Println(tui.StyleDim.Render("to make a new one, try ") + tui.Code("kit design my-first-kit"))
+	} else {
+		fmt.Println(tui.StyleOK.Render("✓ ready to go.") + tui.StyleDim.Render(" make a new kit with ") + tui.Code("kit design my-first-kit"))
+	}
 	return nil
 }
 
@@ -147,17 +154,20 @@ func relativeDir(base, full string) string {
 	return ""
 }
 
-func offerBulkAdopt(layout liftoff.Layout) error {
+// offerBulkAdopt returns the number of worktrees actually adopted (0 on
+// skip or empty candidate list) so the caller can tailor the next-step
+// message.
+func offerBulkAdopt(layout liftoff.Layout) (int, error) {
 	c, err := liftoff.LoadConfig()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	cands, err := layout.FindAdoptCandidates(c)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(cands) == 0 {
-		return nil
+		return 0, nil
 	}
 	fmt.Println()
 	fmt.Println(tui.StyleTitle.Render(fmt.Sprintf("found %d unmanaged worktree(s)", len(cands))))
@@ -173,16 +183,17 @@ func offerBulkAdopt(layout liftoff.Layout) error {
 		Affirmative("Yes").
 		Negative("Skip").
 		Value(&accept).Run(); err != nil {
-		return err
+		return 0, err
 	}
 	if !accept {
-		return nil
+		return 0, nil
 	}
 	opts := liftoff.AdoptOptions{
 		SymlinkNodeModules: false, // bulk adoption: don't mass-rewrite frontend trees
 		WriteGtab:          true,
 		GraphiteTrack:      false,
 	}
+	count := 0
 	for _, cand := range cands {
 		res, err := layout.Adopt(cand.Name, cand.Branch, cand.Path, opts, nil)
 		if err != nil {
@@ -190,8 +201,9 @@ func offerBulkAdopt(layout liftoff.Layout) error {
 			continue
 		}
 		fmt.Println(tui.StyleOK.Render(fmt.Sprintf("  ✓ %s — slot %d", res.Name, res.Slot)))
+		count++
 	}
-	return nil
+	return count, nil
 }
 
 func printDryRunPlan(layout liftoff.Layout, results []liftoff.CheckResult) {

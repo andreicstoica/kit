@@ -47,7 +47,18 @@ var (
 	StyleDim   = lipgloss.NewStyle().Foreground(ColorDim)
 	StyleHi      = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
 	StyleLiftoff = lipgloss.NewStyle().Foreground(ColorLiftoff).Bold(true)
+	// StyleCode renders an inline command/path/snippet. Accent color +
+	// italic, no bold — distinct from regular text but lighter than StyleHi.
+	StyleCode = lipgloss.NewStyle().Foreground(ColorAccent).Italic(true)
 )
+
+// Code wraps a snippet in the inline-code style. Returns "" for empty input.
+func Code(s string) string {
+	if s == "" {
+		return ""
+	}
+	return StyleCode.Render(s)
+}
 
 // Glyph returns a unicode marker for a step status.
 func Glyph(status string) string {

@@ -216,10 +216,15 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 	}
 	var rows []row
 	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
+		if w.Bare {
 			continue
 		}
 		name := w.Name()
+		emoji := liftoff.EmojiFor(name)
+		if w.IsMaster(layout) {
+			name = "master"
+			emoji = "🏠"
+		}
 		meta := st.Worktrees[name]
 		running := 0
 		ports := liftoff.PortsForSlot(meta.Slot)
@@ -232,7 +237,7 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 		rows = append(rows, row{item: playWtItem{
 			name:     name,
 			path:     w.Path,
-			emoji:    liftoff.EmojiFor(name),
+			emoji:    emoji,
 			slot:     meta.Slot,
 			lastUsed: meta.LastUsed,
 			running:  running,
@@ -257,7 +262,14 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 			return playSetupErrMsg{err}
 		}
 		meta, ok := st.Worktrees[m.chosen.name]
-		if !ok || meta.Slot == 0 {
+		// Master is special: slot 0 is its assigned slot (master defaults), not a
+		// missing allocation. Adopt prompt only fires for unknown feature
+		// worktrees.
+		needsAdopt := !ok
+		if !needsAdopt && m.chosen.name != "master" && meta.Slot == 0 {
+			needsAdopt = true
+		}
+		if needsAdopt {
 			// Unadopted — bail to a confirm prompt. The user explicitly approves
 			// before kit allocates a slot + writes metadata.
 			branch, path := findBranchAndPath(m.layout, m.chosen.name)
