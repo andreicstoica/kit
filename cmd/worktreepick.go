@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
 )
@@ -25,15 +27,18 @@ func resolveArgOrCwdNonMaster(layout liftoff.Layout, args []string) (string, err
 	return resolveArgOrCwdOpts(layout, args, true)
 }
 
-func resolveArgOrCwdOpts(layout liftoff.Layout, args []string, skipMasterCwd bool) (string, error) {
+func resolveArgOrCwdOpts(layout liftoff.Layout, args []string, skipMaster bool) (string, error) {
 	if len(args) == 1 {
 		if args[0] == "master" {
+			if skipMaster {
+				return "", fmt.Errorf("master isn't a kit — pick a worktree instead")
+			}
 			return "master", nil
 		}
 		return liftoff.NormalizeAndValidate(args[0])
 	}
 	if n := worktreeFromCwd(layout); n != "" {
-		if skipMasterCwd && n == "master" {
+		if skipMaster && n == "master" {
 			return "", nil
 		}
 		return n, nil

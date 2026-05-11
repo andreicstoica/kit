@@ -228,7 +228,7 @@ func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case designStepMsg:
 		if !msg.ok {
 			m.done = true
-			return m, nil
+			return m, m.stopwatch.Stop()
 		}
 		u := msg.upd
 		if u.Index >= 0 && u.Index < len(m.stepStatuses) {
@@ -339,7 +339,6 @@ func (m *designModel) View() string {
 			left.WriteString("\n" + StyleHi.Render("next:") + "\n")
 			left.WriteString("  kit play " + m.answers.name + "\n")
 			left.WriteString("  kit warmup " + m.answers.name + "\n")
-			left.WriteString("  cd " + m.worktree + "\n")
 		}
 		left.WriteString("\n" + StyleHelp.Render("press enter to exit"))
 	}
@@ -416,9 +415,9 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 // RunDressTUI is kept as a back-compat alias.
 func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout, "") }
 
-// offerNextSteps prompts after a successful design run with two
-// sequential yes/no questions: open the Ghostty workspace, then start
-// dev servers. Esc at any point skips the rest.
+// offerNextSteps asks both follow-up yes/no questions first, then runs
+// the chosen actions in order. Keeps the prompts grouped so the user
+// finishes the questionnaire before anything else opens.
 func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println()
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
@@ -436,16 +435,6 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		}
 		return err
 	}
-	if wantGtab {
-		if !layout.HasGtab(name) {
-			if _, err := layout.WriteGtab(name, layout.WorktreePath(name)); err != nil {
-				fmt.Println(StyleErr.Render("gtab write failed: " + err.Error()))
-			}
-		}
-		if err := layout.LaunchGtab(name); err != nil {
-			fmt.Println(StyleErr.Render("gtab launch failed: " + err.Error()))
-		}
-	}
 
 	wantPlay := true
 	if err := huh.NewConfirm().
@@ -458,6 +447,17 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 			return nil
 		}
 		return err
+	}
+
+	if wantGtab {
+		if !layout.HasGtab(name) {
+			if _, err := layout.WriteGtab(name, layout.WorktreePath(name)); err != nil {
+				fmt.Println(StyleErr.Render("gtab write failed: " + err.Error()))
+			}
+		}
+		if err := layout.LaunchGtab(name); err != nil {
+			fmt.Println(StyleErr.Render("gtab launch failed: " + err.Error()))
+		}
 	}
 	if wantPlay {
 		if err := RunPlayTUI(layout, PlayConfig{Name: name}); err != nil {
