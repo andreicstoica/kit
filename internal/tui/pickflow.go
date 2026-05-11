@@ -149,10 +149,13 @@ func PickWorktree(layout liftoff.Layout, prompt string) (string, error) {
 	}
 	var rows []entry
 	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
+		if w.Bare {
 			continue
 		}
 		name := w.Name()
+		if w.IsMaster(layout) {
+			name = "master"
+		}
 		meta := st.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
 		running := 0
@@ -161,10 +164,14 @@ func PickWorktree(layout liftoff.Layout, prompt string) (string, error) {
 				running++
 			}
 		}
+		emoji := liftoff.EmojiFor(name)
+		if name == "master" {
+			emoji = "🏠"
+		}
 		rows = append(rows, entry{item: playWtItem{
 			name:     name,
 			path:     w.Path,
-			emoji:    liftoff.EmojiFor(name),
+			emoji:    emoji,
 			slot:     meta.Slot,
 			lastUsed: meta.LastUsed,
 			running:  running,
@@ -174,6 +181,13 @@ func PickWorktree(layout liftoff.Layout, prompt string) (string, error) {
 		return "", errors.New("no worktrees found — run `kit design` first")
 	}
 	sort.Slice(rows, func(i, j int) bool {
+		// Master always first (it's the natural home).
+		if rows[i].item.name == "master" {
+			return true
+		}
+		if rows[j].item.name == "master" {
+			return false
+		}
 		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
 	})
 	items := make([]list.Item, 0, len(rows))

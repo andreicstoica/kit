@@ -39,11 +39,16 @@ var swapCmd = &cobra.Command{
 		// Resolve worktree name.
 		var name string
 		if len(args) == 1 {
-			n, err := liftoff.NormalizeAndValidate(args[0])
-			if err != nil {
-				return err
+			// Special-case master so users can `kit swap master -e zed`.
+			if args[0] == "master" {
+				name = "master"
+			} else {
+				n, err := liftoff.NormalizeAndValidate(args[0])
+				if err != nil {
+					return err
+				}
+				name = n
 			}
-			name = n
 		} else {
 			n, err := tui.PickWorktree(layout, "kit swap — pick a kit")
 			if err != nil {
@@ -74,23 +79,32 @@ var swapCmd = &cobra.Command{
 			chosen = c
 		}
 
-		// Resolve worktree path (handle legacy).
-		path := layout.WorktreePath(name)
-		if _, err := os.Stat(path); err != nil {
-			legacy := layout.LegacyWorktreePath(name)
-			if _, err2 := os.Stat(legacy); err2 == nil {
-				path = legacy
-			} else {
-				return fmt.Errorf("worktree not found: %s", path)
+		// Resolve worktree path. Special-case "master" (the main repo);
+		// otherwise try the clean path then fall back to the legacy prefix.
+		var path string
+		if name == "master" {
+			path = layout.Master
+		} else {
+			path = layout.WorktreePath(name)
+			if _, err := os.Stat(path); err != nil {
+				legacy := layout.LegacyWorktreePath(name)
+				if _, err2 := os.Stat(legacy); err2 == nil {
+					path = legacy
+				} else {
+					return fmt.Errorf("worktree not found: %s", path)
+				}
 			}
 		}
 
 		if err := launchEditor(*chosen, path); err != nil {
 			return err
 		}
-		if st, err := liftoff.LoadState(); err == nil {
-			st.TouchLastUsed(name)
-			_ = st.Save()
+		// Skip state touch for master — it has no entry in state.toml.
+		if name != "master" {
+			if st, err := liftoff.LoadState(); err == nil {
+				st.TouchLastUsed(name)
+				_ = st.Save()
+			}
 		}
 		fmt.Printf("opened %s in %s\n", path, chosen.Name)
 		return nil
