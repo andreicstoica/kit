@@ -15,6 +15,10 @@ build:
 install: build
 	@mkdir -p $(PREFIX)/bin
 	cp $(DIST)/$(BIN) $(PREFIX)/bin/$(BIN)
+	@# macOS attaches com.apple.provenance to freshly-built local binaries,
+	@# which can cause Gatekeeper to SIGKILL the process on launch. Ad-hoc
+	@# re-signing clears the flag chain so the binary runs cleanly.
+	@if [ "$$(uname)" = "Darwin" ]; then codesign --force --sign - $(PREFIX)/bin/$(BIN) 2>/dev/null || true; fi
 	@echo "installed: $(PREFIX)/bin/$(BIN)"
 	@echo "ensure $(PREFIX)/bin is on PATH (add to ~/.zshrc if needed)"
 
