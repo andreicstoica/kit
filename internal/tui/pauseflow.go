@@ -69,8 +69,8 @@ func NewPauseModel(layout liftoff.Layout, cfg PauseConfig) (tea.Model, error) {
 	m.keys = DefaultKeymap
 
 	if name != "" {
-		path := layout.WorktreePath(name)
-		if _, err := layout.ListWorktrees(); err != nil {
+		path, err := layout.ResolveWorktreePath(name)
+		if err != nil {
 			return nil, err
 		}
 		m.chosen = playWtItem{name: name, path: path, emoji: liftoff.EmojiFor(name)}

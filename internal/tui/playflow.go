@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -159,13 +158,9 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	m.keys = DefaultKeymap
 
 	if name != "" {
-		// Skip picker, validate the worktree exists.
-		path := layout.WorktreePath(name)
-		if _, err := os.Stat(path); err != nil {
-			path = layout.LegacyWorktreePath(name)
-			if _, err2 := os.Stat(path); err2 != nil {
-				return nil, fmt.Errorf("worktree not found: %s", name)
-			}
+		path, err := layout.ResolveWorktreePath(name)
+		if err != nil {
+			return nil, err
 		}
 		st, _ := liftoff.LoadState()
 		var slot int
