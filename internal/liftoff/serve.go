@@ -58,11 +58,22 @@ func (s Service) Label() string {
 // counts as "celery running" when either celery OR beat is alive.
 var DisplayServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcCelery}
 
-// IsServiceAlive folds beat into celery for display purposes:
-// celery counts as alive when either celery or beat is up.
+// IsServiceAlive returns whether a display-level service is up.
+//
+// For services with a port (app/admin/api/admin_be/mcp), the source of
+// truth is "something is listening on 127.0.0.1:<port>" — not kit's
+// recorded PID. `uvicorn --reload` and similar reloaders re-exec into
+// a fresh process, leaving the recorded PID dead even though the
+// service is healthy.
+//
+// For celery (which has no port), fall back to PID liveness. The
+// celery display row collapses celery + beat: alive if either is up.
 func IsServiceAlive(name string, svc Service, ports Ports) bool {
 	if svc == SvcCelery {
 		return StatusOf(name, SvcCelery, ports).Alive || StatusOf(name, SvcBeat, ports).Alive
+	}
+	if port := ServicePort(svc, ports); port > 0 {
+		return PortListening(port)
 	}
 	return StatusOf(name, svc, ports).Alive
 }
