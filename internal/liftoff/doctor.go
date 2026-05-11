@@ -297,22 +297,42 @@ func checkPostgres() CheckResult {
 
 func checkRabbitMQ() CheckResult {
 	r := CheckResult{Name: "rabbitmq"}
-	if _, err := exec.LookPath("rabbitmqctl"); err != nil {
+	// rabbitmqctl ships in brew's sbin (e.g. /opt/homebrew/sbin), which is
+	// commonly not on PATH. Fall back to known locations before declaring
+	// it missing.
+	bin := findBinary("rabbitmqctl",
+		"/opt/homebrew/sbin/rabbitmqctl",
+		"/usr/local/sbin/rabbitmqctl")
+	if bin == "" {
 		r.Status = CheckFail
 		r.Detail = "rabbitmq not installed"
 		r.FixHint = "brew install rabbitmq"
 		r.FixCmd = []string{"rabbitmq"}
 		return r
 	}
-	if err := exec.Command("rabbitmqctl", "status").Run(); err != nil {
+	if err := exec.Command(bin, "status").Run(); err != nil {
 		r.Status = CheckWarn
-		r.Detail = "installed but not running"
+		r.Detail = "installed at " + bin + " but not running"
 		r.FixHint = "brew services start rabbitmq"
 		return r
 	}
 	r.Status = CheckOK
-	r.Detail = "running"
+	r.Detail = "running (" + bin + ")"
 	return r
+}
+
+// findBinary returns the first path that resolves: PATH first, then explicit
+// fallback paths. Returns "" if none match.
+func findBinary(name string, fallbacks ...string) string {
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+	for _, p := range fallbacks {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 func checkGhostty() CheckResult {
