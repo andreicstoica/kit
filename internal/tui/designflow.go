@@ -292,14 +292,15 @@ func (m *designModel) View() string {
 	left.WriteString(m.progress.View() + "  " + StyleDim.Render(m.stopwatch.View()) + "\n\n")
 
 	for i, title := range m.stepTitles {
+		if m.stepStatuses[i] == liftoff.StepSkipped {
+			continue
+		}
 		var marker string
 		switch m.stepStatuses[i] {
 		case liftoff.StepRunning:
 			marker = m.spinner.View()
 		case liftoff.StepDone:
 			marker = StyleOK.Render(Glyph("done"))
-		case liftoff.StepSkipped:
-			marker = StyleDim.Render(Glyph("skipped"))
 		case liftoff.StepFailed:
 			marker = StyleErr.Render(Glyph("failed"))
 		default:
@@ -336,11 +337,8 @@ func (m *designModel) View() string {
 			if m.answers.cloneDB {
 				left.WriteString("db:       " + liftoff.DBName(m.answers.name) + "\n")
 			}
-			left.WriteString("\n" + StyleHi.Render("next:") + "\n")
-			left.WriteString("  kit play " + m.answers.name + "\n")
-			left.WriteString("  kit warmup " + m.answers.name + "\n")
 		}
-		left.WriteString("\n" + StyleHelp.Render("press enter to exit"))
+		left.WriteString("\n" + StyleHelp.Render("press enter to continue"))
 	}
 
 	leftPanel := lipgloss.NewStyle().Padding(0, 2).Render(left.String())
@@ -423,13 +421,16 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
 	fmt.Println()
 
-	wantGtab := true
-	if err := huh.NewConfirm().
+	gtabChoice := "simple"
+	if err := huh.NewSelect[string]().
 		Title("Open the Ghostty workspace?").
-		Description("Launches the 4-tab gtab layout in Ghostty (root, frontend split, backend split, celery).").
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&wantGtab).Run(); err != nil {
+		Description("Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.").
+		Options(
+			huh.NewOption("Simple (2 tabs)", "simple"),
+			huh.NewOption("Detailed (5 tabs)", "detailed"),
+			huh.NewOption("Skip — don't open", "skip"),
+		).
+		Value(&gtabChoice).Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return nil
 		}
@@ -449,11 +450,13 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		return err
 	}
 
-	if wantGtab {
-		if !layout.HasGtab(name) {
-			if _, err := layout.WriteGtab(name, layout.WorktreePath(name)); err != nil {
-				fmt.Println(StyleErr.Render("gtab write failed: " + err.Error()))
-			}
+	if gtabChoice != "skip" {
+		gl := liftoff.GtabSimple
+		if gtabChoice == "detailed" {
+			gl = liftoff.GtabDetailed
+		}
+		if _, err := layout.WriteGtabLayout(name, layout.WorktreePath(name), gl); err != nil {
+			fmt.Println(StyleErr.Render("gtab write failed: " + err.Error()))
 		}
 		if err := layout.LaunchGtab(name); err != nil {
 			fmt.Println(StyleErr.Render("gtab launch failed: " + err.Error()))

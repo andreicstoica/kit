@@ -245,19 +245,15 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmCursor--
 			}
 		case "down", "j":
-			if m.confirmCursor < 1 {
+			if m.confirmCursor < m.visibleToggleCount()-1 {
 				m.confirmCursor++
 			}
 		case " ", "tab":
-			switch m.confirmCursor {
-			case 0:
-				if m.selected.hasDB {
-					m.dropDB = !m.dropDB
-				}
-			case 1:
-				if m.selected.hasGtab {
-					m.removeGtab = !m.removeGtab
-				}
+			switch m.toggleAtCursor() {
+			case "db":
+				m.dropDB = !m.dropDB
+			case "gtab":
+				m.removeGtab = !m.removeGtab
 			}
 		case "enter":
 			m.stage = washStageRunning
@@ -360,6 +356,29 @@ func (m *washModel) View() string {
 	return body + "\n" + m.help.View(m.keys)
 }
 
+// visibleToggles returns the toggle ids ("db", "gtab") that should
+// appear given the worktree's actual state.
+func (m *washModel) visibleToggles() []string {
+	var out []string
+	if m.selected.hasDB {
+		out = append(out, "db")
+	}
+	if m.selected.hasGtab {
+		out = append(out, "gtab")
+	}
+	return out
+}
+
+func (m *washModel) visibleToggleCount() int { return len(m.visibleToggles()) }
+
+func (m *washModel) toggleAtCursor() string {
+	v := m.visibleToggles()
+	if m.confirmCursor < 0 || m.confirmCursor >= len(v) {
+		return ""
+	}
+	return v[m.confirmCursor]
+}
+
 func (m *washModel) viewConfirm() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit wash — "+m.selected.name) + "\n\n")
@@ -369,13 +388,19 @@ func (m *washModel) viewConfirm() string {
 		b.WriteString(StyleWarn.Render("⚠ uncommitted changes will be lost") + "\n")
 	}
 	b.WriteString("\n")
-	checks := []struct {
-		label    string
-		on       bool
-		disabled bool
-	}{
-		{"drop database " + liftoff.DBName(m.selected.name), m.dropDB, !m.selected.hasDB},
-		{"remove gtab workspace " + m.selected.name + ".applescript", m.removeGtab, !m.selected.hasGtab},
+	type check struct {
+		label string
+		on    bool
+	}
+	var checks []check
+	if m.selected.hasDB {
+		checks = append(checks, check{"drop database " + liftoff.DBName(m.selected.name), m.dropDB})
+	}
+	if m.selected.hasGtab {
+		checks = append(checks, check{"remove gtab workspace " + m.selected.name + ".applescript", m.removeGtab})
+	}
+	if len(checks) == 0 {
+		b.WriteString(StyleDim.Render("nothing extra to clean up beyond worktree + branch") + "\n")
 	}
 	for i, c := range checks {
 		cursor := "  "
@@ -385,9 +410,6 @@ func (m *washModel) viewConfirm() string {
 		box := "[ ]"
 		if c.on {
 			box = StyleOK.Render("[x]")
-		}
-		if c.disabled {
-			box = StyleDim.Render("[-]")
 		}
 		b.WriteString(cursor + box + " " + c.label + "\n")
 	}
