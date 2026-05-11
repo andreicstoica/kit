@@ -365,4 +365,5 @@ make demo            # record GIFs from vhs/*.tape (brew install vhs)
 
 ## License
 
-MIT
+[PolyForm Internal Use 1.0.0](LICENSE) — source-available for internal
+business use. Third-party commercial use requires a separate agreement.
