@@ -194,10 +194,10 @@ func installedEditors() []tui.EditorCandidate {
 	}
 	if appBundleExists("Ghostty.app") {
 		out = append(out, tui.EditorCandidate{
-			Name:      "Ghostty",
+			Name:      "Ghostty (pick layout next)",
 			Binary:    warmupBinarySentinel,
 			App:       "Ghostty.app",
-			Desc:      "launch the 4-tab dev workspace",
+			Desc:      "dev workspace — simple (2 tabs) or detailed (5 tabs); master gets 1 shell tab",
 			Installed: true,
 		})
 	}
