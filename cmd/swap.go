@@ -184,7 +184,7 @@ func installedEditors() []tui.EditorCandidate {
 	}
 	if appBundleExists("Ghostty.app") {
 		out = append(out, tui.EditorCandidate{
-			Name:      "Ghostty (gtab workspace)",
+			Name:      "Ghostty",
 			Binary:    warmupBinarySentinel,
 			App:       "Ghostty.app",
 			Desc:      "launch the 4-tab dev workspace",
