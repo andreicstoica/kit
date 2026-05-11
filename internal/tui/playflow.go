@@ -182,7 +182,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 		return nil, err
 	}
 	if len(items) == 0 {
-		return nil, errors.New("no worktrees found — run `kit dress` first")
+		return nil, errors.New("no worktrees found — run `kit design` first")
 	}
 	dlg := list.NewDefaultDelegate()
 	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)

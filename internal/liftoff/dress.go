@@ -5,7 +5,9 @@ import (
 	"time"
 )
 
-// DressPlan captures every choice for a `kit dress` run.
+// DressPlan captures every choice for a `kit design` run.
+// (The struct name predates the command rename from `dress` → `design`;
+// kept as-is to minimize churn in internal call sites.)
 type DressPlan struct {
 	Name              string
 	Worktree          string

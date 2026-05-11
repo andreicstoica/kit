@@ -19,7 +19,7 @@ var warmupCmd = &cobra.Command{
 			return err
 		}
 		if !layout.HasGtab(name) {
-			return fmt.Errorf("no gtab workspace at %s — re-run `kit dress` or write one manually", layout.GtabFile(name))
+			return fmt.Errorf("no gtab workspace at %s — re-run `kit design` or write one manually", layout.GtabFile(name))
 		}
 		return layout.LaunchGtab(name)
 	},
