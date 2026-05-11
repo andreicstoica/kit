@@ -205,16 +205,22 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 }
 
 func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
-	return collectPlayWtItems(layout, nil)
+	return collectPlayWtItems(layout, dropMaster)
 }
 
 // playWtItemFilter, when non-nil, drops items that return false.
 type playWtItemFilter func(playWtItem) bool
 
-// collectPlayWtItems walks every git worktree (skipping bare + master),
-// builds the canonical playWtItem with running-service count and state
-// metadata, optionally filters, sorts by lineup order, assigns numeric
-// displayIdx, and returns a []list.Item ready for bubble list.
+// dropMaster keeps everything except the master entry. Used by play and
+// pause pickers since master has no slot/services. Generic worktree
+// pickers (swap, warmup, links, log) keep master and pass `nil`.
+func dropMaster(it playWtItem) bool { return it.name != "master" }
+
+// collectPlayWtItems walks every git worktree, builds the canonical
+// playWtItem with running-service count and state metadata, optionally
+// filters, sorts by lineup order, assigns numeric displayIdx, and
+// returns a []list.Item ready for bubble list. Master is included
+// (with the 🚀 emoji + name "master"); pass `dropMaster` to filter it.
 func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.Item, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
@@ -226,11 +232,15 @@ func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.It
 	}
 	var items []playWtItem
 	for _, w := range wts {
-		if w.Bare || w.IsMaster(layout) {
+		if w.Bare {
 			continue
 		}
 		name := w.Name()
 		emoji := liftoff.EmojiFor(name)
+		if w.IsMaster(layout) {
+			name = "master"
+			emoji = "🚀"
+		}
 		meta := st.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
 		running, _ := liftoff.RunningCount(name, ports)

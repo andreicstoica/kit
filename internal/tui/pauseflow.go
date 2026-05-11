@@ -133,7 +133,7 @@ func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
 
 func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
 	return collectPlayWtItems(layout, func(it playWtItem) bool {
-		return it.running > 0
+		return it.name != "master" && it.running > 0
 	})
 }
 
