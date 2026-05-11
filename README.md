@@ -24,7 +24,7 @@ kit warmup                # launch the ghostty workspace (cwd or picker)
 kit swap                  # open the current worktree in IDE or Ghostty
 ```
 
-Classic aliases work: `new`, `ls`, `rm`, `gtab`, `open`. Plus `physio` for `doctor`, `ports`/`urls` for `links`.
+Classic aliases work: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause), `logs` (log), `rm`/`remove`/`delete` (wash), `gtab` (warmup), `open` (swap), `urls`/`ports` (links), `physio` (doctor).
 
 Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`, `wash`, `links`) all support the same shape: pass a name, omit it to auto-pick the worktree you're `cd`'d into, or get a numbered picker (1-9 quick-select) when cwd is unrelated.
 

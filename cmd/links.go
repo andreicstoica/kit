@@ -12,13 +12,14 @@ import (
 )
 
 var linksCmd = &cobra.Command{
-	Use:     "links",
+	Use:     "links [name]",
 	Aliases: []string{"ports", "urls"},
-	Short:   "Show the URLs for the worktree you're in",
-	Long: "**links** prints the localhost URLs assigned to the current worktree's " +
-		"port slot. Run it from inside any kit-managed worktree (or the master " +
-		"repo, slot 0). Useful for pasting into Slack/Linear/notes without " +
+	Short:   "Show the URLs for a worktree",
+	Long: "**links** prints the localhost URLs assigned to a worktree's port " +
+		"slot. Pass a name, or run from inside a worktree, or pick one from " +
+		"the list. Useful for pasting into Slack/Linear/notes without " +
 		"recomputing `3000 + slot*10`.",
+	Args: cobra.MaximumNArgs(1),
 	RunE: runLinks,
 }
 
@@ -28,10 +29,11 @@ func init() {
 
 func runLinks(cmd *cobra.Command, args []string) error {
 	layout := liftoff.DefaultLayout()
-	name := worktreeFromCwd(layout)
+	name, err := resolveTarget(layout, args, "kit links — pick a kit", false)
+	if err != nil {
+		return err
+	}
 	if name == "" {
-		fmt.Println(tui.StyleWarn.Render("not inside a kit worktree."))
-		fmt.Println(tui.StyleDim.Render("cd into one (or the master repo) and re-run, or use `kit lineup` to see all kits."))
 		return nil
 	}
 
