@@ -34,6 +34,17 @@ func (m *pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chosen = it.name
 				return m, tea.Quit
 			}
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			// Numeric quick-pick: jump straight to that visible item.
+			// Respect the list's filtered view when active.
+			idx := int(msg.String()[0] - '0' - 1)
+			items := m.list.VisibleItems()
+			if idx >= 0 && idx < len(items) {
+				if it, ok := items[idx].(playWtItem); ok {
+					m.chosen = it.name
+					return m, tea.Quit
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -59,10 +70,17 @@ type EditorCandidate struct {
 
 // editorItem is a list entry for the editor picker.
 type editorItem struct {
-	c EditorCandidate
+	c          EditorCandidate
+	displayIdx int
 }
 
-func (e editorItem) Title() string       { return e.c.Name }
+func (e editorItem) Title() string {
+	t := e.c.Name
+	if e.displayIdx > 0 && e.displayIdx < 10 {
+		t = StyleHi.Render(fmt.Sprintf("%d ", e.displayIdx)) + t
+	}
+	return t
+}
 func (e editorItem) Description() string { return StyleDim.Render(e.c.Desc) }
 func (e editorItem) FilterValue() string { return e.c.Name }
 
@@ -88,6 +106,16 @@ func (m *pickEditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chosen = &c
 				return m, tea.Quit
 			}
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			idx := int(msg.String()[0] - '0' - 1)
+			items := m.list.VisibleItems()
+			if idx >= 0 && idx < len(items) {
+				if it, ok := items[idx].(editorItem); ok {
+					c := it.c
+					m.chosen = &c
+					return m, tea.Quit
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -103,9 +131,10 @@ func (m *pickEditorModel) View() string { return m.list.View() }
 func PickEditor(editors []EditorCandidate) (*EditorCandidate, error) {
 	var items []list.Item
 	for _, e := range editors {
-		if e.Installed {
-			items = append(items, editorItem{c: e})
+		if !e.Installed {
+			continue
 		}
+		items = append(items, editorItem{c: e, displayIdx: len(items) + 1})
 	}
 	if len(items) == 0 {
 		return nil, errors.New("no supported editor found (looked for Zed, Cursor, VS Code on PATH or in /Applications)")
@@ -191,7 +220,8 @@ func PickWorktree(layout liftoff.Layout, prompt string) (string, error) {
 		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
 	})
 	items := make([]list.Item, 0, len(rows))
-	for _, r := range rows {
+	for i, r := range rows {
+		r.item.displayIdx = i + 1
 		items = append(items, r.item)
 	}
 	dlg := list.NewDefaultDelegate()
