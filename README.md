@@ -15,7 +15,7 @@ kit doctor                # read-only diagnosis
 kit adopt <name>          # register an existing worktree
 kit design voice-agent    # new feature worktree (wizard)
 kit lineup                # table of kits
-kit lineup --tree         # tree + gt stack + services
+kit formation             # tree view: gt stack + setup + services per worktree
 kit links                 # print this worktree's URLs
 kit play <name>           # start services
 kit pause <name>          # stop services
@@ -272,8 +272,11 @@ gtab? → review → run. Allocates a port slot at the end.
 Table: `NAME · SLOT · RUNNING · BRANCH · STATUS`. Branch emoji prefix.
 Master at slot 0 with 🚀.
 
-`--tree` swaps to a hierarchical view: master root, worktrees as children,
-gt stack inline, running services as a `services` sub-node.
+### `kit formation` (alias `tree`) — tree view
+
+Hierarchical view: master root, worktrees as children, each expanded
+into its gt stack, a `setup` sub-node (db ownership + node_modules
+wiring), and running services.
 
 ### `kit play [name]` (alias `start`) — run servers
 
@@ -351,7 +354,7 @@ file is older than 30 days and which own no live PID.
 
 - Liftoff backend PR for per-worktree Redis DB + celery queue isolation
 - Shell hook so `cd` into a worktree updates `last_used`
-- Restack-needed flag in the table view (already in `--tree`)
+- Restack-needed flag in the table view (already in `kit formation`)
 
 ## Development
 
