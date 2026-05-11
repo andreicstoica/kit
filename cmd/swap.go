@@ -72,21 +72,9 @@ var swapCmd = &cobra.Command{
 			}
 		}
 
-		// Resolve worktree path. Special-case "master" (the main repo);
-		// otherwise try the clean path then fall back to the legacy prefix.
-		var path string
-		if name == "master" {
-			path = layout.Master
-		} else {
-			path = layout.WorktreePath(name)
-			if _, err := os.Stat(path); err != nil {
-				legacy := layout.LegacyWorktreePath(name)
-				if _, err2 := os.Stat(legacy); err2 == nil {
-					path = legacy
-				} else {
-					return fmt.Errorf("worktree not found: %s", path)
-				}
-			}
+		path, err := layout.ResolveWorktreePath(name)
+		if err != nil {
+			return err
 		}
 
 		if chosen.Binary == warmupBinarySentinel {

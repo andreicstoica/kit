@@ -1,6 +1,7 @@
 package liftoff
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,6 +78,24 @@ func (l Layout) WorktreePath(name string) string {
 // Kept for back-compat detection in lineup/wash.
 func (l Layout) LegacyWorktreePath(name string) string {
 	return filepath.Join(l.Root, "liftoff-"+name)
+}
+
+// ResolveWorktreePath returns the on-disk dir for a kit: layout.Master for
+// "master", the canonical WorktreePath, or the legacy fallback. Errors
+// when neither exists for a non-master name.
+func (l Layout) ResolveWorktreePath(name string) (string, error) {
+	if name == "master" {
+		return l.Master, nil
+	}
+	path := l.WorktreePath(name)
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	legacy := l.LegacyWorktreePath(name)
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, nil
+	}
+	return "", fmt.Errorf("worktree not found: %s", path)
 }
 
 // GtabFile returns the AppleScript path for a feature.

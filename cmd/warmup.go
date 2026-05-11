@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/spf13/cobra"
@@ -35,17 +34,9 @@ var warmupCmd = &cobra.Command{
 		if name == "" {
 			return nil
 		}
-		path := layout.Master
-		if name != "master" {
-			path = layout.WorktreePath(name)
-			if _, err := os.Stat(path); err != nil {
-				legacy := layout.LegacyWorktreePath(name)
-				if _, err2 := os.Stat(legacy); err2 == nil {
-					path = legacy
-				} else {
-					return fmt.Errorf("worktree path missing: %s", path)
-				}
-			}
+		path, err := layout.ResolveWorktreePath(name)
+		if err != nil {
+			return err
 		}
 		gl := liftoff.GtabSimple
 		if warmupDetailed {
