@@ -180,8 +180,14 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		for _, entry := range stackChildLabels(n.gtStack, mainBranch) {
 			child.Child(entry)
 		}
-		for _, s := range n.services {
-			child.Child(svcLabel(s))
+		// Services nest under their own "services" subnode so the
+		// enumerator clearly separates them from gt branch rows.
+		if len(n.services) > 0 {
+			svcGroup := tree.Root(StyleDim.Render("services"))
+			for _, s := range n.services {
+				svcGroup.Child(svcLabel(s))
+			}
+			child.Child(svcGroup)
 		}
 		for _, gc := range n.children {
 			attach(child, gc)
