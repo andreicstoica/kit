@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
@@ -12,42 +10,6 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 )
-
-// cwdWorktree returns the worktree name if pwd is inside one (including
-// master, returned as "master"). Empty string if pwd is unrelated.
-//
-// Duplicate of worktreeFromCwd in cmd/swap.go (on the polish/master-in-swap
-// branch); will be deduped once that PR merges.
-func cwdWorktree(layout liftoff.Layout) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	cwd, _ = filepath.Abs(cwd)
-	wts, err := layout.ListWorktrees()
-	if err != nil {
-		return ""
-	}
-	best := ""
-	bestLen := 0
-	for _, w := range wts {
-		if w.Bare {
-			continue
-		}
-		wp, _ := filepath.Abs(w.Path)
-		if cwd == wp || strings.HasPrefix(cwd, wp+string(filepath.Separator)) {
-			if len(wp) > bestLen {
-				if w.IsMaster(layout) {
-					best = "master"
-				} else {
-					best = w.Name()
-				}
-				bestLen = len(wp)
-			}
-		}
-	}
-	return best
-}
 
 var linksCmd = &cobra.Command{
 	Use:     "links",
@@ -66,7 +28,7 @@ func init() {
 
 func runLinks(cmd *cobra.Command, args []string) error {
 	layout := liftoff.DefaultLayout()
-	name := cwdWorktree(layout)
+	name := worktreeFromCwd(layout)
 	if name == "" {
 		fmt.Println(tui.StyleWarn.Render("not inside a kit worktree."))
 		fmt.Println(tui.StyleDim.Render("cd into one (or the master repo) and re-run, or use `kit lineup` to see all kits."))
