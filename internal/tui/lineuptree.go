@@ -26,8 +26,9 @@ type wtNode struct {
 	sortKey      int64
 	services     []serviceRow
 	branch       string
-	gtParent     string // graphite-tracked parent branch name, "" if untracked
-	needsRestack bool   // parent has moved forward; branch should `gt restack`
+	gtParent     string   // graphite-tracked parent branch name, "" if untracked
+	needsRestack bool     // parent has moved forward; branch should `gt restack`
+	gtStack      []string // full stack (trunk → ... → self), empty if untracked
 	children     []*wtNode
 }
 
@@ -113,6 +114,7 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 				n.gtParent = layout.GtParentOf(in.w.Path)
 				if n.gtParent != "" {
 					n.needsRestack = layout.NeedsRestack(in.w.Path, n.gtParent)
+					n.gtStack = layout.GtStackOf(in.w.Path)
 				}
 			}
 			nodes[i] = n
@@ -175,6 +177,9 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 	attach = func(parent *tree.Tree, n *wtNode) {
 		label := wtTreeLabel(n, sizeByName[n.name])
 		child := tree.Root(label)
+		if len(n.gtStack) >= 2 {
+			child.Child(stackLabel(n.gtStack, n.branch))
+		}
 		for _, s := range n.services {
 			child.Child(svcLabel(s))
 		}
@@ -226,9 +231,6 @@ func wtTreeLabel(n *wtNode, stackSize int) string {
 	if stackSize >= 2 {
 		parts = append(parts, StyleDim.Render(fmt.Sprintf("stack %d", stackSize)))
 	}
-	if n.needsRestack {
-		parts = append(parts, StyleWarn.Render("⚠ restack"))
-	}
 	if n.legacy {
 		parts = append(parts, StyleDim.Render("(legacy)"))
 	}
@@ -270,4 +272,35 @@ func svcLabel(s serviceRow) string {
 		return StyleOK.Render("● ") + lipgloss.NewStyle().Foreground(colorMuted).Render(s.name)
 	}
 	return StyleDim.Render("○ " + s.name)
+}
+
+// stackLabel renders a horizontal "trunk → ... → here" chain. Each entry
+// may carry trailing parenthetical hints from `gt ls -s` (e.g. "branch
+// (needs restack)") which are kept inline. The current branch is bolded.
+func stackLabel(stack []string, current string) string {
+	parts := make([]string, len(stack))
+	for i, label := range stack {
+		branch := label
+		hint := ""
+		if p := strings.Index(label, " ("); p >= 0 {
+			branch = label[:p]
+			hint = label[p:]
+		}
+		var styled string
+		if branch == current {
+			styled = StyleHi.Render(branch)
+		} else {
+			styled = lipgloss.NewStyle().Foreground(colorMuted).Render(branch)
+		}
+		if hint != "" {
+			if strings.Contains(hint, "needs restack") {
+				styled += StyleWarn.Render(hint)
+			} else {
+				styled += StyleDim.Render(hint)
+			}
+		}
+		parts[i] = styled
+	}
+	arrow := StyleDim.Render(" → ")
+	return StyleDim.Render("stack: ") + strings.Join(parts, arrow)
 }
