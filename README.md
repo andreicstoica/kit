@@ -9,8 +9,9 @@ port allocation**, and **one-command service spin-up/down**.
 ![kit lineup demo](vhs/lineup.gif)
 
 ```
-kit setup                 # one-time: install missing tools, clone master
+kit setup                 # one-time: install tools, clone master, adopt existing worktrees
 kit doctor                # check your setup is ready
+kit adopt <name>          # register an existing worktree with kit
 kit design voice-agent    # walks you through creating a worktree
 kit lineup                # show all kits available
 kit lineup --tree         # same data, hierarchical tree view
@@ -298,6 +299,59 @@ each fix: `brew install`, `gh auth login`, clone the Liftoff master repo,
 
 Pass `--dry-run` (or `-n`) to walk the flow and see what setup would do
 without changing anything.
+
+## Adoption
+
+A "managed" worktree has an entry in `~/.config/kit/config.toml` with a
+port slot and metadata. New worktrees made via `kit design` are managed
+automatically; worktrees that existed before kit (or that you cloned
+manually) need to be **adopted**.
+
+```sh
+kit adopt              # picker (only shows unmanaged worktrees)
+kit adopt voice-agent  # adopt by name
+kit adopt -y           # accept defaults, no prompts
+```
+
+`kit setup` offers to bulk-adopt any unmanaged worktrees it finds during
+onboarding, so most coworkers won't run `kit adopt` manually.
+
+When `kit play <name>` hits an unadopted worktree it pauses on an inline
+"adopt now?" prompt rather than allocating a slot silently. Type `Y` to
+proceed; `n` to abort and adopt explicitly later.
+
+## Configuration
+
+`~/.config/kit/config.toml` stores both runtime state and durable user
+settings:
+
+```toml
+schema = 2
+
+[settings]
+root         = "/Users/acs/liftoff"
+master_dir   = "liftoff-app-master"
+editor       = "zed"
+liftoff_repo = "https://github.com/liftoff-inc/liftoff-app.git"
+
+[worktrees.voice-agent]
+slot      = 1
+created   = 2026-05-08T14:32:00Z
+last_used = 2026-05-11T16:01:00Z
+branch    = "acs/voice-agent-cleanup"
+path      = "/Users/acs/liftoff/voice-agent"
+adopted   = false
+```
+
+`kit setup` writes the `[settings]` block from what it learned during
+onboarding (clone path, first installed editor, etc.). Hand-editing is
+supported; re-running `kit setup` won't clobber non-empty fields.
+
+Env vars (`KIT_ROOT`, `KIT_MASTER_DIR`, etc.) still override config-file
+values, so power users and CI environments don't have to write to disk.
+
+Legacy `state.toml` files from earlier kit versions are auto-renamed to
+`config.toml` on first load.
 
 ## Log retention
 
