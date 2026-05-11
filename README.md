@@ -8,29 +8,30 @@ Liftoff dev loop.
 ![kit lineup demo](vhs/lineup.gif)
 
 ```
-kit                       # interactive menu — pick an action
-kit guide                 # daily-flow tour
-kit setup                 # install tools, clone master, adopt worktrees
-kit doctor                # read-only diagnosis
-kit adopt <name>          # register an existing worktree
-kit design voice-agent    # new feature worktree (wizard)
-kit lineup                # table of kits
-kit formation             # tree view: gt stack + setup + services per worktree
-kit links                 # print this worktree's URLs
-kit play <name>           # start services
-kit pause <name>          # stop services
-kit logs <name>            # tail logs (/ search, t services, --delete-all)
-kit diff                  # diff vs master (lumen-aware)
-kit sync                  # gt sync + prune merged worktrees
-kit wash                  # strip a kit
-kit prune                 # bulk-wash merged/closed worktrees
-kit warmup                # open the Ghostty workspace
-kit swap                  # open in IDE (or Ghostty)
+kit                      # interactive menu
+kit guide                # daily-flow tour
+kit setup                # install tools, clone master, adopt worktrees
+kit doctor               # read-only diagnosis
+kit adopt <name>         # register an existing worktree
+kit design <name>        # new feature worktree (wizard)
+kit lineup               # table of kits
+kit formation            # tree view: stack + setup + services
+kit links                # print this worktree's URLs
+kit play <name>          # start services
+kit pause <name>         # stop services
+kit log <name>           # tail logs (color-coded, / search, t filter)
+kit diff                 # diff vs master (lumen-aware)
+kit sync                 # gt sync + prune merged worktrees
+kit wash                 # strip a kit
+kit prune                # bulk-wash merged/closed worktrees
+kit warmup [--detailed]  # open the Ghostty workspace
+kit swap                 # open in IDE (or Ghostty)
 ```
 
-Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
-`log` (logs), `rm`/`remove`/`delete` (wash), `gtab` (warmup), `open` (swap),
-`urls`/`ports` (links), `physio` (doctor), `register` (adopt), `prune` (tear).
+Aliases: `new` (design), `ls`/`list` (lineup), `tree` (formation), `start`
+(play), `stop` (pause), `logs` (log), `rm`/`remove`/`delete` (wash), `gtab`
+(warmup), `open` (swap), `urls`/`ports` (links), `physio` (doctor),
+`register` (adopt).
 
 Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`,
 `wash`, `links`, `diff`, `adopt`) accept the same three shapes: pass a name,
@@ -39,16 +40,16 @@ otherwise. Master appears in every picker as 🚀 slot 0.
 
 ## Why
 
-Two Liftoff features in parallel used to mean killing backend servers,
-swapping branches, restarting Vite, and tracking which version your DB was on. 
-`kit` reduces all of that to single commands:
+Two Liftoff features in parallel = killing backend servers, swapping
+branches, restarting Vite, tracking DB versions. `kit` reduces that to
+single commands:
 
-- Each worktree gets a 5-port slot (e.g. slot 1 → app:3010, admin:3011,
-  api:9010, admin_be:9011) at `kit design` time - or when setting up `kit` for the first time.
-- `kit play <name>` starts every dev server on those ports with frontend env
-  vars pointing at the matching backend.
-- `kit pause <name>` tears them down.
-- `feat-a` and `feat-b` run side-by-side, no port conflicts.
+- Each worktree gets a 5-port slot at design time (e.g. slot 1 →
+  app:3010, admin:3011, api:9010, admin_be:9011).
+- `kit play <name>` starts every service on those ports with frontend
+  env vars pointing at the matching backend. `kit pause <name>` tears
+  them down.
+- `feat-a` and `feat-b` run side-by-side. No port conflicts.
 
 ## Requirements
 
@@ -121,18 +122,21 @@ Interactive, idempotent. Re-run any time. For a read-only report, use
 
 ## What `kit design` does
 
-`kit design [name]` walks a wizard, then runs (in order):
+Wizard asks: name → clone DB? → symlink node_modules? → graphite track?
 
-1. `git fetch origin master:master`
-2. `git worktree add ~/liftoff/<name> -b <name> master`
-3. Copies `.env`, `backend/.env`, `frontend/env/.env.local`, `frontend/admin/env/.env.local`
+Then runs:
+
+1. `git fetch origin master`
+2. `git worktree add ~/liftoff/<name> -b <name> origin/master`
+3. Copies `.env`, `backend/.env`, `frontend/{app,admin}/env/.env.local`
 4. (opt) `createdb liftoff_<name>` + `pg_dump | psql` + rewrites `SQLALCHEMY_DATABASE_NAME`
-5. (opt) `pip install` in `backend/`
+5. `pip install` in `backend/` (always)
 6. (opt) Symlinks `frontend/{app,admin}/node_modules` to master
 7. (opt) `gt track --parent master`
-8. (opt) Writes `~/.config/gtab/<name>.applescript`
+8. Writes `~/.config/gtab/<name>.applescript`
 9. Allocates a port slot in `~/.config/kit/config.toml`
 
+Then prompts: open Ghostty (simple / detailed / skip) and start servers?
 Leading `liftoff-` in your input is stripped.
 
 ## Run services with `kit play` / `kit pause`
@@ -154,6 +158,7 @@ $ kit play voice-agent
   app backend:     http://localhost:9010
   admin backend:   http://localhost:9011
   celery worker:   pid 41234
+  celery beat:     pid 41235
 
 logs: ~/.config/kit/run/voice-agent/
 ```
@@ -213,14 +218,18 @@ the adopt prompt rather than allocating silently.
 
 `kit log [name]` opens a multi-tail viewer:
 
-- `f` follow / `↑↓ k j` scroll / `pgup pgdn g G`
-- `/` substring search
-- `t` services panel — toggle which streams show
-- `q` / `ctrl+c` exit
+| Key      | Action                              |
+|----------|-------------------------------------|
+| `f`      | toggle auto-scroll                  |
+| `/`      | substring search                    |
+| `t`      | filter services panel               |
+| `↑↓ k j` | scroll line                         |
+| `pgup`/`pgdn`, `g`/`G` | scroll page / top / bottom |
+| `q`, `ctrl+c` | exit                           |
 
 Service tags are color-coded and padded. `--delete-all` truncates every
-`.log` in the run dir (with confirm); files stay so running tails keep
-their FD.
+`.log` (files stay so running tails keep their FD). `--wait` opens the
+viewer even when nothing is playing.
 
 ## Configuration
 
@@ -262,10 +271,11 @@ alone. Env vars still override config values for CI / power users:
 
 ## Subcommands
 
-### `kit design` (alias `new`) — new kit
+### `kit design [name]` (alias `new`) — new kit
 
-Interactive wizard: name → DB clone? → backend deps? → symlink? → graphite? →
-gtab? → review → run. Allocates a port slot at the end.
+Wizard: name → clone DB? → symlink node_modules? → graphite track? Backend
+deps + gtab + slot allocation always run. Trailing prompt picks the Ghostty
+layout (simple / detailed / skip) and offers to start servers.
 
 ### `kit lineup` (alias `ls`) — list kits
 
@@ -290,7 +300,8 @@ Picker → confirm → kill (parallel). `--all` stops everything everywhere
 
 ### `kit log [name]` (alias `logs`) — tail logs
 
-Color-coded multi-tail. Keys above. `--delete-all` truncates.
+Color-coded multi-tail. Keys above. `--delete-all` truncates. `--wait`
+skips the "nothing playing" guard (used by the gtab logs tab).
 
 ### `kit diff [name]` — diff vs master
 
@@ -323,7 +334,7 @@ MERGED/CLOSED. Multi-select → washes each.
 ### `kit warmup [name]` (alias `gtab`) — Ghostty workspace
 
 Default: 2 tabs — worktree root (run Claude / git / CLI here) and a `logs`
-tab that `tail -F`s every service log in one stream.
+tab running `kit log --wait` (color-coded multi-service viewer).
 
 `kit warmup --detailed` (or `-d`): 5 tabs — shell, frontend split (app +
 admin), backend split (api + admin_be), celery, combined logs. For when
