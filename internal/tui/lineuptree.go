@@ -87,6 +87,7 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 			for _, svc := range liftoff.DisplayServices {
 				svcRows = append(svcRows, serviceRow{
 					name:  svc.Label(),
+					port:  liftoff.ServicePort(svc, ports),
 					alive: liftoff.IsServiceAlive(name, svc, ports),
 				})
 			}
@@ -201,6 +202,7 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 
 type serviceRow struct {
 	name  string
+	port  int
 	alive bool
 }
 
@@ -266,11 +268,32 @@ func stackSizeFor(n *wtNode, byBranch map[string]*wtNode) int {
 	return count
 }
 
+// svcLabel renders a service row distinctly from gt branch rows.
+// Branches use ◯/◉ circles; services use ▶/▷ triangles so they don't
+// blend together visually. Port number sits dim after the service name.
 func svcLabel(s serviceRow) string {
+	glyph := "▷"
+	style := StyleDim
 	if s.alive {
-		return StyleOK.Render("● ") + lipgloss.NewStyle().Foreground(colorMuted).Render(s.name)
+		glyph = "▶"
+		style = StyleOK
 	}
-	return StyleDim.Render("○ " + s.name)
+	name := lipgloss.NewStyle().Foreground(colorMuted).Render(pad(s.name, 11))
+	if !s.alive {
+		name = StyleDim.Render(pad(s.name, 11))
+	}
+	out := style.Render(glyph+" ") + name
+	if s.port > 0 {
+		out += "  " + StyleDim.Render(fmt.Sprintf(":%d", s.port))
+	}
+	return out
+}
+
+func pad(s string, n int) string {
+	if len(s) >= n {
+		return s
+	}
+	return s + strings.Repeat(" ", n-len(s))
 }
 
 // stackChildLabels renders the gt stack as one tree child per branch.
