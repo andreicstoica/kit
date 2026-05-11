@@ -1,6 +1,6 @@
 # kit
 
-Isolated Liftoff feature worktrees with a Bubble Tea TUI. Automatic
+Isolated Liftoff feature worktrees using Bubble Tea TUI. Automatic
 per-worktree port allocation, one-command service spin-up, graphite-aware
 lineup. Inspired by [par](https://github.com/coplane/par), shaped for the
 Liftoff dev loop.
@@ -17,9 +17,9 @@ kit design voice-agent    # new feature worktree (wizard)
 kit lineup                # table of kits
 kit lineup --tree         # tree + gt stack + services
 kit links                 # print this worktree's URLs
-kit play voice-agent      # start services
-kit pause voice-agent     # stop services
-kit log voice-agent       # tail logs (/ search, t services, --delete-all)
+kit play <name>           # start services
+kit pause <name>          # stop services
+kit logs <name>            # tail logs (/ search, t services, --delete-all)
 kit diff                  # diff vs master (lumen-aware)
 kit sync                  # gt sync + prune merged worktrees
 kit wash                  # strip a kit
@@ -29,7 +29,7 @@ kit swap                  # open in IDE (or Ghostty)
 ```
 
 Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
-`logs` (log), `rm`/`remove`/`delete` (wash), `gtab` (warmup), `open` (swap),
+`log` (logs), `rm`/`remove`/`delete` (wash), `gtab` (warmup), `open` (swap),
 `urls`/`ports` (links), `physio` (doctor), `register` (adopt), `prune` (tear).
 
 Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`,
@@ -40,11 +40,11 @@ otherwise. Master appears in every picker as 🚀 slot 0.
 ## Why
 
 Two Liftoff features in parallel used to mean killing backend servers,
-swapping branches, restarting Vite, and tracking which DB belonged to which
-feature. `kit` reduces all of that to single commands:
+swapping branches, restarting Vite, and tracking which version your DB was on. 
+`kit` reduces all of that to single commands:
 
 - Each worktree gets a 5-port slot (e.g. slot 1 → app:3010, admin:3011,
-  api:9010, admin_be:9011) at `kit design` time.
+  api:9010, admin_be:9011) at `kit design` time (or when setting up `kit` for the first time.
 - `kit play <name>` starts every dev server on those ports with frontend env
   vars pointing at the matching backend.
 - `kit pause <name>` tears them down.
