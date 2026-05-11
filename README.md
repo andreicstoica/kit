@@ -13,16 +13,20 @@ kit setup                 # one-time: install missing tools, clone master
 kit doctor                # check your setup is ready
 kit design voice-agent    # walks you through creating a worktree
 kit lineup                # show all kits available
+kit lineup --tree         # same data, hierarchical tree view
+kit links                 # print the current worktree's URLs (live status)
 kit play voice-agent      # start the kit's services (frontend + backend + celery)
 kit pause voice-agent     # stop them
 kit log voice-agent       # tail all service logs
 kit wash                  # picker → strip and clean up a kit
 kit prune                 # bulk-wash worktrees whose PR is merged/closed
-kit warmup voice-agent    # launch the ghostty workspace
-kit swap voice-agent      # open the worktree in your IDE
+kit warmup                # launch the ghostty workspace (cwd or picker)
+kit swap                  # open the current worktree in IDE or Ghostty
 ```
 
-Classic aliases work: `new`, `ls`, `rm`, `gtab`, `open`.
+Classic aliases work: `new`, `ls`, `rm`, `gtab`, `open`. Plus `physio` for `doctor`, `ports`/`urls` for `links`.
+
+Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`, `wash`, `links`) all support the same shape: pass a name, omit it to auto-pick the worktree you're `cd`'d into, or get a numbered picker (1-9 quick-select) when cwd is unrelated.
 
 ## Why
 
@@ -56,7 +60,7 @@ single-command:
 
 | Tool | Unlocks |
 |------|---------|
-| Ghostty | `kit warmup` launches a 4-tab workspace per worktree |
+| Ghostty | `kit warmup` launches a 4-tab workspace that auto-tails service logs |
 | `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
 | `gt` (graphite) | "Track in graphite" toggle |
 | `gh` (GitHub CLI) | `kit tear` checks PR state to flag merged/closed branches |
@@ -220,11 +224,14 @@ progress. Allocates a port slot at the end.
 
 ### `kit lineup` (alias `ls`) — kits available
 
-Static table: `NAME · SLOT · BRANCH · STATUS · RUNNING · LAST USED`.
-Branch emoji prefix. Sorted by last-used desc. RUNNING shows `N/6` when at
-least one default service is alive, `—` otherwise. Detects legacy
-`liftoff-<name>` paths and marks them; gtab files from the legacy zshrc
-script are auto-detected so `kit warmup` works on old worktrees.
+Static table: `NAME · SLOT · RUNNING · BRANCH · STATUS`. Branch emoji
+prefix. Sorted by last-used desc. RUNNING shows `N/6` when at least one
+default service is alive, `—` otherwise. Detects legacy `liftoff-<name>`
+paths and marks them; gtab files from the legacy zshrc script are
+auto-detected so `kit warmup` works on old worktrees.
+
+Pass `--tree` to render the same data as a tree rooted at master, with
+running services as child rows under each worktree.
 
 ### `kit play [name]` — run servers
 
@@ -251,23 +258,34 @@ services and frees the port slot.
 Scans for worktrees whose branch is merged into master or whose PR is
 MERGED/CLOSED (via `gh`). Multi-select picker → confirm → washes each.
 
-### `kit warmup <name>` (alias `gtab`) — launch ghostty
+### `kit warmup [name]` (alias `gtab`) — launch ghostty
 
-Runs `gtab <name>` if installed, otherwise falls back to `osascript`. Tab
-title now includes the branch emoji.
+Opens the worktree's Ghostty workspace: 4 tabs (root, frontend, backend,
+celery) with the per-pane terminals already `tail -F`ing the matching
+service log. `Ctrl-C` in a tab drops to a normal shell prompt.
 
-### `kit swap <name>` (alias `open`) — open in IDE
+With no arg, uses the worktree you're in; otherwise opens a numbered picker.
 
-Opens the worktree in the first available editor. Bumps `last_used` so the
-kit floats to the top of `lineup`.
+### `kit swap [name]` (alias `open`) — open in IDE or Ghostty
 
-### `kit doctor` — diagnose your setup
+Picker over installed editors (Zed, Cursor, VS Code) plus Ghostty as an
+extra target — pick Ghostty to launch the warmup workspace instead of an
+IDE. With no name, uses cwd or opens the kit picker. `-e zed` /
+`--editor=zed` skips the editor picker.
+
+### `kit links` (aliases `ports`, `urls`) — print worktree URLs
+
+Resolves the current worktree (from cwd) and prints its slot's URLs with
+a live/stopped indicator per service. Useful for pasting into Slack or
+Linear without recomputing `3000 + slot*10`.
+
+### `kit doctor` (alias `physio`) — diagnose your setup
 
 ![kit doctor demo](vhs/doctor.gif)
 
-Read-only check of every tool kit depends on. Prints a colored report with
-a fix hint for each warning/failure. Exits non-zero on any failure (so CI
-can gate on it).
+Read-only check of every tool kit depends on. Prints a colored report
+with a fix hint for each warning/failure. Exits non-zero on any failure
+(so CI can gate on it).
 
 ### `kit setup` — install missing tools
 
@@ -275,12 +293,23 @@ Interactive bootstrap. Same checks as `kit doctor`, but prompts to apply
 each fix: `brew install`, `gh auth login`, clone the Liftoff master repo,
 `yarn install`. Idempotent; re-run any time.
 
+Pass `--dry-run` (or `-n`) to walk the flow and see what setup would do
+without changing anything.
+
+## Log retention
+
+`~/.config/kit/run/<name>/` holds per-service PID + log files. `kit play`
+passively sweeps subdirectories whose most-recent file is older than
+30 days and which no longer own a live PID, so kit-managed logs don't
+grow unbounded on disk.
+
 ## Roadmap
 
 - Liftoff backend PR for per-worktree Redis DB + celery queue isolation
 - Optional shell hook so `cd` into a worktree updates `last_used`
 - Web/CLI port-conflict introspection — show what's listening on each
   expected slot port
+- Graphite stack column on `kit lineup` (parent branch + restack flag)
 
 ## Development
 
