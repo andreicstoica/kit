@@ -28,7 +28,7 @@ const simpleGtabTemplate = `tell application "Ghostty"
 
     set cfg2 to new surface configuration
     set initial working directory of cfg2 to "{{.Worktree}}"
-    set command of cfg2 to "tail -F {{.AppLog}} {{.AdminLog}} {{.APILog}} {{.AdminBELog}} {{.CeleryLog}}"
+    set command of cfg2 to "kit log {{.Name}} --wait"
     set wait after command of cfg2 to true
     set newtab1 to new tab in win with configuration cfg2
     set p2 to focused terminal of newtab1
@@ -83,7 +83,7 @@ const detailedGtabTemplate = `tell application "Ghostty"
 
     set cfg5 to new surface configuration
     set initial working directory of cfg5 to "{{.Worktree}}"
-    set command of cfg5 to "tail -F {{.AppLog}} {{.AdminLog}} {{.APILog}} {{.AdminBELog}} {{.CeleryLog}}"
+    set command of cfg5 to "kit log {{.Name}} --wait"
     set wait after command of cfg5 to true
     set newtab4 to new tab in win with configuration cfg5
     set p5 to focused terminal of newtab4

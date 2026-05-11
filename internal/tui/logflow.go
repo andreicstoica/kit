@@ -160,10 +160,25 @@ func trySend(ch chan<- logLineMsg, done <-chan struct{}, msg logLineMsg) bool {
 
 func tailFileToChan(path string, ch chan<- logLineMsg, done <-chan struct{}) {
 	tag := strings.TrimSuffix(filepath.Base(path), ".log")
-	f, err := os.Open(path)
-	if err != nil {
-		trySend(ch, done, logLineMsg{tag: tag, line: fmt.Sprintf("[error] open: %v", err)})
-		return
+	// Poll for the file in case `kit play` hasn't created it yet (gtab
+	// launches the logs tab before play in some flows). Gives up only
+	// when the caller closes `done`.
+	var f *os.File
+	for {
+		var err error
+		f, err = os.Open(path)
+		if err == nil {
+			break
+		}
+		if !os.IsNotExist(err) {
+			trySend(ch, done, logLineMsg{tag: tag, line: fmt.Sprintf("[error] open: %v", err)})
+			return
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	defer f.Close()
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {

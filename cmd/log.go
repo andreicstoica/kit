@@ -12,7 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var logDeleteAll bool
+var (
+	logDeleteAll bool
+	logWait      bool
+)
 
 var logCmd = &cobra.Command{
 	Use:     "log [name]",
@@ -45,7 +48,11 @@ var logCmd = &cobra.Command{
 		if logDeleteAll {
 			return clearLogsFor(name)
 		}
-		if err := ensurePlaying(name); err != nil {
+		if !logWait {
+			if err := ensurePlaying(name); err != nil {
+				return err
+			}
+		} else if err := ensureRunDir(name); err != nil {
 			return err
 		}
 		if len(args) == 0 {
@@ -57,7 +64,29 @@ var logCmd = &cobra.Command{
 
 func init() {
 	logCmd.Flags().BoolVar(&logDeleteAll, "delete-all", false, "delete every .log for the worktree (confirms first)")
+	logCmd.Flags().BoolVar(&logWait, "wait", false, "open the viewer even when nothing is playing (waits for logs to appear)")
 	rootCmd.AddCommand(logCmd)
+}
+
+// ensureRunDir creates the run dir + pre-touches the default service log
+// files so the log viewer can open and start tailing before `kit play`
+// has actually run. Used in --wait mode (e.g. gtab logs tab).
+func ensureRunDir(name string) error {
+	if _, err := liftoff.RunDir(name); err != nil {
+		return fmt.Errorf("create run dir: %w", err)
+	}
+	for _, svc := range []liftoff.Service{
+		liftoff.SvcApp, liftoff.SvcAdmin, liftoff.SvcAPI,
+		liftoff.SvcAdminBE, liftoff.SvcCelery,
+	} {
+		path, _ := liftoff.LogFile(name, string(svc))
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		if err != nil {
+			return err
+		}
+		_ = f.Close()
+	}
+	return nil
 }
 
 // ensurePlaying blocks `kit log` when no services are alive — a stopped
