@@ -33,8 +33,10 @@ type AdoptCandidate struct {
 	Path   string
 }
 
-// FindAdoptCandidates returns every git worktree (excluding master + bare)
-// that doesn't already have an entry in config.Worktrees.
+// FindAdoptCandidates returns every git worktree (excluding bare) that
+// doesn't already have an entry in config.Worktrees. Master is included
+// as "master" so its branch + path + last_used get tracked alongside
+// features (its slot stays 0 — no port allocation).
 func (l Layout) FindAdoptCandidates(c *Config) ([]AdoptCandidate, error) {
 	wts, err := l.ListWorktrees()
 	if err != nil {
@@ -42,10 +44,13 @@ func (l Layout) FindAdoptCandidates(c *Config) ([]AdoptCandidate, error) {
 	}
 	var out []AdoptCandidate
 	for _, w := range wts {
-		if w.IsMaster(l) || w.Bare {
+		if w.Bare {
 			continue
 		}
 		name := w.Name()
+		if w.IsMaster(l) {
+			name = "master"
+		}
 		if _, ok := c.Worktrees[name]; ok {
 			continue
 		}
@@ -72,11 +77,18 @@ func (l Layout) Adopt(name, branch, worktreePath string, opts AdoptOptions, onLi
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-	slot, err := c.AllocateSlot(name, PortsBindable)
-	if err != nil {
-		return nil, fmt.Errorf("allocate slot: %w", err)
+	// Master gets slot 0 by convention — no allocation, just metadata.
+	// kit play / pause / links use slot 0 for master automatically.
+	slot := 0
+	if name != "master" {
+		s, err := c.AllocateSlot(name, PortsBindable)
+		if err != nil {
+			return nil, fmt.Errorf("allocate slot: %w", err)
+		}
+		slot = s
 	}
 	meta := c.Worktrees[name]
+	meta.Slot = slot
 	meta.Branch = branch
 	meta.Path = worktreePath
 	meta.Adopted = true
@@ -96,7 +108,8 @@ func (l Layout) Adopt(name, branch, worktreePath string, opts AdoptOptions, onLi
 		Slot:   slot,
 	}
 
-	if opts.SymlinkNodeModules {
+	// Side effects don't apply to master — it's not a feature worktree.
+	if opts.SymlinkNodeModules && name != "master" {
 		if _, err := LinkNodeModules(l.Master, worktreePath, onLine); err != nil {
 			if onLine != nil {
 				onLine("symlink failed: " + err.Error())
@@ -106,7 +119,7 @@ func (l Layout) Adopt(name, branch, worktreePath string, opts AdoptOptions, onLi
 		}
 	}
 
-	if opts.WriteGtab {
+	if opts.WriteGtab && name != "master" {
 		if path, err := l.WriteGtab(name, worktreePath); err != nil {
 			if onLine != nil {
 				onLine("gtab write failed: " + err.Error())
@@ -116,7 +129,7 @@ func (l Layout) Adopt(name, branch, worktreePath string, opts AdoptOptions, onLi
 		}
 	}
 
-	if opts.GraphiteTrack && HasGraphite() && branch != "" && branch != l.MainBranch {
+	if opts.GraphiteTrack && name != "master" && HasGraphite() && branch != "" && branch != l.MainBranch {
 		if err := l.GtTrack(worktreePath, onLine); err != nil {
 			if onLine != nil {
 				onLine("gt track failed: " + err.Error())

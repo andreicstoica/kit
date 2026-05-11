@@ -62,6 +62,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	applied := 0
 	for _, r := range results {
 		if r.Status == liftoff.CheckOK || r.Status == liftoff.CheckSkip {
 			continue
@@ -69,12 +70,15 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		if err := applyFix(layout, r); err != nil {
 			fmt.Println(tui.StyleErr.Render("error: " + err.Error()))
 		}
+		applied++
 	}
 
-	fmt.Println()
-	fmt.Println(tui.StyleTitle.Render("re-checking…"))
-	results = liftoff.RunChecks(liftoff.DefaultChecks(layout))
-	fmt.Print(tui.RenderDoctor(results))
+	if applied > 0 {
+		fmt.Println()
+		fmt.Println(tui.StyleTitle.Render("re-checking…"))
+		results = liftoff.RunChecks(liftoff.DefaultChecks(layout))
+		fmt.Print(tui.RenderDoctor(results))
+	}
 
 	if liftoff.AnyFailed(results) {
 		fmt.Println(tui.StyleWarn.Render("still has failures — see hints above or re-run `kit setup`."))
