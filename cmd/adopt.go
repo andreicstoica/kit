@@ -45,7 +45,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	name, err := resolveArgOrCwd(layout, args, true)
+	name, err := resolveArgOrCwd(layout, args)
 	if err != nil {
 		return err
 	}

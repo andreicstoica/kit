@@ -29,7 +29,7 @@ func init() {
 
 func runLinks(cmd *cobra.Command, args []string) error {
 	layout := liftoff.DefaultLayout()
-	name, err := resolveTarget(layout, args, "kit links — pick a kit", false)
+	name, err := resolveTarget(layout, args, "kit links — pick a kit")
 	if err != nil {
 		return err
 	}

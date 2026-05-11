@@ -24,7 +24,7 @@ var logCmd = &cobra.Command{
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
-		name, err := resolveTarget(layout, args, "kit log — pick a kit", true)
+		name, err := resolveTarget(layout, args, "kit log — pick a kit")
 		if err != nil {
 			return err
 		}

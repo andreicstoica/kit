@@ -23,7 +23,7 @@ var diffCmd = &cobra.Command{
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
-		name, err := resolveTarget(layout, args, "kit diff — pick a kit", true)
+		name, err := resolveTarget(layout, args, "kit diff — pick a kit")
 		if err != nil {
 			return err
 		}

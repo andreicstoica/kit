@@ -205,6 +205,20 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 }
 
 func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
+	return collectPlayWtItems(layout, nil)
+}
+
+// playWtItemFilter, when non-nil, drops items that return false.
+type playWtItemFilter func(playWtItem) bool
+
+// collectPlayWtItems walks every git worktree, builds the canonical
+// playWtItem (with master folded in + 🚀 emoji, running service count,
+// state metadata), optionally filters, sorts by lineup order, assigns
+// numeric displayIdx, and returns a []list.Item ready for bubble list.
+//
+// Shared by play / pause / generic worktree pickers so the sort key
+// and master handling don't drift across surfaces.
+func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.Item, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
 		return nil, err
@@ -213,10 +227,7 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 	if st == nil {
 		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
-	type row struct {
-		item playWtItem
-	}
-	var rows []row
+	var items []playWtItem
 	for _, w := range wts {
 		if w.Bare {
 			continue
@@ -228,38 +239,40 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 			emoji = "🚀"
 		}
 		meta := st.Worktrees[name]
-		running := 0
 		ports := liftoff.PortsForSlot(meta.Slot)
-		for _, svc := range liftoff.AllServices {
-			s := liftoff.StatusOf(name, svc, ports)
-			if s.Alive {
-				running++
-			}
-		}
-		rows = append(rows, row{item: playWtItem{
+		running, _ := liftoff.RunningCount(name, ports)
+		it := playWtItem{
 			name:     name,
 			path:     w.Path,
 			emoji:    emoji,
 			slot:     meta.Slot,
 			lastUsed: meta.LastUsed,
 			running:  running,
-		}})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		// Mirror `kit lineup`: master (slot 0) first, then ascending by slot.
-		// Falls back to lastUsed when both slots are 0 (unadopted).
-		si, sj := rows[i].item.slot, rows[j].item.slot
-		if si != sj {
-			return si < sj
 		}
-		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
-	})
-	out := make([]list.Item, 0, len(rows))
-	for i, r := range rows {
-		r.item.displayIdx = i + 1
-		out = append(out, r.item)
+		if keep != nil && !keep(it) {
+			continue
+		}
+		items = append(items, it)
+	}
+	sortPlayWtItems(items)
+	out := make([]list.Item, 0, len(items))
+	for i := range items {
+		items[i].displayIdx = i + 1
+		out = append(out, items[i])
 	}
 	return out, nil
+}
+
+// sortPlayWtItems orders items the same way kit lineup does: ascending
+// by slot (master is slot 0, always first), with lastUsed desc as the
+// tiebreaker for unadopted worktrees that share slot 0.
+func sortPlayWtItems(items []playWtItem) {
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].slot != items[j].slot {
+			return items[i].slot < items[j].slot
+		}
+		return items[i].lastUsed.After(items[j].lastUsed)
+	})
 }
 
 // transitionAfterToggle resolves the slot, prompts to adopt if the

@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
@@ -133,53 +132,9 @@ func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
 }
 
 func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
-	wts, err := layout.ListWorktrees()
-	if err != nil {
-		return nil, err
-	}
-	st, _ := liftoff.LoadState()
-	if st == nil {
-		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
-	}
-	type row struct {
-		item playWtItem
-	}
-	var rows []row
-	for _, w := range wts {
-		if w.Bare {
-			continue
-		}
-		name := w.Name()
-		emoji := liftoff.EmojiFor(name)
-		if w.IsMaster(layout) {
-			name = "master"
-			emoji = "🚀"
-		}
-		meta := st.Worktrees[name]
-		ports := liftoff.PortsForSlot(meta.Slot)
-		running, _ := liftoff.RunningCount(name, ports)
-		if running == 0 {
-			continue
-		}
-		rows = append(rows, row{item: playWtItem{
-			name: name, path: w.Path, emoji: emoji,
-			slot: meta.Slot, lastUsed: meta.LastUsed, running: running,
-		}})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		// Match lineup order: master first, ascending by slot.
-		si, sj := rows[i].item.slot, rows[j].item.slot
-		if si != sj {
-			return si < sj
-		}
-		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
+	return collectPlayWtItems(layout, func(it playWtItem) bool {
+		return it.running > 0
 	})
-	out := make([]list.Item, 0, len(rows))
-	for i, r := range rows {
-		r.item.displayIdx = i + 1
-		out = append(out, r.item)
-	}
-	return out, nil
 }
 
 func (m *pauseModel) Init() tea.Cmd { return m.spinner.Tick }

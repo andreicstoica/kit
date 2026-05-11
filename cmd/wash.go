@@ -18,7 +18,7 @@ from cwd when run from inside a worktree).`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
-		name, err := resolveArgOrCwd(layout, args, true)
+		name, err := resolveArgOrCwd(layout, args)
 		if err != nil {
 			return err
 		}

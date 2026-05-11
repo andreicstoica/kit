@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/charmbracelet/bubbles/list"
@@ -262,57 +261,12 @@ func PickAdoptCandidate(cands []liftoff.AdoptCandidate) (string, error) {
 // directory on disk. Returns the chosen name, or "" with no error if the
 // user pressed esc.
 func PickWorktree(layout liftoff.Layout, prompt string) (string, error) {
-	wts, err := layout.ListWorktrees()
+	items, err := collectPlayWtItems(layout, nil)
 	if err != nil {
 		return "", err
 	}
-	st, _ := liftoff.LoadState()
-	if st == nil {
-		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
-	}
-	type entry struct {
-		item playWtItem
-	}
-	var rows []entry
-	for _, w := range wts {
-		if w.Bare {
-			continue
-		}
-		name := w.Name()
-		if w.IsMaster(layout) {
-			name = "master"
-		}
-		meta := st.Worktrees[name]
-		ports := liftoff.PortsForSlot(meta.Slot)
-		running, _ := liftoff.RunningCount(name, ports)
-		emoji := liftoff.EmojiFor(name)
-		if name == "master" {
-			emoji = "🚀"
-		}
-		rows = append(rows, entry{item: playWtItem{
-			name:     name,
-			path:     w.Path,
-			emoji:    emoji,
-			slot:     meta.Slot,
-			lastUsed: meta.LastUsed,
-			running:  running,
-		}})
-	}
-	if len(rows) == 0 {
+	if len(items) == 0 {
 		return "", errors.New("no worktrees found — run `kit design` first")
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		// Mirror lineup: ascending by slot (master is slot 0, always first).
-		si, sj := rows[i].item.slot, rows[j].item.slot
-		if si != sj {
-			return si < sj
-		}
-		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
-	})
-	items := make([]list.Item, 0, len(rows))
-	for i, r := range rows {
-		r.item.displayIdx = i + 1
-		items = append(items, r.item)
 	}
 	dlg := list.NewDefaultDelegate()
 	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)

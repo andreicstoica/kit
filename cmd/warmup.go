@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/spf13/cobra"
@@ -18,7 +20,7 @@ var warmupCmd = &cobra.Command{
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
-		name, err := resolveTarget(layout, args, "kit warmup — pick a kit", true)
+		name, err := resolveTarget(layout, args, "kit warmup — pick a kit")
 		if err != nil {
 			return err
 		}
@@ -26,7 +28,11 @@ var warmupCmd = &cobra.Command{
 			return nil
 		}
 		if name == "master" {
-			return fmt.Errorf("no gtab workspace for master — warmup is per-feature")
+			// No per-feature gtab template; open Ghostty rooted at master.
+			c := exec.Command("open", "-a", "Ghostty.app", layout.Master)
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			return c.Start()
 		}
 		if !layout.HasGtab(name) {
 			return fmt.Errorf("no gtab workspace at %s — re-run `kit design` or write one manually", layout.GtabFile(name))

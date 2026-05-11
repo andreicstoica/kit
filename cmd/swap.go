@@ -36,7 +36,7 @@ var swapCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 
-		name, err := resolveTarget(layout, args, "kit swap — pick a kit", false)
+		name, err := resolveTarget(layout, args, "kit swap — pick a kit")
 		if err != nil {
 			return err
 		}
