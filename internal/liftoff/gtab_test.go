@@ -36,6 +36,35 @@ func TestWriteGtab(t *testing.T) {
 	}
 }
 
+func TestWriteGtabDetailed(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("KIT_GTAB_DIR", dir)
+	l := DefaultLayout()
+	wt := "/Users/acs/liftoff/voice-agent"
+	if _, err := l.WriteGtabLayout("voice-agent", wt, GtabDetailed); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(l.GtabFile("voice-agent"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		`set initial working directory of cfg2 to "` + wt + `/frontend/app"`,
+		`set initial working directory of cfgSplit2 to "` + wt + `/frontend/admin"`,
+		`set initial working directory of cfg3 to "` + wt + `/backend"`,
+		`set initial working directory of cfg4 to "` + wt + `/backend"`,
+		`perform action "set_tab_title:frontend"`,
+		`perform action "set_tab_title:backend"`,
+		`perform action "set_tab_title:celery"`,
+		`perform action "set_tab_title:logs"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("detailed template missing %q", want)
+		}
+	}
+}
+
 func TestRemoveGtab_Missing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("KIT_GTAB_DIR", dir)
