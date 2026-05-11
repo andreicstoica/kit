@@ -26,7 +26,7 @@ func TestWriteGtab(t *testing.T) {
 	for _, want := range []string{
 		`set initial working directory of cfg1 to "` + wt + `"`,
 		`set initial working directory of cfg2 to "` + wt + `"`,
-		`set command of cfg2 to "kit log voice-agent --wait"`,
+		`log voice-agent --wait"`,
 		`perform action "set_tab_title:🎤 voice-agent"`,
 		`perform action "set_tab_title:logs"`,
 	} {

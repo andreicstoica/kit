@@ -3,6 +3,7 @@ package liftoff
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"text/template"
 )
 
@@ -28,7 +29,7 @@ const simpleGtabTemplate = `tell application "Ghostty"
 
     set cfg2 to new surface configuration
     set initial working directory of cfg2 to "{{.Worktree}}"
-    set command of cfg2 to "kit log {{.Name}} --wait"
+    set command of cfg2 to "{{.KitBin}} log {{.Name}} --wait"
     set wait after command of cfg2 to true
     set newtab1 to new tab in win with configuration cfg2
     set p2 to focused terminal of newtab1
@@ -83,7 +84,7 @@ const detailedGtabTemplate = `tell application "Ghostty"
 
     set cfg5 to new surface configuration
     set initial working directory of cfg5 to "{{.Worktree}}"
-    set command of cfg5 to "kit log {{.Name}} --wait"
+    set command of cfg5 to "{{.KitBin}} log {{.Name}} --wait"
     set wait after command of cfg5 to true
     set newtab4 to new tab in win with configuration cfg5
     set p5 to focused terminal of newtab4
@@ -95,6 +96,7 @@ type gtabData struct {
 	Name       string
 	TabTitle   string // Name with emoji prefix when available
 	Worktree   string
+	KitBin     string // absolute path to the kit binary (gtab shells skip rc files)
 	AppLog     string
 	AdminLog   string
 	APILog     string
@@ -141,6 +143,7 @@ func (l Layout) WriteGtabLayout(name, worktree string, layout GtabLayout) (strin
 		Name:       name,
 		TabTitle:   tabTitle,
 		Worktree:   worktree,
+		KitBin:     kitBinaryPath(),
 		AppLog:     appLog,
 		AdminLog:   adminLog,
 		APILog:     apiLog,
@@ -203,4 +206,21 @@ func (l Layout) HasGtab(name string) bool {
 // EnsureGtabDir is a no-op convenience to make the dir.
 func (l Layout) EnsureGtabDir() error {
 	return os.MkdirAll(l.GtabDir, 0o755)
+}
+
+// kitBinaryPath returns an absolute path to the current kit binary,
+// suitable for embedding in AppleScript. Ghostty launches gtab tabs
+// without sourcing ~/.zshrc / .bashrc, so a bare `kit` invocation
+// fails with "command not found" even when kit is on the user's
+// interactive PATH. Falls back to "kit" if resolution fails — the
+// gtab will still work for users whose system PATH covers it.
+func kitBinaryPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "kit"
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		return resolved
+	}
+	return exe
 }
