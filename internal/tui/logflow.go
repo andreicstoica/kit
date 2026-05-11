@@ -203,26 +203,50 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// tagStyles maps log file tag → lipgloss style. Built once at init.
+// tagStyles maps the on-disk log filename (= internal service id) to a
+// lipgloss style. File names stay app.log/admin.log/api.log/admin_be.log
+// for compatibility; display labels come from tagDisplay below.
 var tagStyles = map[string]lipgloss.Style{
 	"app":      lipgloss.NewStyle().Foreground(ColorAccent).Bold(true),
 	"admin":    lipgloss.NewStyle().Foreground(ColorWarn).Bold(true),
 	"api":      lipgloss.NewStyle().Foreground(ColorAPI).Bold(true),
 	"admin_be": lipgloss.NewStyle().Foreground(ColorAdminBE).Bold(true),
 	"celery":   lipgloss.NewStyle().Foreground(ColorOK).Bold(true),
-	"beat":     lipgloss.NewStyle().Foreground(ColorErr).Bold(true),
+	"beat":     lipgloss.NewStyle().Foreground(ColorOK).Bold(true),
 	"mcp":      lipgloss.NewStyle().Foreground(ColorMuted).Bold(true),
+}
+
+// tagDisplay translates filename stems to the designer-facing service
+// names. Keeps logs readable for non-engineers without renaming files.
+var tagDisplay = map[string]string{
+	"app":      "app_front",
+	"admin":    "admin_front",
+	"api":      "app_back",
+	"admin_be": "admin_back",
+	"celery":   "celery",
+	"beat":     "celery",
+	"mcp":      "mcp",
 }
 
 var defaultTagStyle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
 
-// stylizeLine prefixes the service tag with a color and shows the raw line.
+// stylizeLine prefixes the service tag with a color and pads to keep
+// the message column aligned across log streams.
 func stylizeLine(tag, line string) string {
+	display := tagDisplay[tag]
+	if display == "" {
+		display = tag
+	}
 	style, ok := tagStyles[tag]
 	if !ok {
 		style = defaultTagStyle
 	}
-	return style.Render("["+tag+"]") + " " + line
+	const tagWidth = 11
+	label := "[" + display + "]"
+	if len(label) < tagWidth {
+		label += strings.Repeat(" ", tagWidth-len(label))
+	}
+	return style.Render(label) + " " + line
 }
 
 func (m *logModel) View() string {
