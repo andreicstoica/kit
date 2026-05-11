@@ -146,10 +146,15 @@ func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
 	}
 	var rows []row
 	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
+		if w.Bare {
 			continue
 		}
 		name := w.Name()
+		emoji := liftoff.EmojiFor(name)
+		if w.IsMaster(layout) {
+			name = "master"
+			emoji = "🚀"
+		}
 		meta := st.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
 		running, _ := liftoff.RunningCount(name, ports)
@@ -157,7 +162,7 @@ func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
 			continue
 		}
 		rows = append(rows, row{item: playWtItem{
-			name: name, path: w.Path, emoji: liftoff.EmojiFor(name),
+			name: name, path: w.Path, emoji: emoji,
 			slot: meta.Slot, lastUsed: meta.LastUsed, running: running,
 		}})
 	}
