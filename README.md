@@ -7,7 +7,9 @@ graphite tracking, ghostty workspace generation, **automatic per-worktree
 port allocation**, and **one-command service spin-up/down**.
 
 ```
-kit dress voice-agent     # walks you through creating a worktree
+kit setup                 # one-time: install missing tools, clone master
+kit doctor                # check your setup is ready
+kit design voice-agent    # walks you through creating a worktree
 kit lineup                # show all kits on the field
 kit play voice-agent      # start the kit's services (frontend + backend + celery)
 kit pause voice-agent     # stop them
@@ -28,7 +30,7 @@ DB belonged to which feature. `kit` makes parallel feature work
 single-command:
 
 - Each worktree gets a unique **port slot** (e.g. slot 1 → app:3010,
-  admin:3011, api:9010, admin_be:9011) automatically at `dress` time
+  admin:3011, api:9010, admin_be:9011) automatically at `kit design` time
 - `kit play <name>` starts all dev servers on those ports, with frontend
   env vars wired to point at the matching backend
 - `kit pause <name>` cleans up
@@ -78,9 +80,25 @@ Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`.
 
 Run `kit completion --help` to wire shell tab-completion (zsh / bash / fish / powershell).
 
+## First-time setup
+
+```sh
+kit setup
+```
+
+`kit setup` walks through the tools kit depends on (Homebrew, git, gh, node,
+yarn, python, redis, postgres, Ghostty, an editor), offers to install
+missing ones via Homebrew, prompts for `gh auth login` if you're not
+authenticated, and clones the Liftoff master repo with `yarn install`
+already done so frontend node_modules symlinks work.
+
+It's interactive — nothing is changed without confirmation — and idempotent.
+Run it any time you suspect something's off. For a read-only report (no
+prompts), use `kit doctor`.
+
 ## What `kit design` does
 
-`kit dress` walks an interactive wizard, then runs (in order):
+`kit design` walks an interactive wizard, then runs (in order):
 
 1. `git fetch origin master:master` in the master repo
 2. `git worktree add ~/liftoff/<name> -b <name> master`
@@ -92,8 +110,8 @@ Run `kit completion --help` to wire shell tab-completion (zsh / bash / fish / po
 8. (optional) writes `~/.config/gtab/<name>.applescript` for ghostty
 9. **Allocates a port slot**, recorded in `~/.config/kit/state.toml`
 
-A leading `liftoff-` in your input is stripped automatically. So `kit dress
-liftoff-voice-agent` and `kit dress voice-agent` are equivalent.
+A leading `liftoff-` in your input is stripped automatically. So `kit design
+liftoff-voice-agent` and `kit design voice-agent` are equivalent.
 
 ## Run services with `kit play` / `kit pause`
 
@@ -141,7 +159,7 @@ Each worktree's slot determines its 5-port band:
 | MCP server       | `9002 + slot*10`  |
 
 Slot 0 is reserved for master defaults (3000/3001/9000/9001/9002). `kit
-dress` picks the lowest free slot ≥ 1; if any port in that band is
+design` picks the lowest free slot ≥ 1; if any port in that band is
 occupied by something outside `kit`, it bumps to the next slot. State lives
 in `~/.config/kit/state.toml`.
 
@@ -190,7 +208,7 @@ Override via env vars:
 
 ## Subcommands
 
-### `kit dress` (alias `new`) — put on a fresh kit
+### `kit design` (alias `new`) — put on a fresh kit
 
 Interactive wizard. Always prompts: name → DB clone? → backend deps? →
 symlink node_modules? → graphite track? → gtab? → review → run with live
@@ -238,6 +256,18 @@ title now includes the branch emoji.
 
 Opens the worktree in the first available editor. Bumps `last_used` so the
 kit floats to the top of `lineup`.
+
+### `kit doctor` — diagnose your setup
+
+Read-only check of every tool kit depends on. Prints a colored report with
+a fix hint for each warning/failure. Exits non-zero on any failure (so CI
+can gate on it).
+
+### `kit setup` — install missing tools
+
+Interactive bootstrap. Same checks as `kit doctor`, but prompts to apply
+each fix: `brew install`, `gh auth login`, clone the Liftoff master repo,
+`yarn install`. Idempotent; re-run any time.
 
 ## Roadmap
 
