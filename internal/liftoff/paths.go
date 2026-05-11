@@ -27,20 +27,44 @@ type Layout struct {
 	MainBranch string
 }
 
-// DefaultLayout resolves Layout from $HOME and env overrides.
+// DefaultLayout resolves Layout via three layers, in order:
+//
+//	1. env override (KIT_ROOT etc.)
+//	2. config.toml [settings] block (kit setup writes this)
+//	3. built-in default
+//
+// Config load failures fall through to env + built-ins so kit always
+// boots.
 func DefaultLayout() Layout {
 	home, _ := os.UserHomeDir()
+	settings := Settings{}
+	if c, err := LoadConfig(); err == nil && c != nil {
+		settings = c.Settings
+	}
 
-	root := envOr("KIT_ROOT", filepath.Join(home, "liftoff"))
-	masterName := envOr("KIT_MASTER_DIR", "liftoff-app-master")
-	gtabDir := envOr("KIT_GTAB_DIR", filepath.Join(home, ".config", "gtab"))
+	root := resolve("KIT_ROOT", settings.Root, filepath.Join(home, "liftoff"))
+	masterName := resolve("KIT_MASTER_DIR", settings.MasterDir, "liftoff-app-master")
+	gtabDir := resolve("KIT_GTAB_DIR", settings.GtabDir, filepath.Join(home, ".config", "gtab"))
+	mainBranch := resolve("KIT_MAIN_BRANCH", settings.MainBranch, "master")
 
 	return Layout{
 		Root:       root,
 		Master:     filepath.Join(root, masterName),
 		GtabDir:    gtabDir,
-		MainBranch: envOr("KIT_MAIN_BRANCH", "master"),
+		MainBranch: mainBranch,
 	}
+}
+
+// resolve picks the first non-empty value from: env override, config-file
+// setting, fallback.
+func resolve(envKey, configValue, fallback string) string {
+	if v := os.Getenv(envKey); v != "" {
+		return v
+	}
+	if configValue != "" {
+		return configValue
+	}
+	return fallback
 }
 
 // WorktreePath returns the canonical worktree path for a feature name.
