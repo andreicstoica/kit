@@ -16,7 +16,8 @@ var warmupCmd = &cobra.Command{
 		"laid out for frontend + backend + celery + scratch).\n\n" +
 		"With no arg, uses the worktree you're in (or the numbered picker if " +
 		"cwd is unrelated or master).",
-	Args: cobra.MaximumNArgs(1),
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		name, err := resolveTarget(layout, args, "kit warmup — pick a kit")

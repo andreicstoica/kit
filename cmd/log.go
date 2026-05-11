@@ -31,7 +31,8 @@ var logCmd = &cobra.Command{
 		"- `q` / `ctrl+c` exit\n\n" +
 		"Pass `--delete-all` to clear every `.log` for the worktree instead " +
 		"of opening the viewer.",
-	Args: cobra.MaximumNArgs(1),
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		name, err := resolveTarget(layout, args, "kit log — pick a kit")

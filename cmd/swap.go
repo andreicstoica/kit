@@ -32,7 +32,8 @@ var swapCmd = &cobra.Command{
 		"Honors `$KIT_EDITOR` if no flag is given and only one editor is installed.\n\n" +
 		"On macOS, editors are detected via `.app` bundle in `/Applications` " +
 		"OR a CLI binary on PATH. Bundle-only installs are launched via `open -a`.",
-	Args: cobra.MaximumNArgs(1),
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 

@@ -31,7 +31,8 @@ Each worktree gets a 5-port band based on its slot:
 
 If no <name> is given, you'll get a Bubble Tea picker. Use --only to skip
 the service-selection screen.`,
-	Args: cobra.MaximumNArgs(1),
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Passive log cleanup: drop run dirs whose newest file is >30 days old
 		// and which don't own a live PID. Cheap, fire-and-forget.

@@ -20,7 +20,8 @@ var diffCmd = &cobra.Command{
 		"(side-by-side viewer + syntax highlight); falls back to plain " +
 		"`git diff` otherwise. Pass `--plain` to force git's default.\n\n" +
 		"With no arg, resolves the worktree from cwd or opens a picker.",
-	Args: cobra.MaximumNArgs(1),
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		name, err := resolveTarget(layout, args, "kit diff — pick a kit")
