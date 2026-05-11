@@ -234,20 +234,28 @@ func checkPython() CheckResult {
 		r.FixCmd = []string{"python@3.14"}
 		return r
 	}
-	ver, _ := ToolVersion("python3", "--version")
 	venv := os.Getenv("KIT_PY_VENV")
 	if venv == "" {
 		home, _ := os.UserHomeDir()
 		venv = filepath.Join(home, ".envs", "py314")
 	}
+	venvPy := filepath.Join(venv, "bin", "python")
 	if _, err := os.Stat(filepath.Join(venv, "bin", "activate")); err != nil {
+		sysVer, _ := ToolVersion("python3", "--version")
 		r.Status = CheckWarn
-		r.Detail = ver + "  venv missing at " + venv
-		r.FixHint = "create venv: python3 -m venv " + venv
+		r.Detail = sysVer + "  venv missing at " + venv
+		r.FixHint = "brew install python@3.14 && python3.14 -m venv " + venv
+		return r
+	}
+	venvVer, _ := ToolVersion(venvPy, "--version")
+	if !strings.Contains(venvVer, "3.14") {
+		r.Status = CheckWarn
+		r.Detail = venvVer + " in " + venv + "  (Liftoff wants 3.14)"
+		r.FixHint = "brew install python@3.14 && rm -rf " + venv + " && python3.14 -m venv " + venv
 		return r
 	}
 	r.Status = CheckOK
-	r.Detail = ver + "  venv at " + venv
+	r.Detail = venvVer + "  venv at " + venv
 	return r
 }
 
