@@ -110,10 +110,8 @@ func PickEditor(editors []EditorCandidate) (*EditorCandidate, error) {
 	if len(items) == 0 {
 		return nil, errors.New("no supported editor found (looked for Zed, Cursor, VS Code on PATH or in /Applications)")
 	}
-	if len(items) == 1 {
-		c := items[0].(editorItem).c
-		return &c, nil
-	}
+	// Always show the picker, even for a single item — user asked for an
+	// explicit choice rather than implicit auto-pick.
 	dlg := list.NewDefaultDelegate()
 	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)
 	dlg.Styles.SelectedDesc = dlg.Styles.SelectedDesc.Foreground(colorAccent).BorderForeground(colorAccent)

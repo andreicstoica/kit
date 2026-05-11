@@ -6,9 +6,11 @@ DIST := dist
 
 all: build
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 build:
 	@mkdir -p $(DIST)
-	go build -ldflags "-s -w" -o $(DIST)/$(BIN) .
+	go build -ldflags "-s -w -X github.com/andreicstoica/kit/cmd.version=$(VERSION)" -o $(DIST)/$(BIN) .
 
 install: build
 	@mkdir -p $(PREFIX)/bin
