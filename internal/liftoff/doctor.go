@@ -385,7 +385,7 @@ func checkEditor() CheckResult {
 }
 
 func checkLiftoffMaster(layout Layout) CheckResult {
-	r := CheckResult{Name: "liftoff"}
+	r := CheckResult{Name: "liftoff repo"}
 	if _, err := os.Stat(layout.Master); err != nil {
 		r.Status = CheckFail
 		r.Detail = "master repo not found at " + layout.Master
