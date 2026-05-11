@@ -359,7 +359,7 @@ func checkGhostty() CheckResult {
 }
 
 func checkEditor() CheckResult {
-	r := CheckResult{Name: "editor"}
+	r := CheckResult{Name: "editors"}
 	known := []struct{ App, Label string }{
 		{"Zed.app", "Zed"},
 		{"Cursor.app", "Cursor"},
