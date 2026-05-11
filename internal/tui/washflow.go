@@ -16,17 +16,21 @@ import (
 
 // washItem is a list entry representing one removable worktree.
 type washItem struct {
-	name     string
-	path     string
-	branch   string
-	dirty    bool
-	hasDB    bool
-	hasGtab  bool
-	isLegacy bool
+	name       string
+	path       string
+	branch     string
+	dirty      bool
+	hasDB      bool
+	hasGtab    bool
+	isLegacy   bool
+	displayIdx int // 1-based for numeric quick-pick
 }
 
 func (w washItem) Title() string {
 	t := w.name
+	if w.displayIdx > 0 && w.displayIdx < 10 {
+		t = StyleHi.Render(fmt.Sprintf("%d ", w.displayIdx)) + t
+	}
 	if w.isLegacy {
 		t = StyleDim.Render("(legacy) ") + t
 	}
@@ -106,13 +110,14 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 		}
 		name := wt.Name()
 		it := washItem{
-			name:     name,
-			path:     wt.Path,
-			branch:   wt.Branch,
-			dirty:    liftoff.IsDirty(wt.Path),
-			hasDB:    liftoff.HasPostgres() && liftoff.HasDB(name),
-			hasGtab:  layout.HasGtab(name),
-			isLegacy: wt.HasLegacyPrefix(),
+			name:       name,
+			path:       wt.Path,
+			branch:     wt.Branch,
+			dirty:      liftoff.IsDirty(wt.Path),
+			hasDB:      liftoff.HasPostgres() && liftoff.HasDB(name),
+			hasGtab:    layout.HasGtab(name),
+			isLegacy:   wt.HasLegacyPrefix(),
+			displayIdx: len(items) + 1,
 		}
 		items = append(items, it)
 		if preselected != "" && name == preselected {
@@ -199,24 +204,37 @@ func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch k.String() {
 		case "enter":
 			if it, ok := m.list.SelectedItem().(washItem); ok {
-				m.selected = it
-				if !it.hasDB {
-					m.dropDB = false
-				}
-				if !it.hasGtab {
-					m.removeGtab = false
-				}
-				m.stage = washStageConfirm
+				m.pickWash(it)
 				return m, nil
 			}
 		case "esc":
 			m.stage = washStageAborted
 			return m, tea.Quit
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			idx := int(k.String()[0] - '0' - 1)
+			items := m.list.VisibleItems()
+			if idx >= 0 && idx < len(items) {
+				if it, ok := items[idx].(washItem); ok {
+					m.pickWash(it)
+					return m, nil
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
+}
+
+func (m *washModel) pickWash(it washItem) {
+	m.selected = it
+	if !it.hasDB {
+		m.dropDB = false
+	}
+	if !it.hasGtab {
+		m.removeGtab = false
+	}
+	m.stage = washStageConfirm
 }
 
 func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {

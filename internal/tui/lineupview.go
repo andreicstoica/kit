@@ -59,14 +59,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		meta, hasMeta := state.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
 
-		// Count running services (out of 6 default services).
-		running := 0
-		total := len(liftoff.DefaultServices)
-		for _, svc := range liftoff.DefaultServices {
-			if liftoff.StatusOf(name, svc, ports).Alive {
-				running++
-			}
-		}
+		running, total := liftoff.RunningCount(name, ports)
 		runningStr := "—"
 		hasRunning := running > 0
 		if hasRunning {

@@ -144,7 +144,9 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 			m.toggleOn[s] = true
 		}
 	}
-	m.toggleSvcs = liftoff.AllServices
+	// UI toggle shows display services only — beat is collapsed into celery
+	// (toggling celery flips both internally, see updateToggle).
+	m.toggleSvcs = liftoff.DisplayServices
 	name := cfg.Name
 	only := cfg.Only
 
@@ -247,7 +249,8 @@ func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
 		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
 	})
 	out := make([]list.Item, 0, len(rows))
-	for _, r := range rows {
+	for i, r := range rows {
+		r.item.displayIdx = i + 1
 		out = append(out, r.item)
 	}
 	return out, nil
@@ -433,6 +436,16 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.stage = playStageAborted
 			return m, tea.Quit
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			idx := int(k.String()[0] - '0' - 1)
+			items := m.picker.VisibleItems()
+			if idx >= 0 && idx < len(items) {
+				if it, ok := items[idx].(playWtItem); ok {
+					m.chosen = it
+					m.stage = playStageToggle
+					return m, nil
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -454,6 +467,10 @@ func (m *playModel) updateToggle(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case " ", "tab":
 			s := m.toggleSvcs[m.toggleCursor]
 			m.toggleOn[s] = !m.toggleOn[s]
+			// Celery toggle controls beat too — they're paired.
+			if s == liftoff.SvcCelery {
+				m.toggleOn[liftoff.SvcBeat] = m.toggleOn[liftoff.SvcCelery]
+			}
 		case "enter":
 			return m, m.transitionAfterToggle()
 		case "esc":

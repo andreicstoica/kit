@@ -132,19 +132,7 @@ func pickAdoptCandidate(layout liftoff.Layout, cfg *liftoff.Config) (string, err
 		fmt.Println(tui.StyleOK.Render("all worktrees are already adopted."))
 		return "", nil
 	}
-	var opts []huh.Option[string]
-	for _, c := range cands {
-		label := fmt.Sprintf("%s  (branch %s)", c.Name, c.Branch)
-		opts = append(opts, huh.NewOption(label, c.Name))
-	}
-	var picked string
-	if err := huh.NewSelect[string]().
-		Title("kit adopt — pick a worktree").
-		Options(opts...).
-		Value(&picked).Run(); err != nil {
-		return "", err
-	}
-	return picked, nil
+	return tui.PickAdoptCandidate(cands)
 }
 
 // findWorktreeByName resolves a kit name to its git worktree record.

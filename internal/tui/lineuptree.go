@@ -82,21 +82,20 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 			name := in.w.Name()
 			meta := state.Worktrees[name]
 			ports := liftoff.PortsForSlot(meta.Slot)
-			running := 0
+			running, total := liftoff.RunningCount(name, ports)
 			var svcRows []serviceRow
-			for _, svc := range liftoff.DefaultServices {
-				s := liftoff.StatusOf(name, svc, ports)
-				svcRows = append(svcRows, serviceRow{name: string(svc), alive: s.Alive})
-				if s.Alive {
-					running++
-				}
+			for _, svc := range liftoff.DisplayServices {
+				svcRows = append(svcRows, serviceRow{
+					name:  svc.Label(),
+					alive: liftoff.IsServiceAlive(name, svc, ports),
+				})
 			}
 			ahead, behind := layout.AheadBehind(in.w.Path)
 			n := &wtNode{
 				name:    name,
 				slot:    meta.Slot,
 				running: running,
-				total:   len(liftoff.DefaultServices),
+				total:   total,
 				dirty:   liftoff.IsDirty(in.w.Path),
 				ahead:   ahead,
 				behind:  behind,

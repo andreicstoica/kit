@@ -152,12 +152,7 @@ func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
 		name := w.Name()
 		meta := st.Worktrees[name]
 		ports := liftoff.PortsForSlot(meta.Slot)
-		running := 0
-		for _, svc := range liftoff.AllServices {
-			if liftoff.StatusOf(name, svc, ports).Alive {
-				running++
-			}
-		}
+		running, _ := liftoff.RunningCount(name, ports)
 		if running == 0 {
 			continue
 		}
@@ -170,7 +165,8 @@ func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
 		return rows[i].item.lastUsed.After(rows[j].item.lastUsed)
 	})
 	out := make([]list.Item, 0, len(rows))
-	for _, r := range rows {
+	for i, r := range rows {
+		r.item.displayIdx = i + 1
 		out = append(out, r.item)
 	}
 	return out, nil
@@ -225,6 +221,17 @@ func (m *pauseModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.stage = pauseStageAborted
 			return m, tea.Quit
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			idx := int(k.String()[0] - '0' - 1)
+			items := m.picker.VisibleItems()
+			if idx >= 0 && idx < len(items) {
+				if it, ok := items[idx].(playWtItem); ok {
+					m.chosen = it
+					m.running = m.discoverRunning(it.name)
+					m.stage = pauseStageConfirm
+					return m, nil
+				}
+			}
 		}
 	}
 	var cmd tea.Cmd

@@ -29,25 +29,53 @@ var AllServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcMCP, SvcCel
 // DefaultServices are the ones turned on by `kit play` defaults.
 var DefaultServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcCelery, SvcBeat}
 
-// ServiceLabel returns a human-readable label.
+// Label returns the user-facing name used in pickers, lineup, and the
+// tree view. Designer-friendly: front/back instead of frontend/backend +
+// api/admin_be, and "celery" rolls celery + beat into one display row.
 func (s Service) Label() string {
 	switch s {
 	case SvcApp:
-		return "frontend/app"
+		return "app_front"
 	case SvcAdmin:
-		return "frontend/admin"
+		return "admin_front"
 	case SvcAPI:
-		return "backend/api"
+		return "app_back"
 	case SvcAdminBE:
-		return "backend/admin"
+		return "admin_back"
 	case SvcMCP:
-		return "mcp_server"
+		return "mcp"
 	case SvcCelery:
-		return "celery worker"
+		return "celery"
 	case SvcBeat:
 		return "celery beat"
 	}
 	return string(s)
+}
+
+// DisplayServices is the deduped list used by UI surfaces (toggle,
+// lineup running count, tree). Beat is hidden — celery and beat are
+// always paired; toggling "celery" in the UI flips both, and a worktree
+// counts as "celery running" when either celery OR beat is alive.
+var DisplayServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcCelery}
+
+// IsServiceAlive folds beat into celery for display purposes:
+// celery counts as alive when either celery or beat is up.
+func IsServiceAlive(name string, svc Service, ports Ports) bool {
+	if svc == SvcCelery {
+		return StatusOf(name, SvcCelery, ports).Alive || StatusOf(name, SvcBeat, ports).Alive
+	}
+	return StatusOf(name, svc, ports).Alive
+}
+
+// RunningCount returns (alive, total) over DisplayServices.
+func RunningCount(name string, ports Ports) (int, int) {
+	alive := 0
+	for _, svc := range DisplayServices {
+		if IsServiceAlive(name, svc, ports) {
+			alive++
+		}
+	}
+	return alive, len(DisplayServices)
 }
 
 // ServicePort returns the assigned port (0 if the service has no port).
