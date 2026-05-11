@@ -115,22 +115,12 @@ type serviceRow struct {
 }
 
 func wtTreeLabel(emoji, name string, slot, running, total int, branch string, dirty bool, ahead, behind int, legacy bool) string {
-	var parts []string
 	header := name
 	if emoji != "" {
 		header = emoji + " " + name
 	}
-	parts = append(parts, lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(header))
+	parts := []string{lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(header)}
 
-	if slot > 0 {
-		parts = append(parts, StyleDim.Render(fmt.Sprintf("slot %d", slot)))
-	} else {
-		parts = append(parts, StyleDim.Render("slot —"))
-	}
-	if running > 0 {
-		parts = append(parts, StyleOK.Bold(true).Render(fmt.Sprintf("%d/%d running", running, total)))
-	}
-	parts = append(parts, lipgloss.NewStyle().Foreground(colorMuted).Render(branch))
 	status := "clean"
 	if dirty {
 		status = "dirty"
@@ -142,6 +132,14 @@ func wtTreeLabel(emoji, name string, slot, running, total int, branch string, di
 		parts = append(parts, StyleWarn.Render(status))
 	} else {
 		parts = append(parts, StyleOK.Render(status))
+	}
+
+	if slot > 0 {
+		parts = append(parts, StyleDim.Render(fmt.Sprintf("slot %d", slot)))
+	}
+	_ = total // running is shown as child service rows instead of a count
+	if branch != name {
+		parts = append(parts, StyleDim.Render("on "+branch))
 	}
 	if legacy {
 		parts = append(parts, StyleDim.Render("(legacy)"))
