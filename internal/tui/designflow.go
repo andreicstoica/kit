@@ -426,11 +426,21 @@ func PickGtabLayout(includeSkip bool) (liftoff.GtabLayout, error) {
 	if includeSkip {
 		opts = append(opts, huh.NewOption("Skip — don't open", liftoff.GtabLayout("")))
 	}
-	err := huh.NewSelect[liftoff.GtabLayout]().
-		Title("Ghostty workspace layout").
-		Description("Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.").
-		Options(opts...).
-		Value(&gl).Run()
+	// WithTheme triggers group.WithHeight(rawHeight()) at construction time,
+	// setting the group viewport height before the first render. Without it
+	// the viewport height is 0 and options are invisible until the first keypress.
+	err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[liftoff.GtabLayout]().
+				Title("Ghostty workspace layout").
+				Description("Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.").
+				Options(opts...).
+				Value(&gl),
+		),
+	).WithTheme(huh.ThemeCharm()).
+		WithShowHelp(true).
+		WithShowErrors(true).
+		Run()
 	return gl, err
 }
 
