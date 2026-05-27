@@ -19,6 +19,7 @@ type washItem struct {
 	path       string
 	branch     string
 	dirty      bool
+	aheadCount int // commits in HEAD not yet in origin/<main> — lost on -D
 	hasDB      bool
 	hasGtab    bool
 	isLegacy   bool
@@ -75,6 +76,7 @@ type washModel struct {
 	dropDB       bool
 	removeGtab   bool
 	confirmCursor int
+	confirmArmed  bool // second-confirm latch when the branch has unmerged work
 
 	spinner      spinner.Model
 	help         help.Model
@@ -108,11 +110,13 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 			continue
 		}
 		name := wt.Name()
+		ahead, _ := layout.AheadBehind(wt.Path)
 		it := washItem{
 			name:       name,
 			path:       wt.Path,
 			branch:     wt.Branch,
 			dirty:      liftoff.IsDirty(wt.Path),
+			aheadCount: ahead,
 			hasDB:      liftoff.HasPostgres() && liftoff.HasDB(name),
 			hasGtab:    layout.HasGtab(name),
 			isLegacy:   wt.HasLegacyPrefix(),
@@ -227,6 +231,7 @@ func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *washModel) pickWash(it washItem) {
 	m.selected = it
+	m.confirmArmed = false
 	if !it.hasDB {
 		m.dropDB = false
 	}
@@ -234,6 +239,12 @@ func (m *washModel) pickWash(it washItem) {
 		m.removeGtab = false
 	}
 	m.stage = washStageConfirm
+}
+
+// needsDoubleConfirm reports whether wash would destroy work that isn't safely
+// in origin/<main> — unmerged commits (aheadCount) or uncommitted changes.
+func (m *washModel) needsDoubleConfirm() bool {
+	return m.selected.aheadCount > 0 || m.selected.dirty
 }
 
 func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -255,6 +266,12 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.removeGtab = !m.removeGtab
 			}
 		case "enter":
+			// Branches with unmerged/uncommitted work get force-deleted (git -D)
+			// — require a second, deliberate enter before proceeding.
+			if m.needsDoubleConfirm() && !m.confirmArmed {
+				m.confirmArmed = true
+				return m, nil
+			}
 			m.stage = washStageRunning
 			plan := liftoff.WashPlan{
 				Name:         m.selected.name,
@@ -271,32 +288,29 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stage = washStageAborted
 			return m, tea.Quit
 		case "backspace":
+			m.confirmArmed = false
 			m.stage = washStageSelect
 		}
 	}
 	return m, nil
 }
 
+// washStepTitles must match RunWash's step order 1:1 so StepUpdate.Index lines
+// up with m.stepStatuses. Skipped steps (db/gtab) render via their StepSkipped
+// status, not a title suffix.
 func washStepTitles(p liftoff.WashPlan) []string {
 	branch := p.Branch
 	if branch == "" {
 		branch = p.Name
 	}
-	titles := []string{
+	return []string{
+		"stop running services",
 		"remove worktree " + p.WorktreePath,
 		"delete branch " + branch,
+		"drop database " + liftoff.DBName(p.Name),
+		"remove gtab workspace",
+		"free port slot",
 	}
-	if p.DropDB {
-		titles = append(titles, "drop database "+liftoff.DBName(p.Name))
-	} else {
-		titles = append(titles, "drop database (skipped)")
-	}
-	if p.RemoveGtab {
-		titles = append(titles, "remove gtab workspace")
-	} else {
-		titles = append(titles, "remove gtab (skipped)")
-	}
-	return titles
 }
 
 type washStepMsg struct {
@@ -328,7 +342,8 @@ func (m *washModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if u.Line != "" {
 				m.stepLines[u.Index] = append(m.stepLines[u.Index], u.Line)
 			}
-			if u.Status == liftoff.StepFailed && u.Index < 2 {
+			// Only worktree-remove (index 1) is fatal — matches RunWash.
+			if u.Status == liftoff.StepFailed && u.Index == 1 {
 				m.failed = true
 				m.failureErr = u.Err
 			}
@@ -386,6 +401,10 @@ func (m *washModel) viewConfirm() string {
 	if m.selected.dirty {
 		b.WriteString(StyleWarn.Render("⚠ uncommitted changes will be lost") + "\n")
 	}
+	if m.selected.aheadCount > 0 {
+		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d commit(s) not in %s — will be permanently deleted (git -D)",
+			m.selected.aheadCount, m.layout.MainBranch)) + "\n")
+	}
 	b.WriteString("\n")
 	toggles := m.visibleToggles()
 	if len(toggles) == 0 {
@@ -409,7 +428,12 @@ func (m *washModel) viewConfirm() string {
 		}
 		b.WriteString(cursor + box + " " + label + "\n")
 	}
-	b.WriteString("\n" + StyleHelp.Render("space: toggle · enter: confirm · backspace: back · esc: abort"))
+	b.WriteString("\n")
+	if m.confirmArmed {
+		b.WriteString(StyleWarn.Render("press enter again to permanently delete · esc to abort"))
+	} else {
+		b.WriteString(StyleHelp.Render("space: toggle · enter: confirm · backspace: back · esc: abort"))
+	}
 	return b.String()
 }
 

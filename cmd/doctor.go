@@ -78,11 +78,7 @@ func runSelfTest(layout liftoff.Layout) int {
 			return nil
 		}},
 		{"config round-trip", func() error {
-			c, err := liftoff.LoadConfig()
-			if err != nil {
-				return err
-			}
-			return c.Save()
+			return liftoff.WithConfigLock(func(c *liftoff.Config) error { return nil })
 		}},
 		{"port slot 99 bindable", func() error {
 			if !liftoff.PortsBindable(99) {

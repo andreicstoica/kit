@@ -73,32 +73,30 @@ func (l Layout) Adopt(name, branch, worktreePath string, opts AdoptOptions, onLi
 	if _, err := os.Stat(worktreePath); err != nil {
 		return nil, fmt.Errorf("worktree path missing: %s", worktreePath)
 	}
-	c, err := LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
 	// Master gets slot 0 by convention — no allocation, just metadata.
 	// kit play / pause / links use slot 0 for master automatically.
 	slot := 0
-	if name != "master" {
-		s, err := c.AllocateSlot(name, PortsBindable)
-		if err != nil {
-			return nil, fmt.Errorf("allocate slot: %w", err)
+	if err := WithConfigLock(func(c *Config) error {
+		if name != "master" {
+			s, err := c.AllocateSlot(name, PortsBindable)
+			if err != nil {
+				return fmt.Errorf("allocate slot: %w", err)
+			}
+			slot = s
 		}
-		slot = s
-	}
-	meta := c.Worktrees[name]
-	meta.Slot = slot
-	meta.Branch = branch
-	meta.Path = worktreePath
-	meta.Adopted = true
-	if meta.Created.IsZero() {
-		meta.Created = time.Now().UTC()
-	}
-	meta.LastUsed = time.Now().UTC()
-	c.Worktrees[name] = meta
-	if err := c.Save(); err != nil {
-		return nil, fmt.Errorf("save config: %w", err)
+		meta := c.Worktrees[name]
+		meta.Slot = slot
+		meta.Branch = branch
+		meta.Path = worktreePath
+		meta.Adopted = true
+		if meta.Created.IsZero() {
+			meta.Created = time.Now().UTC()
+		}
+		meta.LastUsed = time.Now().UTC()
+		c.Worktrees[name] = meta
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	res := &AdoptResult{

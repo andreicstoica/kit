@@ -4,12 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
+
+// staleTolerance is the slack allowed between a process's kernel start time
+// and the launch time kit recorded, to absorb clock skew / NTP steps.
+const staleTolerance = 5 * time.Minute
 
 // RunDirPath returns ~/.config/kit/run/<name>/ without touching the filesystem.
 // Use for read-only lookups (ReadPID, log paths, status).
@@ -76,6 +81,86 @@ func ReadPID(worktree, service string) int {
 		return 0
 	}
 	return pid
+}
+
+// ReadStarted returns the launch time kit recorded in the service's .cmd file
+// (the "started:" line), or (zero, false) if absent/unparseable.
+func ReadStarted(worktree, service string) (time.Time, bool) {
+	path, err := CmdFile(worktree, service)
+	if err != nil {
+		return time.Time{}, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		v, ok := strings.CutPrefix(line, "started: ")
+		if !ok {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(v))
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+// looksStale reports whether pid's live process started before `recorded` —
+// i.e. the pid was recycled (e.g. after a reboot). Uses `ps -o etime=` elapsed
+// time (portable; macOS lacks etimes). Returns false when it can't tell, so
+// pair it with the group-leader guard.
+func looksStale(pid int, recorded time.Time) bool {
+	if pid <= 0 || recorded.IsZero() {
+		return false
+	}
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "etime=").Output()
+	if err != nil {
+		return false
+	}
+	secs, ok := parseEtime(strings.TrimSpace(string(out)))
+	if !ok {
+		return false
+	}
+	startWall := time.Now().Add(-time.Duration(secs) * time.Second)
+	return startWall.Before(recorded.Add(-staleTolerance))
+}
+
+// parseEtime parses ps elapsed-time format "[[dd-]hh:]mm:ss" into seconds.
+func parseEtime(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	days := 0
+	if dash := strings.IndexByte(s, '-'); dash >= 0 {
+		d, err := strconv.Atoi(s[:dash])
+		if err != nil {
+			return 0, false
+		}
+		days = d
+		s = s[dash+1:]
+	}
+	parts := strings.Split(s, ":")
+	var h, m, sec int
+	switch len(parts) {
+	case 2:
+		m = atoiField(parts[0])
+		sec = atoiField(parts[1])
+	case 3:
+		h = atoiField(parts[0])
+		m = atoiField(parts[1])
+		sec = atoiField(parts[2])
+	default:
+		return 0, false
+	}
+	return days*86400 + h*3600 + m*60 + sec, true
+}
+
+func atoiField(s string) int {
+	n, _ := strconv.Atoi(strings.TrimSpace(s))
+	return n
 }
 
 // RemovePID deletes the pid file. Idempotent.

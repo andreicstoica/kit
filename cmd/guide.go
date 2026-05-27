@@ -37,15 +37,16 @@ graphite track, write a Ghostty workspace, allocate a port slot.
 ` + "`" + `kit play` + "`" + ` (alias ` + "`" + `start` + "`" + `) brings up the worktree's dev servers
 on its slot's port band. ` + "`" + `kit pause` + "`" + ` (alias ` + "`" + `stop` + "`" + `) takes them
 down. Toggle screen shows which are running and which kit will start.
+` + "`" + `kit restart` + "`" + ` (alias ` + "`" + `bounce` + "`" + `) stops then starts — bounce a hung
+service with ` + "`" + `--only app` + "`" + `.
 
 ## Open things
 
-` + "`" + `kit swap` + "`" + ` (alias ` + "`" + `open` + "`" + `) opens the worktree in your editor.
-Picker includes Ghostty if installed — selecting it launches the gtab
-4-tab workspace (frontend split, backend split, celery, all auto-tailing
-their service logs).
-
-` + "`" + `kit warmup` + "`" + ` opens just the Ghostty workspace, no editor.
+` + "`" + `kit swap` + "`" + ` (aliases ` + "`" + `open` + "`" + `, ` + "`" + `gtab` + "`" + `) opens the worktree in your
+editor. Picker includes Ghostty if installed — selecting it launches the
+gtab workspace (frontend split, backend split, celery, all auto-tailing
+their service logs). ` + "`" + `kit swap -w` + "`" + ` skips the editor and goes straight
+to that workspace (` + "`" + `-d` + "`" + ` for the 5-tab detailed layout).
 
 ` + "`" + `kit links` + "`" + ` (aliases ` + "`" + `urls` + "`" + `, ` + "`" + `ports` + "`" + `) prints the worktree's
 URLs — paste into Slack/Linear without doing port math.
@@ -67,11 +68,10 @@ a side-by-side viewer if installed, falls back to ` + "`" + `git diff` + "`" + `
 prunes merged local branches), then offers to wash any worktree whose
 branch is merged or whose PR is closed.
 
-` + "`" + `kit tear` + "`" + ` (alias ` + "`" + `prune` + "`" + `) is the standalone version of that
-prune step — multi-select picker over merged/closed worktrees.
-
 ` + "`" + `kit wash` + "`" + ` (aliases ` + "`" + `rm` + "`" + `, ` + "`" + `remove` + "`" + `, ` + "`" + `delete` + "`" + `) strips a single
-kit — worktree dir, branch, optional DB, gtab, slot.
+kit — worktree dir, branch, optional DB, gtab, slot. ` + "`" + `kit wash --merged` + "`" + `
+is the standalone bulk version — multi-select picker over merged/closed
+worktrees.
 
 ## Troubleshooting
 

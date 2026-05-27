@@ -22,6 +22,7 @@ const (
 	playStagePicker playStage = iota
 	playStageToggle
 	playStageAdoptPrompt
+	playStageAdopting
 	playStageCeleryPrompt
 	playStageRun
 	playStageDone
@@ -289,8 +290,10 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 			branch, path := findBranchAndPath(m.layout, m.chosen.name)
 			return playAdoptPromptMsg{branch: branch, path: path}
 		}
-		st.TouchLastUsed(m.chosen.name)
-		_ = st.Save()
+		_ = liftoff.WithConfigLock(func(c *liftoff.Config) error {
+			c.TouchLastUsed(m.chosen.name)
+			return nil
+		})
 		m.chosen.slot = meta.Slot
 
 		// Build the plan.
@@ -350,6 +353,7 @@ type playCeleryConflictMsg struct {
 	plan   liftoff.PlayPlan
 }
 type playSetupErrMsg struct{ err error }
+type playAdoptedMsg struct{}
 type playUpdMsg struct {
 	upd liftoff.PlayUpdate
 	ok  bool
@@ -412,6 +416,9 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adoptPath = msg.path
 		m.stage = playStageAdoptPrompt
 		return m, nil
+	case playAdoptedMsg:
+		m.stage = playStageToggle
+		return m, m.transitionAfterToggle()
 	}
 
 	switch m.stage {
@@ -421,6 +428,8 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateToggle(msg)
 	case playStageAdoptPrompt:
 		return m.updateAdopt(msg)
+	case playStageAdopting:
+		return m.updateAdopting(msg)
 	case playStageCeleryPrompt:
 		return m.updateCelery(msg)
 	case playStageRun:
@@ -503,26 +512,45 @@ func (m *playModel) updateAdopt(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch k.String() {
 	case "y", "Y", "enter":
-		// Run shared adopt; on success, retry transitionAfterToggle which
-		// will now find the new slot in config.
-		path := m.adoptPath
-		branch := m.adoptBranch
-		if path == "" {
-			path = m.chosen.path
-		}
+		// Run adopt off the Update loop — it takes a config flock that may
+		// block, which would otherwise freeze the UI.
+		m.stage = playStageAdopting
+		return m, tea.Batch(m.spinner.Tick, m.runAdoptCmd())
+	case "n", "N", "esc":
+		m.stage = playStageAborted
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// runAdoptCmd adopts in a goroutine, emitting playAdoptedMsg on success
+// (retries transitionAfterToggle, now finding the slot) or playSetupErrMsg.
+func (m *playModel) runAdoptCmd() tea.Cmd {
+	name := m.chosen.name
+	branch := m.adoptBranch
+	path := m.adoptPath
+	if path == "" {
+		path = m.chosen.path
+	}
+	layout := m.layout
+	return func() tea.Msg {
 		opts := liftoff.AdoptOptions{
 			SymlinkNodeModules: false, // play is hot path; don't surprise-rewrite frontend
 			WriteGtab:          false,
 			GraphiteTrack:      false,
 		}
-		if _, err := m.layout.Adopt(m.chosen.name, branch, path, opts, nil); err != nil {
-			return m, func() tea.Msg { return playSetupErrMsg{err} }
+		if _, err := layout.Adopt(name, branch, path, opts, nil); err != nil {
+			return playSetupErrMsg{err}
 		}
-		m.stage = playStageToggle
-		return m, m.transitionAfterToggle()
-	case "n", "N", "esc":
-		m.stage = playStageAborted
-		return m, tea.Quit
+		return playAdoptedMsg{}
+	}
+}
+
+func (m *playModel) updateAdopting(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if tick, ok := msg.(spinner.TickMsg); ok {
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(tick)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -598,6 +626,8 @@ func (m *playModel) View() string {
 		body = m.viewToggle()
 	case playStageAdoptPrompt:
 		body = m.viewAdopt()
+	case playStageAdopting:
+		body = m.spinner.View() + " adopting " + StyleHi.Render(m.chosen.name) + "…"
 	case playStageCeleryPrompt:
 		body = m.viewCelery()
 	case playStageRun:

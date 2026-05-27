@@ -66,6 +66,7 @@ type logEOFMsg struct{ tag string }
 
 type logModel struct {
 	worktree string
+	dir      string // run dir holding the .log files — shown at the bottom
 	files    []string
 	follow   bool
 
@@ -220,7 +221,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.Width = msg.Width
 		m.viewport.Width = msg.Width - 2
-		m.viewport.Height = msg.Height - 5
+		m.viewport.Height = msg.Height - 6 // header + borders + path line + footer
 		m.filterInput.Width = msg.Width - 12
 	case tea.KeyMsg:
 		// Tag-picker overlay owns input when open.
@@ -408,7 +409,8 @@ func (m *logModel) View() string {
 	default:
 		footer = m.help.View(m.keys)
 	}
-	return header + "\n" + m.viewport.View() + "\n" + footer
+	pathLine := StyleDim.Render("logs: " + m.dir)
+	return header + "\n" + m.viewport.View() + "\n" + pathLine + "\n" + footer
 }
 
 func (m *logModel) hiddenTagCount() int {
@@ -470,6 +472,7 @@ func RunLogTUI(worktree string) error {
 
 	m := &logModel{
 		worktree:    worktree,
+		dir:         dir,
 		files:       files,
 		follow:      true,
 		viewport:    vp,

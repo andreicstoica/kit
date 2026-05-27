@@ -12,27 +12,25 @@ kit setup                # install tools, clone master, adopt worktrees
 kit doctor               # read-only diagnosis
 kit adopt <name>         # register an existing worktree
 kit design <name>        # new feature worktree (wizard)
-kit lineup               # table of kits
-kit formation            # tree view: stack + setup + services
+kit lineup [--tree]      # table of kits (--tree for stack/setup/services tree)
 kit links                # print this worktree's URLs
 kit play <name>          # start services
 kit pause <name>         # stop services
+kit restart <name>       # stop then start (bounce a hung service)
 kit log <name>           # tail logs (color-coded, / search, t filter)
 kit diff                 # diff vs master (lumen-aware)
 kit sync                 # gt sync + prune merged worktrees
-kit wash                 # strip a kit
-kit prune                # bulk-wash merged/closed worktrees
-kit warmup [--detailed]  # open the Ghostty workspace
-kit swap                 # open in IDE (or Ghostty)
+kit wash [--merged]      # strip a kit (--merged bulk-washes merged/closed)
+kit swap [-w] [-d]       # open in IDE (-w: Ghostty workspace, -d: 5-tab)
 ```
 
-Aliases: `new` (design), `ls`/`list` (lineup), `tree` (formation), `start`
-(play), `stop` (pause), `logs` (log), `rm`/`remove`/`delete` (wash), `gtab`
-(warmup), `open` (swap), `urls`/`ports` (links), `physio` (doctor),
+Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
+`bounce` (restart), `logs` (log), `rm`/`remove`/`delete` (wash),
+`open`/`gtab` (swap), `urls`/`ports` (links), `physio` (doctor),
 `register` (adopt).
 
-Commands that take a worktree name (`swap`, `warmup`, `play`, `pause`, `log`,
-`wash`, `links`, `diff`, `adopt`) accept the same three shapes: pass a name,
+Commands that take a worktree name (`swap`, `play`, `pause`, `restart`,
+`log`, `wash`, `links`, `diff`, `adopt`) accept the same three shapes: pass a name,
 omit to auto-pick from cwd, or get a numbered picker (1-9 quick-select)
 otherwise. Master appears in every picker as 🧊 slot 0.
 
@@ -83,10 +81,10 @@ it). `kit play` boots all five (minus mcp) in parallel.
 
 | Tool | Unlocks |
 |------|---------|
-| Ghostty | `kit warmup` workspace — 2 tabs (shell + combined logs) or 5 with `--detailed` |
+| Ghostty | `kit swap -w` workspace — 2 tabs (shell + combined logs) or 5 with `-d` |
 | `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
 | `gt` (graphite) | "Track in graphite" toggle, `kit sync`, gt stack in lineup |
-| `gh` (GitHub CLI) | `kit prune` checks PR state |
+| `gh` (GitHub CLI) | `kit wash --merged` checks PR state |
 | `zed` / `cursor` / `code` | any one suffices for `kit swap`. Override via `KIT_EDITOR`. |
 | `lumen` | nicer side-by-side `kit diff` |
 
@@ -155,7 +153,7 @@ Then runs:
 Then prompts: open Ghostty (simple / detailed / skip) and start servers?
 Leading `liftoff-` in your input is stripped.
 
-## Run services with `kit play` / `kit pause`
+## Run services with `kit play` / `kit pause` / `kit restart`
 
 `kit play [name]`:
 
@@ -187,6 +185,16 @@ kit play voice-agent --no-celery
 kit pause voice-agent
 kit pause voice-agent --only celery
 kit pause --all          # confirms before killing everything
+```
+
+`kit restart [name]` (alias `bounce`) stops then starts in one go — useful when
+a service hangs (e.g. Vite wedges). Headless and scriptable: with no `--only` it
+restarts exactly what's currently running, prints each service's status, and
+ends with the log dir path.
+
+```sh
+kit restart voice-agent              # bounce everything running
+kit restart voice-agent --only app   # bounce just the app frontend
 ```
 
 ## Port slot scheme
@@ -293,16 +301,14 @@ Wizard: name → clone DB? → symlink node_modules? → graphite track? Backend
 deps + gtab + slot allocation always run. Trailing prompt picks the Ghostty
 layout (simple / detailed / skip) and offers to start servers.
 
-### `kit lineup` (alias `ls`) — list kits
+### `kit lineup [--tree]` (alias `ls`) — list kits
 
 Table: `NAME · SLOT · RUNNING · BRANCH · STATUS`. Branch emoji prefix.
 Master at slot 0 with 🧊.
 
-### `kit formation` (alias `tree`) — tree view
-
-Hierarchical view: master root, worktrees as children, each expanded
-into its gt stack, a `setup` sub-node (db ownership + node_modules
-wiring), and running services.
+`--tree` renders the same set hierarchically: master root, worktrees as
+children, each expanded into its gt stack, a `setup` sub-node (db ownership
++ node_modules wiring), and running services.
 
 ### `kit play [name]` (alias `start`) — run servers
 
@@ -314,10 +320,19 @@ injection.
 Picker → confirm → kill (parallel). `--all` stops everything everywhere
 (confirms first).
 
+### `kit restart [name]` (alias `bounce`) — stop then start
+
+Headless. No `--only` restarts whatever's running; `--only <svcs>` bounces a
+subset. Prints status per service and the log dir on exit.
+
 ### `kit log [name]` (alias `logs`) — tail logs
 
 Color-coded multi-tail. Keys above. `--delete-all` truncates. `--wait`
 skips the "nothing playing" guard (used by the gtab logs tab).
+
+The log dir (`~/.config/kit/run/<name>/`) is printed at the bottom of the
+viewer, on the `tailing …` line at startup, and by `kit links` — handy for
+pointing editors / coding tools at the raw `.log` files.
 
 ### `kit diff [name]` — diff vs master
 
@@ -326,7 +341,7 @@ to plain `git diff`. `--plain` forces plain.
 
 ### `kit sync` — daily refresh
 
-`gt sync` in master, then prompt to `kit tear` whatever stayed merged.
+`gt sync` in master, then prompt to `kit wash --merged` whatever stayed merged.
 Requires `gt`.
 
 ### `kit adopt [name]` (alias `register`) — register a worktree
@@ -337,31 +352,26 @@ Allocates slot + writes metadata for an existing on-disk worktree.
 
 One-screen glamour-rendered walkthrough.
 
-### `kit wash` (alias `rm`) — strip a kit
+### `kit wash [name]` (alias `rm`) — strip a kit
 
 Picker → confirm with DB+gtab toggles → cleanup. Auto-stops services and
-frees the slot.
+frees the slot. Warns + double-confirms when the branch has commits not in
+master.
 
-### `kit prune` / `kit tear` — bulk cleanup
+`kit wash --merged` is the bulk mode: scans for worktrees whose branch is
+merged into master or whose PR is MERGED/CLOSED, then multi-select → washes
+each.
 
-Scans for worktrees whose branch is merged into master or whose PR is
-MERGED/CLOSED. Multi-select → washes each.
-
-### `kit warmup [name]` (alias `gtab`) — Ghostty workspace
-
-Default: 2 tabs — worktree root (run Claude / git / CLI here) and a `logs`
-tab running `kit log --wait` (color-coded multi-service viewer).
-
-`kit warmup --detailed` (or `-d`): 5 tabs — shell, frontend split (app +
-admin), backend split (api + admin_be), celery, combined logs. For when
-you want per-service panes side-by-side.
-
-The AppleScript is rewritten on every run, so swapping layouts is free.
-
-### `kit swap [name]` (alias `open`) — open in IDE or Ghostty
+### `kit swap [name]` (aliases `open`, `gtab`) — open in IDE or Ghostty
 
 Picker over installed editors (Zed, Cursor, VS Code) plus Ghostty.
 Auto-picks when exactly one editor is installed. `-e zed` skips the picker.
+
+`-w` / `--workspace` skips the editor and launches the Ghostty gtab
+workspace directly — 2 tabs (worktree root + a `logs` tab running
+`kit log --wait`), or 5 with `-d` / `--detailed`: shell, frontend split
+(app + admin), backend split (api + admin_be), celery, combined logs. The
+AppleScript is rewritten on every run, so swapping layouts is free.
 
 ### `kit links` (aliases `ports`, `urls`) — print URLs
 
@@ -387,7 +397,7 @@ file is older than 30 days and which own no live PID.
 
 - Liftoff backend PR for per-worktree Redis DB + celery queue isolation
 - Shell hook so `cd` into a worktree updates `last_used`
-- Restack-needed flag in the table view (already in `kit formation`)
+- Restack-needed flag in the table view (already in `kit lineup --tree`)
 
 ## Development
 

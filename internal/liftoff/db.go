@@ -10,13 +10,12 @@ import (
 )
 
 // CloneDB pipes `pg_dump <src>` into `psql <dst>` for a fast local clone.
-// Both DBs assumed local on default port. Caller must `createdb dst` first.
+// Connection (host/port/user/password) is left to libpq's standard PG* env
+// vars — consistent with createdb/dropdb/HasDB — so non-default postgres setups
+// work without kit-specific knobs. Caller must `createdb dst` first.
 func CloneDB(srcDB, dstDB string, onLine LineFn) error {
-	src := "postgresql://localhost:5432/" + srcDB
-	dst := "postgresql://localhost:5432/" + dstDB
-
-	dump := exec.Command("pg_dump", src)
-	psql := exec.Command("psql", dst)
+	dump := exec.Command("pg_dump", srcDB)
+	psql := exec.Command("psql", "-d", dstDB)
 
 	r, w, err := os.Pipe()
 	if err != nil {

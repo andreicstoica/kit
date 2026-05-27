@@ -12,20 +12,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type pruneStage int
+type mergedStage int
 
 const (
-	pruneStageSelect pruneStage = iota
-	pruneStageConfirm
-	pruneStageRun
-	pruneStageDone
-	pruneStageAborted
+	mergedStageSelect mergedStage = iota
+	mergedStageConfirm
+	mergedStageRun
+	mergedStageDone
+	mergedStageAborted
 )
 
-type pruneModel struct {
+type mergedModel struct {
 	layout     liftoff.Layout
-	stage      pruneStage
-	candidates []liftoff.PruneCandidate
+	stage      mergedStage
+	candidates []liftoff.MergedCandidate
 	selected   map[int]bool
 	cursor     int
 
@@ -38,8 +38,8 @@ type pruneModel struct {
 	width, height int
 }
 
-// NewPruneModel constructs the prune flow.
-func NewPruneModel(layout liftoff.Layout) (tea.Model, error) {
+// newMergedModel constructs the merged-wash flow.
+func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 	cands, err := layout.FindMergedWorktrees()
 	if err != nil {
 		return nil, err
@@ -54,9 +54,9 @@ func NewPruneModel(layout liftoff.Layout) (tea.Model, error) {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
-	return &pruneModel{
+	return &mergedModel{
 		layout:     layout,
-		stage:      pruneStageSelect,
+		stage:      mergedStageSelect,
 		candidates: cands,
 		selected:   sel,
 		results:    map[string]string{},
@@ -66,35 +66,35 @@ func NewPruneModel(layout liftoff.Layout) (tea.Model, error) {
 	}, nil
 }
 
-func (m *pruneModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m *mergedModel) Init() tea.Cmd { return m.spinner.Tick }
 
-type pruneRunMsg struct {
+type mergedRunMsg struct {
 	name   string
 	err    error
 	done   bool
 }
 
-func (m *pruneModel) startRun() tea.Cmd {
+func (m *mergedModel) startRun() tea.Cmd {
 	return func() tea.Msg {
 		// One iteration per call — chain by repeatedly returning a message
 		// that triggers the next. Simpler: do them all here and emit once.
-		// (Prune is expected to be small; sequential blocking is fine.)
+		// (Merged-wash is expected to be small; sequential blocking is fine.)
 		for i, c := range m.candidates {
 			if !m.selected[i] {
 				continue
 			}
-			err := pruneOne(m.layout, c)
+			err := mergedWashOne(m.layout, c)
 			status := "removed"
 			if err != nil {
 				status = "failed: " + err.Error()
 			}
 			m.results[c.Name] = status
 		}
-		return pruneRunMsg{done: true}
+		return mergedRunMsg{done: true}
 	}
 }
 
-func pruneOne(layout liftoff.Layout, c liftoff.PruneCandidate) error {
+func mergedWashOne(layout liftoff.Layout, c liftoff.MergedCandidate) error {
 	// Stop services first.
 	st, _ := liftoff.LoadState()
 	if st != nil {
@@ -113,46 +113,46 @@ func pruneOne(layout liftoff.Layout, c liftoff.PruneCandidate) error {
 	}
 	_ = layout.DeleteBranch(c.Branch, nil)
 	// Free slot + clean gtab.
-	if st != nil {
-		st.FreeSlot(c.Name)
-		_ = st.Save()
-	}
+	_ = liftoff.WithConfigLock(func(cfg *liftoff.Config) error {
+		cfg.FreeSlot(c.Name)
+		return nil
+	})
 	_ = layout.RemoveGtab(c.Name)
 	return nil
 }
 
-func (m *pruneModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.help.Width = msg.Width
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
-			m.stage = pruneStageAborted
+			m.stage = mergedStageAborted
 			return m, tea.Quit
 		}
 		if msg.String() == "?" {
 			m.help.ShowAll = !m.help.ShowAll
 		}
-	case pruneRunMsg:
+	case mergedRunMsg:
 		if msg.done {
-			m.stage = pruneStageDone
+			m.stage = mergedStageDone
 			return m, nil
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		if m.stage == pruneStageRun {
+		if m.stage == mergedStageRun {
 			return m, cmd
 		}
 	}
 
 	switch m.stage {
-	case pruneStageSelect:
+	case mergedStageSelect:
 		return m.updateSelect(msg)
-	case pruneStageConfirm:
+	case mergedStageConfirm:
 		return m.updateConfirm(msg)
-	case pruneStageDone, pruneStageAborted:
+	case mergedStageDone, mergedStageAborted:
 		if k, ok := msg.(tea.KeyMsg); ok {
 			if k.Type == tea.KeyEnter || k.Type == tea.KeyEsc || k.String() == "q" {
 				return m, tea.Quit
@@ -162,7 +162,7 @@ func (m *pruneModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *pruneModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *mergedModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch k.String() {
 		case "up", "k":
@@ -192,52 +192,52 @@ func (m *pruneModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if anySelected {
-				m.stage = pruneStageConfirm
+				m.stage = mergedStageConfirm
 			}
 		case "esc":
-			m.stage = pruneStageAborted
+			m.stage = mergedStageAborted
 			return m, tea.Quit
 		}
 	}
 	return m, nil
 }
 
-func (m *pruneModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *mergedModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch k.String() {
 		case "y", "Y", "enter":
-			m.stage = pruneStageRun
+			m.stage = mergedStageRun
 			return m, tea.Batch(m.spinner.Tick, m.startRun())
 		case "n", "N", "esc":
-			m.stage = pruneStageAborted
+			m.stage = mergedStageAborted
 			return m, tea.Quit
 		case "backspace":
-			m.stage = pruneStageSelect
+			m.stage = mergedStageSelect
 		}
 	}
 	return m, nil
 }
 
-func (m *pruneModel) View() string {
+func (m *mergedModel) View() string {
 	var body string
 	switch m.stage {
-	case pruneStageSelect:
+	case mergedStageSelect:
 		body = m.viewSelect()
-	case pruneStageConfirm:
+	case mergedStageConfirm:
 		body = m.viewConfirm()
-	case pruneStageRun:
-		body = StyleTitle.Render("kit prune — running") + "\n\n  " + m.spinner.View() + " washing selected worktrees…"
-	case pruneStageDone:
+	case mergedStageRun:
+		body = StyleTitle.Render("kit wash --merged — running") + "\n\n  " + m.spinner.View() + " washing selected worktrees…"
+	case mergedStageDone:
 		body = m.viewDone()
-	case pruneStageAborted:
+	case mergedStageAborted:
 		return StyleWarn.Render("aborted.\n")
 	}
 	return body + "\n" + m.help.View(m.keys)
 }
 
-func (m *pruneModel) viewSelect() string {
+func (m *mergedModel) viewSelect() string {
 	var b strings.Builder
-	b.WriteString(StyleTitle.Render("kit prune — pick stale worktrees") + "\n\n")
+	b.WriteString(StyleTitle.Render("kit wash --merged — pick stale worktrees") + "\n\n")
 	for i, c := range m.candidates {
 		cursor := "  "
 		if i == m.cursor {
@@ -257,9 +257,9 @@ func (m *pruneModel) viewSelect() string {
 	return b.String()
 }
 
-func (m *pruneModel) viewConfirm() string {
+func (m *mergedModel) viewConfirm() string {
 	var b strings.Builder
-	b.WriteString(StyleTitle.Render("kit prune — confirm") + "\n\n")
+	b.WriteString(StyleTitle.Render("kit wash --merged — confirm") + "\n\n")
 	count := 0
 	for i, c := range m.candidates {
 		if !m.selected[i] {
@@ -273,9 +273,9 @@ func (m *pruneModel) viewConfirm() string {
 	return b.String()
 }
 
-func (m *pruneModel) viewDone() string {
+func (m *mergedModel) viewDone() string {
 	var b strings.Builder
-	b.WriteString(StyleOK.Render("✓ kit prune complete") + "\n\n")
+	b.WriteString(StyleOK.Render("✓ kit wash --merged complete") + "\n\n")
 	for name, status := range m.results {
 		marker := StyleOK.Render(Glyph("done"))
 		if strings.HasPrefix(status, "failed") {
@@ -287,9 +287,9 @@ func (m *pruneModel) viewDone() string {
 	return b.String()
 }
 
-// RunPruneTUI is the cobra entry point.
-func RunPruneTUI(layout liftoff.Layout) error {
-	m, err := NewPruneModel(layout)
+// RunMergedWashTUI is the cobra entry point.
+func RunMergedWashTUI(layout liftoff.Layout) error {
+	m, err := newMergedModel(layout)
 	if err != nil {
 		return err
 	}

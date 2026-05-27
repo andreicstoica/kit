@@ -39,7 +39,11 @@ type Layout struct {
 func DefaultLayout() Layout {
 	home, _ := os.UserHomeDir()
 	settings := Settings{}
-	if c, err := LoadConfig(); err == nil && c != nil {
+	// Missing file returns nil error, so a non-nil error here is a real parse
+	// failure — warn instead of silently falling back to defaults.
+	if c, err := LoadConfig(); err != nil {
+		fmt.Fprintf(os.Stderr, "kit: warning: %s unreadable (%v); using defaults\n", ConfigPath(), err)
+	} else if c != nil {
 		settings = c.Settings
 	}
 

@@ -13,12 +13,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var swapEditorFlag string
+var (
+	swapEditorFlag string
+	swapWorkspace  bool
+	swapDetailed   bool
+)
 
 var swapCmd = &cobra.Command{
 	Use:     "swap [name]",
-	Aliases: []string{"open"},
-	Short:   "Sub into a kit — open its worktree in your IDE",
+	Aliases: []string{"open", "gtab"},
+	Short:   "Sub into a kit — open its worktree in your IDE (or --workspace for Ghostty)",
 	Long: "**swap** opens a kit's worktree in your editor.\n\n" +
 		"## Examples\n\n" +
 		"```\n" +
@@ -26,10 +30,15 @@ var swapCmd = &cobra.Command{
 		"kit swap notebook          # editor picker\n" +
 		"kit swap -e zed            # kit picker → opens in zed\n" +
 		"kit swap notebook -e zed   # opens immediately\n" +
+		"kit swap -w                # skip editor → Ghostty workspace (2 tabs)\n" +
+		"kit swap -w -d notebook    # Ghostty workspace, detailed (5 tabs)\n" +
 		"```\n\n" +
-		"## Editor flag\n\n" +
+		"## Flags\n\n" +
 		"`-e` / `--editor` accepts: `zed`, `cursor`, `code`, or any binary on PATH.\n" +
 		"Honors `$KIT_EDITOR` if no flag is given and only one editor is installed.\n\n" +
+		"`-w` / `--workspace` skips the editor and launches the Ghostty gtab " +
+		"workspace directly; `-d` / `--detailed` selects the 5-tab layout. " +
+		"(Ghostty is also offered in the editor picker when no flag is given.)\n\n" +
 		"On macOS, editors are detected via `.app` bundle in `/Applications` " +
 		"OR a CLI binary on PATH. Bundle-only installs are launched via `open -a`.",
 	Args:              cobra.MaximumNArgs(1),
@@ -43,6 +52,20 @@ var swapCmd = &cobra.Command{
 		}
 		if name == "" {
 			return nil
+		}
+		path, err := layout.ResolveWorktreePath(name)
+		if err != nil {
+			return err
+		}
+
+		// Workspace mode: skip the editor, launch the Ghostty workspace using
+		// the flag-selected layout (no interactive layout picker).
+		if swapWorkspace {
+			gl := liftoff.GtabSimple
+			if swapDetailed {
+				gl = liftoff.GtabDetailed
+			}
+			return openWorkspace(layout, name, path, gl)
 		}
 
 		// Resolve editor.
@@ -72,34 +95,18 @@ var swapCmd = &cobra.Command{
 			}
 		}
 
-		path, err := layout.ResolveWorktreePath(name)
-		if err != nil {
-			return err
-		}
-
-		if chosen.Binary == warmupBinarySentinel {
+		// Ghostty picked in the editor list → interactive layout pick.
+		if chosen.Binary == workspaceBinarySentinel {
 			gl, err := tui.PickGtabLayout(false)
 			if err != nil {
 				return err
 			}
-			if _, err := layout.WriteGtabLayout(name, path, gl); err != nil {
-				return fmt.Errorf("write gtab: %w", err)
-			}
-			if err := layout.LaunchGtab(name); err != nil {
-				return err
-			}
-		} else {
-			if err := launchEditor(*chosen, path); err != nil {
-				return err
-			}
+			return openWorkspace(layout, name, path, gl)
 		}
-		// Skip state touch for master — it has no entry in state.toml.
-		if name != "master" {
-			if st, err := liftoff.LoadState(); err == nil {
-				st.TouchLastUsed(name)
-				_ = st.Save()
-			}
+		if err := launchEditor(*chosen, path); err != nil {
+			return err
 		}
+		touchLastUsed(name)
 		fmt.Printf("opened %s in %s\n", path, chosen.Name)
 		return nil
 	},
@@ -153,7 +160,7 @@ func editorDefs() []tui.EditorCandidate {
 // to the front and resolved via PATH only.
 //
 // Always appends a "Ghostty (gtab workspace)" candidate when Ghostty.app
-// is present, so swap's picker can also launch the warmup flow.
+// is present, so swap's picker can also launch the workspace flow.
 func installedEditors() []tui.EditorCandidate {
 	defs := editorDefs()
 	if v := os.Getenv("KIT_EDITOR"); v != "" {
@@ -183,7 +190,7 @@ func installedEditors() []tui.EditorCandidate {
 	if appBundleExists("Ghostty.app") {
 		out = append(out, tui.EditorCandidate{
 			Name:      "Ghostty (pick layout next)",
-			Binary:    warmupBinarySentinel,
+			Binary:    workspaceBinarySentinel,
 			App:       "Ghostty.app",
 			Desc:      "dev workspace — simple (2 tabs) or detailed (5 tabs)",
 			Installed: true,
@@ -192,9 +199,9 @@ func installedEditors() []tui.EditorCandidate {
 	return out
 }
 
-// warmupBinarySentinel marks the synthetic Ghostty-warmup candidate so swap's
+// workspaceBinarySentinel marks the synthetic Ghostty-workspace candidate so swap's
 // RunE can route to LaunchGtab instead of launchEditor.
-const warmupBinarySentinel = "__warmup__"
+const workspaceBinarySentinel = "__workspace__"
 
 // loneEditor returns the single installed editor candidate when no
 // editor picker is necessary. Returns nil when there are zero installed
@@ -204,7 +211,7 @@ func loneEditor(eds []tui.EditorCandidate) *tui.EditorCandidate {
 	var editors []tui.EditorCandidate
 	hasGhostty := false
 	for _, e := range eds {
-		if e.Binary == warmupBinarySentinel {
+		if e.Binary == workspaceBinarySentinel {
 			hasGhostty = true
 			continue
 		}
@@ -276,7 +283,36 @@ func appBundleExists(app string) bool {
 	return false
 }
 
+// openWorkspace writes the gtab layout, launches the Ghostty workspace, and
+// records the worktree as last-used. Shared by --workspace and the Ghostty
+// editor-picker target.
+func openWorkspace(layout liftoff.Layout, name, path string, gl liftoff.GtabLayout) error {
+	if _, err := layout.WriteGtabLayout(name, path, gl); err != nil {
+		return fmt.Errorf("write gtab: %w", err)
+	}
+	if err := layout.LaunchGtab(name); err != nil {
+		return err
+	}
+	touchLastUsed(name)
+	fmt.Printf("opened %s workspace (ghostty)\n", name)
+	return nil
+}
+
+// touchLastUsed bumps the worktree's LastUsed timestamp. No-op for master,
+// which has no config entry.
+func touchLastUsed(name string) {
+	if name == "master" {
+		return
+	}
+	_ = liftoff.WithConfigLock(func(c *liftoff.Config) error {
+		c.TouchLastUsed(name)
+		return nil
+	})
+}
+
 func init() {
 	swapCmd.Flags().StringVarP(&swapEditorFlag, "editor", "e", "", "editor to open with (zed, cursor, code, or any PATH binary)")
+	swapCmd.Flags().BoolVarP(&swapWorkspace, "workspace", "w", false, "skip editor; launch the Ghostty gtab workspace")
+	swapCmd.Flags().BoolVarP(&swapDetailed, "detailed", "d", false, "with --workspace: use the 5-tab detailed layout")
 	rootCmd.AddCommand(swapCmd)
 }

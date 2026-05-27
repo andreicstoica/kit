@@ -6,7 +6,7 @@ import (
 )
 
 // completeWorktreeNames returns the list of worktree names eligible for
-// the first positional arg of commands like swap / warmup / play / pause
+// the first positional arg of commands like swap / play / pause / restart
 // / log / wash / links / diff. Includes "master" plus every managed
 // worktree from config, with on-disk feature worktrees as a fallback so
 // completion still works before adoption.

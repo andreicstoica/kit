@@ -86,12 +86,10 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			{
 				title: "free port slot",
 				run: func(emit func(string)) error {
-					st, err := LoadState()
-					if err != nil {
-						return err
-					}
-					st.FreeSlot(p.Name)
-					return st.Save()
+					return WithConfigLock(func(c *Config) error {
+						c.FreeSlot(p.Name)
+						return nil
+					})
 				},
 			},
 		}
@@ -108,9 +106,9 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			err := s.run(emit)
 			if err != nil {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: fmt.Errorf("%w", err), Elapsed: time.Since(start)}
-				// Steps: 0 stop, 1 worktree, 2 branch, 3 db, 4 gtab, 5 slot.
-				// Fatal: worktree-remove + branch-delete (1, 2). Best-effort: rest.
-				if i == 1 || i == 2 {
+				// Only worktree-remove (step 1) is fatal; the rest are
+				// best-effort so a late failure still frees the slot (step 5).
+				if i == 1 {
 					return
 				}
 				continue

@@ -16,12 +16,11 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		desc string
 	}
 	items := []item{
-		{"lineup", "see all my kits"},
-		{"formation", "see all my kits as a tree"},
+		{"lineup", "see all my kits (--tree for tree view)"},
 		{"play", "start a kit's dev servers"},
 		{"pause", "stop a kit's dev servers"},
-		{"swap", "open a kit in your editor"},
-		{"warmup", "open a kit's Ghostty workspace"},
+		{"restart", "bounce a kit's services (stop then start)"},
+		{"swap", "open a kit in your editor (or Ghostty workspace)"},
 		{"log", "tail a kit's logs"},
 		{"links", "print a kit's URLs"},
 		{"diff", "see what changed vs master"},

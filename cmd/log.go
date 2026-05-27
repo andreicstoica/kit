@@ -55,9 +55,7 @@ var logCmd = &cobra.Command{
 		} else if err := ensureRunDir(name); err != nil {
 			return err
 		}
-		if len(args) == 0 {
-			fmt.Fprintf(cmd.ErrOrStderr(), "tailing %s\n", name)
-		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "tailing %s — logs: %s\n", name, liftoff.RunDirPath(name))
 		return tui.RunLogTUI(name)
 	},
 }

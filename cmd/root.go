@@ -20,11 +20,10 @@ var rootCmd = &cobra.Command{
 		"- `lineup` (`ls`) — show kits available\n" +
 		"- `play` (`start`) — spin up dev servers\n" +
 		"- `pause` (`stop`) — halt services\n" +
+		"- `restart` (`bounce`) — stop then start (bounce a hung service)\n" +
 		"- `log` (`logs`) — tail service logs\n" +
-		"- `wash` (`rm`, `remove`, `delete`) — strip a kit and clean up\n" +
-		"- `tear` (`prune`) — bulk-wash merged/closed branches\n" +
-		"- `warmup` (`gtab`) — launch the ghostty workspace\n" +
-		"- `swap` (`open`) — open the worktree in your IDE\n" +
+		"- `wash` (`rm`, `remove`, `delete`) — strip a kit (`--merged` bulk-washes merged/closed)\n" +
+		"- `swap` (`open`, `gtab`) — open the worktree in your IDE (`--workspace` for Ghostty)\n" +
 		"- `links` (`urls`, `ports`) — print the worktree's URLs\n" +
 		"- `diff` — show the worktree's diff vs master (via lumen if installed)\n" +
 		"- `doctor` (`physio`) — check your setup\n" +

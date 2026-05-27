@@ -151,16 +151,17 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		{
 			title: "allocate port slot",
 			run: func(emit func(string)) error {
-				st, err := LoadState()
+				var slot int
+				err := WithConfigLock(func(c *Config) error {
+					s, err := c.AllocateSlot(p.Name, PortsBindable)
+					if err != nil {
+						return err
+					}
+					c.TouchLastUsed(p.Name)
+					slot = s
+					return nil
+				})
 				if err != nil {
-					return err
-				}
-				slot, err := st.AllocateSlot(p.Name, PortsBindable)
-				if err != nil {
-					return err
-				}
-				st.TouchLastUsed(p.Name)
-				if err := st.Save(); err != nil {
 					return err
 				}
 				ports := PortsForSlot(slot)

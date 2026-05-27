@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -125,6 +126,55 @@ func (c *Config) Save() error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// lockTimeout bounds the wait for the lock so a crashed holder surfaces as an
+// error rather than a hang.
+const lockTimeout = 5 * time.Second
+
+// WithConfigLock serializes a config read-modify-write across concurrent kit
+// processes via an exclusive flock on config.lock (a dedicated file, so Save's
+// rename can't swap the locked inode). Loads, runs mutate, saves under the lock.
+//
+// Non-reentrant: mutate must not call WithConfigLock again (flock would
+// deadlock). Keep slow side effects out of mutate.
+func WithConfigLock(mutate func(*Config) error) error {
+	dir := configDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	lockPath := filepath.Join(dir, "config.lock")
+	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fd := int(f.Fd())
+	deadline := time.Now().Add(lockTimeout)
+	for {
+		err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			return fmt.Errorf("lock %s: %w", lockPath, err)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("config busy: timed out acquiring %s", lockPath)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	defer syscall.Flock(fd, syscall.LOCK_UN)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	if err := mutate(cfg); err != nil {
+		return err
+	}
+	return cfg.Save()
 }
 
 // AllocateSlot picks the lowest unused slot ≥ 1 and persists it.

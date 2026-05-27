@@ -110,36 +110,26 @@ func runSetup(cmd *cobra.Command, args []string) error {
 // into config.Settings. Merges with existing settings — user-edited
 // fields aren't clobbered (only empty fields are filled in).
 func persistSetupSettings(layout liftoff.Layout) error {
-	c, err := liftoff.LoadConfig()
-	if err != nil {
-		return err
-	}
-	changed := false
-	if c.Settings.Root == "" {
-		c.Settings.Root = layout.Root
-		changed = true
-	}
-	if c.Settings.MasterDir == "" {
-		// Derive MasterDir from layout.Master minus layout.Root prefix.
-		if rel := relativeDir(layout.Root, layout.Master); rel != "" {
-			c.Settings.MasterDir = rel
-			changed = true
+	return liftoff.WithConfigLock(func(c *liftoff.Config) error {
+		if c.Settings.Root == "" {
+			c.Settings.Root = layout.Root
 		}
-	}
-	if c.Settings.Editor == "" {
-		if eds := installedEditors(); len(eds) > 0 {
-			c.Settings.Editor = eds[0].Binary
-			changed = true
+		if c.Settings.MasterDir == "" {
+			// Derive MasterDir from layout.Master minus layout.Root prefix.
+			if rel := relativeDir(layout.Root, layout.Master); rel != "" {
+				c.Settings.MasterDir = rel
+			}
 		}
-	}
-	if c.Settings.LiftoffRepo == "" {
-		c.Settings.LiftoffRepo = liftoffMasterRepoURL
-		changed = true
-	}
-	if !changed {
+		if c.Settings.Editor == "" {
+			if eds := installedEditors(); len(eds) > 0 {
+				c.Settings.Editor = eds[0].Binary
+			}
+		}
+		if c.Settings.LiftoffRepo == "" {
+			c.Settings.LiftoffRepo = liftoffMasterRepoURL
+		}
 		return nil
-	}
-	return c.Save()
+	})
 }
 
 // relativeDir returns the trailing path segment of full relative to base,

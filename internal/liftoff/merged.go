@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// PruneCandidate is one worktree eligible for cleanup.
-type PruneCandidate struct {
+// MergedCandidate is one worktree eligible for cleanup.
+type MergedCandidate struct {
 	Name   string
 	Path   string
 	Branch string
@@ -22,21 +22,21 @@ func HasGH() bool {
 
 // FindMergedWorktrees returns worktrees whose branch is merged into the main
 // branch or whose PR is merged/closed. Skips master itself and bare entries.
-func (l Layout) FindMergedWorktrees() ([]PruneCandidate, error) {
+func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 	wts, err := l.ListWorktrees()
 	if err != nil {
 		return nil, err
 	}
 	merged := mergedBranches(l.Master, l.MainBranch)
 	useGH := HasGH()
-	var out []PruneCandidate
+	var out []MergedCandidate
 	for _, w := range wts {
 		if w.IsMaster(l) || w.Bare {
 			continue
 		}
 		name := w.Name()
 		if merged[w.Branch] {
-			out = append(out, PruneCandidate{
+			out = append(out, MergedCandidate{
 				Name: name, Path: w.Path, Branch: w.Branch,
 				Reason: "merged to " + l.MainBranch,
 			})
@@ -44,7 +44,7 @@ func (l Layout) FindMergedWorktrees() ([]PruneCandidate, error) {
 		}
 		if useGH {
 			if state := prState(l.Master, w.Branch); state == "MERGED" || state == "CLOSED" {
-				out = append(out, PruneCandidate{
+				out = append(out, MergedCandidate{
 					Name: name, Path: w.Path, Branch: w.Branch,
 					Reason: "PR " + state,
 				})

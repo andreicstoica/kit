@@ -50,7 +50,7 @@ var slotsRenumberCmd = &cobra.Command{
 	Use:   "renumber",
 	Short: "Compact slot gaps left after washing kits",
 	Long: "**renumber** reassigns port slots so they're sequential starting at 1, " +
-		"closing any gaps left after `kit wash` / `kit tear`. Master keeps slot 0.\n\n" +
+		"closing any gaps left after `kit wash`. Master keeps slot 0.\n\n" +
 		"Refuses to run if any kit-managed services are running — stop them first " +
 		"with `kit pause --all`.",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -123,12 +123,14 @@ var slotsRenumberCmd = &cobra.Command{
 			return nil
 		}
 
-		for _, r := range rows {
-			m := cfg.Worktrees[r.name]
-			m.Slot = r.to
-			cfg.Worktrees[r.name] = m
-		}
-		if err := cfg.Save(); err != nil {
+		if err := liftoff.WithConfigLock(func(c *liftoff.Config) error {
+			for _, r := range rows {
+				m := c.Worktrees[r.name]
+				m.Slot = r.to
+				c.Worktrees[r.name] = m
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 		fmt.Println(tui.StyleOK.Render(fmt.Sprintf("✓ renumbered %d slot(s)", changed)))

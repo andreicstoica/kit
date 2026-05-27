@@ -1,8 +1,10 @@
 package liftoff
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -12,6 +14,53 @@ func setStateDir(t *testing.T) string {
 	dir := t.TempDir()
 	t.Setenv("KIT_STATE_DIR", dir)
 	return dir
+}
+
+func TestWithConfigLock_ConcurrentAllocateDistinctSlots(t *testing.T) {
+	setStateDir(t)
+	const n = 16
+	slots := make([]int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("wt-%d", i)
+			err := WithConfigLock(func(c *Config) error {
+				s, err := c.AllocateSlot(name, nil) // nil portsFree: skip OS probe in tests
+				if err != nil {
+					return err
+				}
+				slots[i] = s
+				return nil
+			})
+			if err != nil {
+				t.Errorf("WithConfigLock[%d] = %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Every goroutine must get a distinct slot — no collision under contention.
+	seen := map[int]bool{}
+	for i, s := range slots {
+		if s == 0 {
+			t.Errorf("wt-%d got slot 0", i)
+		}
+		if seen[s] {
+			t.Errorf("slot %d allocated twice", s)
+		}
+		seen[s] = true
+	}
+
+	// And the persisted file must contain all n entries (no lost writes).
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Worktrees) != n {
+		t.Errorf("persisted worktrees = %d, want %d", len(c.Worktrees), n)
+	}
 }
 
 func TestLoadState_Empty(t *testing.T) {

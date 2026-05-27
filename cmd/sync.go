@@ -18,13 +18,13 @@ var syncCmd = &cobra.Command{
 	Short: "Run `gt sync` in master, then offer to wash merged/closed worktrees",
 	Long: "**sync** is the daily refresh:\n\n" +
 		"1. Runs `gt sync` inside the master repo (pulls trunk, restacks, prunes merged local branches).\n" +
-		"2. Scans worktrees for merged/closed PR branches; if any remain, prompts to run `kit tear` (multi-select wash).\n\n" +
-		"Requires `gt` (Graphite). Pass `--no-tear` to skip the post-sync prune.",
+		"2. Scans worktrees for merged/closed PR branches; if any remain, prompts to run `kit wash --merged` (multi-select wash).\n\n" +
+		"Requires `gt` (Graphite). Pass `--no-tear` to skip the post-sync merged-wash.",
 	RunE: runSync,
 }
 
 func init() {
-	syncCmd.Flags().BoolVar(&syncSkipTear, "no-tear", false, "skip the `kit tear` prompt after `gt sync`")
+	syncCmd.Flags().BoolVar(&syncSkipTear, "no-tear", false, "skip the merged-wash prompt after `gt sync`")
 	rootCmd.AddCommand(syncCmd)
 }
 
@@ -57,7 +57,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	if len(cands) == 0 {
 		fmt.Println()
-		fmt.Println(tui.StyleOK.Render("✓ no merged worktrees to tear."))
+		fmt.Println(tui.StyleOK.Render("✓ no merged worktrees to wash."))
 		return nil
 	}
 
@@ -70,7 +70,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	accept := true
 	if err := huh.NewConfirm().
-		Title("Run `kit tear` to wash them?").
+		Title("Run `kit wash --merged` to wash them?").
 		Affirmative("Yes").
 		Negative("Skip").
 		Value(&accept).Run(); err != nil {
@@ -79,5 +79,5 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if !accept {
 		return nil
 	}
-	return tui.RunPruneTUI(layout)
+	return tui.RunMergedWashTUI(layout)
 }

@@ -243,17 +243,26 @@ func StartService(spec LaunchSpec) (int, error) {
 	return pid, nil
 }
 
-// StopService kills the running service and removes its pid file.
-// No-op if the pid file is missing or the process is already gone.
+// StopService kills the running service and removes its pid file. No-op if the
+// pid is missing or gone. Guards against a recycled pid (reboots restart pids
+// low): skips the kill when the live process predates the recorded launch or
+// isn't its own group leader, since group-killing it would hit innocents.
 func StopService(worktree string, svc Service) error {
 	pid := ReadPID(worktree, string(svc))
 	if pid == 0 {
 		return nil
 	}
-	if IsAlive(pid) {
-		if err := KillGroup(pid); err != nil {
-			return err
-		}
+	if !IsAlive(pid) {
+		return RemovePID(worktree, string(svc))
+	}
+	started, _ := ReadStarted(worktree, string(svc))
+	pgid, pgErr := syscall.Getpgid(pid)
+	if looksStale(pid, started) || pgErr != nil || pgid != pid {
+		fmt.Fprintf(os.Stderr, "kit: stale pid %d for %s/%s — skipping kill\n", pid, worktree, svc)
+		return RemovePID(worktree, string(svc))
+	}
+	if err := KillGroup(pid); err != nil {
+		return err
 	}
 	return RemovePID(worktree, string(svc))
 }

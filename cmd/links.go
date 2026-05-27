@@ -118,6 +118,7 @@ func runLinks(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println(tbl.Render())
+	fmt.Println(tui.StyleDim.Render("logs: " + liftoff.RunDirPath(name)))
 	fmt.Println(tui.StyleDim.Render("tip: " + strings.Join([]string{
 		"kit play " + name,
 		"kit pause " + name,
