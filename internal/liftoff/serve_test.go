@@ -11,7 +11,7 @@ func TestSpecFor_App(t *testing.T) {
 	if spec.Cwd != "/wt/frontend/app" {
 		t.Errorf("Cwd = %q", spec.Cwd)
 	}
-	want := []string{"yarn", "dev", "--port", "3010"}
+	want := []string{"yarn", "dev", "--port", "3010", "--strictPort"}
 	if len(spec.Argv) != len(want) {
 		t.Fatalf("Argv = %v, want %v", spec.Argv, want)
 	}
@@ -37,6 +37,11 @@ func TestSpecFor_Admin(t *testing.T) {
 	spec := SpecFor("notebook", "/wt", SvcAdmin, p)
 	if spec.Cwd != "/wt/frontend/admin" {
 		t.Errorf("Cwd = %q", spec.Cwd)
+	}
+	// --strictPort stops Vite from silently drifting to another port when the
+	// assigned one is taken (which broke WaitForPort and hung kit play).
+	if !strings.Contains(strings.Join(spec.Argv, " "), "--strictPort") {
+		t.Errorf("admin Argv missing --strictPort: %v", spec.Argv)
 	}
 	envBlob := strings.Join(spec.Env, " ")
 	for _, want := range []string{

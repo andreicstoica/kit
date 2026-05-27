@@ -59,3 +59,35 @@ func TestPortListening(t *testing.T) {
 		t.Errorf("port %d should report listening", port)
 	}
 }
+
+// listenIPv6 binds [::1]:0 and returns the listener + port, skipping the test
+// if the host has no IPv6 loopback.
+func listenIPv6(t *testing.T) (net.Listener, int) {
+	t.Helper()
+	l, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback: %v", err)
+	}
+	return l, l.Addr().(*net.TCPAddr).Port
+}
+
+// TestPortListening_IPv6Only is the regression for the kit-play hang: Vite
+// binds [::1] only, so an IPv4-only check reported the server dead and kit
+// spawned a duplicate. PortListening must see the IPv6 listener.
+func TestPortListening_IPv6Only(t *testing.T) {
+	l, port := listenIPv6(t)
+	defer l.Close()
+	if !PortListening(port) {
+		t.Errorf("port %d listening on [::1] should report listening", port)
+	}
+}
+
+// TestPortBindable_IPv6Squatted: a port free on IPv4 but taken on IPv6 must
+// read as NOT bindable, or slot allocation would hand out an occupied band.
+func TestPortBindable_IPv6Squatted(t *testing.T) {
+	l, port := listenIPv6(t)
+	defer l.Close()
+	if portBindable(port) {
+		t.Errorf("port %d squatted on [::1] should not be bindable", port)
+	}
+}

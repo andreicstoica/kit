@@ -9,6 +9,7 @@ Liftoff dev loop.
 kit                      # interactive menu
 kit guide                # daily-flow tour
 kit setup                # install tools, clone master, adopt worktrees
+kit update               # rebuild at the latest release
 kit doctor               # read-only diagnosis
 kit adopt <name>         # register an existing worktree
 kit design <name>        # new feature worktree (wizard)
@@ -116,6 +117,22 @@ kit setup
 
 Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`. Run
 `kit completion --help` for shell tab-completion.
+
+## Updating
+
+```sh
+kit update            # rebuild in place at the latest release
+kit update --check    # just report if a newer version exists
+```
+
+`kit update` fetches the newest tag, rebuilds with `go install`, and swaps the
+running binary in place (works for both install methods above). Equivalent
+manual updates: `go install github.com/andreicstoica/kit@latest`, or
+`git pull && make install` from a clone.
+
+kit also checks for a newer release **once a day** on interactive use and prints
+a one-line hint to stderr when one exists — so you don't have to remember to
+check. The nudge is silent in scripts/pipes and for local dev builds.
 
 ## First-time setup
 

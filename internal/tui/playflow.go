@@ -779,7 +779,13 @@ func RunPlayTUI(layout liftoff.Layout, cfg PlayConfig) error {
 		return runErr
 	}
 	if pm, ok := final.(*playModel); ok && pm.failed {
-		return errors.New("kit play reported a failure")
+		// Include the log dir in the error so it survives the altscreen
+		// teardown — the in-TUI detail is wiped when the program exits.
+		runDir := liftoff.RunDirPath(pm.chosen.name)
+		if pm.failureErr != nil {
+			return fmt.Errorf("kit play failed at %s: %v — logs: %s", pm.failureSvc.Label(), pm.failureErr, runDir)
+		}
+		return fmt.Errorf("kit play failed at %s — logs: %s", pm.failureSvc.Label(), runDir)
 	}
 	return nil
 }

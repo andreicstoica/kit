@@ -132,7 +132,7 @@ func SpecFor(worktree, worktreePath string, svc Service, p Ports) LaunchSpec {
 			Worktree: worktree,
 			Service:  svc,
 			Cwd:      filepath.Join(worktreePath, "frontend", "app"),
-			Argv:     []string{"yarn", "dev", "--port", fmt.Sprint(port)},
+			Argv:     []string{"yarn", "dev", "--port", fmt.Sprint(port), "--strictPort"},
 			Env: []string{
 				fmt.Sprintf("VITE_APP_API_URL=http://localhost:%d/api", p.API),
 				fmt.Sprintf("VITE_APP_BASE_URL=http://localhost:%d", p.App),
@@ -144,7 +144,7 @@ func SpecFor(worktree, worktreePath string, svc Service, p Ports) LaunchSpec {
 			Worktree: worktree,
 			Service:  svc,
 			Cwd:      filepath.Join(worktreePath, "frontend", "admin"),
-			Argv:     []string{"yarn", "dev", "--port", fmt.Sprint(port)},
+			Argv:     []string{"yarn", "dev", "--port", fmt.Sprint(port), "--strictPort"},
 			Env: []string{
 				fmt.Sprintf("VITE_APP_API_URL=http://localhost:%d/api", p.AdminBE),
 				fmt.Sprintf("VITE_APP_BASE_URL=http://localhost:%d", p.Admin),

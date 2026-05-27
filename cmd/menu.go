@@ -28,6 +28,7 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		{"sync", "pull master + clean up merged branches"},
 		{"setup", "install/check required tools"},
 		{"doctor", "diagnose without changing anything"},
+		{"update", "update kit to the latest release"},
 		{"guide", "show the kit guide / daily flow"},
 	}
 	opts := make([]huh.Option[string], 0, len(items))

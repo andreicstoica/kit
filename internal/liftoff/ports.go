@@ -47,24 +47,32 @@ func PortsBindable(slot int) bool {
 	return true
 }
 
+// loopbackHosts covers both stacks. Services bind IPv4 127.0.0.1 or IPv6 [::1]
+// (Vite defaults to [::1]), so port checks must consider both — otherwise an
+// IPv6-only server looks dead and kit spawns a duplicate that can't bind.
+var loopbackHosts = []string{"127.0.0.1", "[::1]"}
+
+// portBindable returns true only if the port is free on both loopback stacks.
 func portBindable(port int) bool {
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	l, err := net.Listen("tcp", addr)
-	if err != nil {
-		return false
+	for _, h := range loopbackHosts {
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", h, port))
+		if err != nil {
+			return false
+		}
+		_ = l.Close()
 	}
-	_ = l.Close()
 	return true
 }
 
-// PortListening returns true if something is actively listening on
-// 127.0.0.1:port. Used for service health detection (opposite of bindable).
+// PortListening returns true if something is listening on the port on either
+// loopback stack. Used for service health detection (opposite of bindable).
 func PortListening(port int) bool {
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
-	if err != nil {
-		return false
+	for _, h := range loopbackHosts {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h, port), 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return true
+		}
 	}
-	_ = conn.Close()
-	return true
+	return false
 }

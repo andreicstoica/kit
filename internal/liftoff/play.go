@@ -78,6 +78,23 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 				defer wg.Done()
 				SweepStalePID(p.Worktree, string(svc))
 				port := ServicePort(svc, p.Ports)
+
+				// Idempotent: skip services already up so `kit play` on a
+				// running worktree doesn't spawn a duplicate that fails to bind
+				// the port. Use `kit restart` to force a fresh process.
+				if IsServiceAlive(p.Worktree, svc, p.Ports) {
+					url := ""
+					if port > 0 {
+						url = fmt.Sprintf("http://localhost:%d", port)
+					}
+					ch <- PlayUpdate{
+						Service: svc, Status: StepDone,
+						Title: svc.Label() + " already running",
+						Port:  port, URL: url,
+					}
+					return
+				}
+
 				title := fmt.Sprintf("start %s", svc.Label())
 				if port > 0 {
 					title += fmt.Sprintf(" on :%d", port)
