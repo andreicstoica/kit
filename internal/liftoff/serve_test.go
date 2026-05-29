@@ -84,6 +84,25 @@ func TestSpecFor_Celery(t *testing.T) {
 	}
 }
 
+func TestSpecFor_Beat_ScheduleOutsideRepo(t *testing.T) {
+	spec := SpecFor("voice-agent", "/wt", SvcBeat, PortsForSlot(1))
+	cmd := spec.Argv[2]
+	if !strings.Contains(cmd, "celery -A common.celery beat") {
+		t.Errorf("beat cmd = %s", cmd)
+	}
+	// The schedule shelve must be redirected into the run dir, never the
+	// worktree's backend/ (where it would pollute git status).
+	if !strings.Contains(cmd, "--schedule") {
+		t.Errorf("beat cmd missing --schedule: %s", cmd)
+	}
+	if !strings.Contains(cmd, RunDirPath("voice-agent")) {
+		t.Errorf("beat schedule not pointed at run dir: %s", cmd)
+	}
+	if strings.Contains(cmd, "/wt/backend/celerybeat-schedule") {
+		t.Errorf("beat schedule still inside the worktree: %s", cmd)
+	}
+}
+
 func TestServicePort(t *testing.T) {
 	p := PortsForSlot(3)
 	cases := []struct {

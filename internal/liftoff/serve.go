@@ -187,11 +187,18 @@ func SpecFor(worktree, worktreePath string, svc Service, p Ports) LaunchSpec {
 			Argv:     shellWrap("celery -A common.celery worker --loglevel=INFO"),
 		}
 	case SvcBeat:
+		// celery beat writes its schedule shelve (celerybeat-schedule.{db,dir,
+		// bak,dat}) into its CWD by default — which is the worktree's backend/,
+		// so it shows up as untracked junk in git status. Redirect it into the
+		// kit run dir (already created before launch) to keep the repo clean.
+		schedule := filepath.Join(RunDirPath(worktree), "celerybeat-schedule")
 		return LaunchSpec{
 			Worktree: worktree,
 			Service:  svc,
 			Cwd:      filepath.Join(worktreePath, "backend"),
-			Argv:     shellWrap("celery -A common.celery beat --loglevel=INFO"),
+			Argv: shellWrap(fmt.Sprintf(
+				"celery -A common.celery beat --loglevel=INFO --schedule %q",
+				schedule)),
 		}
 	}
 	return LaunchSpec{}
