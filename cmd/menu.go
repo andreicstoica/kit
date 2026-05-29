@@ -25,6 +25,7 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		{"links", "print a kit's URLs"},
 		{"diff", "see what changed vs master"},
 		{"design", "create a new kit"},
+		{"wash", "remove a kit (worktree + branch + DB + gtab)"},
 		{"sync", "pull master + clean up merged branches"},
 		{"setup", "install/check required tools"},
 		{"doctor", "diagnose without changing anything"},
