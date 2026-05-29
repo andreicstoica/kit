@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,10 +66,64 @@ func maybeNudgeUpdate(cmd *cobra.Command) {
 		cancel()
 	}
 
-	if cache.Latest != "" && cache.Latest != baseVersion(cur) {
+	// Only nag when the remote tag is strictly NEWER than what we're running.
+	// A plain inequality test fires backwards on local/release builds that are
+	// ahead of a stale cached tag (e.g. cache says v0.1.5 while we run v0.1.6),
+	// printing a nonsensical "v0.1.5 available (you have v0.1.6)".
+	if semverNewer(cache.Latest, baseVersion(cur)) {
 		fmt.Fprintln(os.Stderr, tui.StyleWarn.Render(
 			fmt.Sprintf("kit %s available (you have %s) — run `kit update`", cache.Latest, cur)))
 	}
+}
+
+// semverNewer reports whether tag a is a strictly higher version than b.
+// Handles any number of dotted numeric components (v0.1.6, v0.1.6.1, …) by
+// comparing field-by-field, zero-padding the shorter one. Returns false when
+// either side can't be parsed — better to stay silent than nag on a version
+// string we don't understand.
+func semverNewer(a, b string) bool {
+	pa, oka := parseSemver(a)
+	pb, okb := parseSemver(b)
+	if !oka || !okb {
+		return false
+	}
+	n := len(pa)
+	if len(pb) > n {
+		n = len(pb)
+	}
+	for i := 0; i < n; i++ {
+		va, vb := 0, 0
+		if i < len(pa) {
+			va = pa[i]
+		}
+		if i < len(pb) {
+			vb = pb[i]
+		}
+		if va != vb {
+			return va > vb
+		}
+	}
+	return false
+}
+
+func parseSemver(v string) ([]int, bool) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	if v == "" {
+		return nil, false
+	}
+	parts := strings.Split(v, ".")
+	out := make([]int, len(parts))
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, false
+		}
+		out[i] = n
+	}
+	return out, true
 }
 
 func readUpdateCache() updateCheckCache {
