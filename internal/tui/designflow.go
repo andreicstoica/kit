@@ -475,13 +475,13 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		fmt.Println(StyleErr.Render("open failed: " + err.Error()))
 	}
 
-	wantPlay := true
-	if err := huh.NewConfirm().
-		Title("Start dev servers?").
-		Description("Runs `kit play` for this worktree (frontend + backend + celery on its slot's port band).").
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&wantPlay).Run(); err != nil {
+	wantPlay, err := RunConfirm(ConfirmConfig{
+		Title:       "Start dev servers?",
+		Description: "Runs `kit play` for this worktree (frontend + backend + celery on its slot's port band).",
+		Negative:    "Skip",
+		Default:     true,
+	})
+	if err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return nil
 		}
