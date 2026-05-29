@@ -19,7 +19,6 @@ var commandsThatBypassFirstRun = map[string]bool{
 	"help":       true,
 	"completion": true,
 	"man":        true,
-	"guide":      true,
 }
 
 // MaybeOfferSetup runs before every other command. If the kit config dir

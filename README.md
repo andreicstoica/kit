@@ -7,7 +7,6 @@ Liftoff dev loop.
 
 ```
 kit                      # interactive menu
-kit guide                # daily-flow tour
 kit setup                # install tools, clone master, adopt worktrees
 kit update               # rebuild at the latest release
 kit doctor               # read-only diagnosis
@@ -364,10 +363,6 @@ Requires `gt`.
 ### `kit adopt [name]` (alias `register`) — register a worktree
 
 Allocates slot + writes metadata for an existing on-disk worktree.
-
-### `kit guide` — daily-flow tour
-
-One-screen glamour-rendered walkthrough.
 
 ### `kit wash [name]` (alias `rm`) — strip a kit
 

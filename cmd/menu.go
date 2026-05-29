@@ -30,7 +30,6 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		{"setup", "install/check required tools"},
 		{"doctor", "diagnose without changing anything"},
 		{"update", "update kit to the latest release"},
-		{"guide", "show the kit guide / daily flow"},
 	}
 	opts := make([]tui.SelectOption[string], 0, len(items))
 	for _, it := range items {
