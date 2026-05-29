@@ -16,6 +16,7 @@ import (
 // washItem is a list entry representing one removable worktree.
 type washItem struct {
 	name       string
+	emoji      string
 	path       string
 	branch     string
 	dirty      bool
@@ -28,11 +29,14 @@ type washItem struct {
 
 func (w washItem) Title() string {
 	t := w.name
+	if w.emoji != "" {
+		t = w.emoji + " " + t
+	}
 	if w.displayIdx > 0 && w.displayIdx < 10 {
 		t = StyleHi.Render(fmt.Sprintf("%d ", w.displayIdx)) + t
 	}
 	if w.isLegacy {
-		t = StyleDim.Render("(legacy) ") + t
+		t += "  " + StyleDim.Render("(legacy)")
 	}
 	if w.dirty {
 		t += "  " + StyleWarn.Render("● dirty")
@@ -113,6 +117,7 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 		ahead, _ := layout.AheadBehind(wt.Path)
 		it := washItem{
 			name:       name,
+			emoji:      liftoff.EmojiFor(name),
 			path:       wt.Path,
 			branch:     wt.Branch,
 			dirty:      liftoff.IsDirty(wt.Path),
@@ -131,14 +136,8 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 	if len(items) == 0 {
 		return nil, errors.New("no removable worktrees found")
 	}
-	dlg := list.NewDefaultDelegate()
-	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)
-	dlg.Styles.SelectedDesc = dlg.Styles.SelectedDesc.Foreground(colorAccent).BorderForeground(colorAccent)
-	l := list.New(items, dlg, 0, 0)
-	l.Title = "kit wash — pick a kit to strip"
-	l.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
-	l.SetShowHelp(true)
-	l.SetFilteringEnabled(true)
+	l := list.New(items, NewListDelegate(), 0, 0)
+	StyleList(&l, "kit wash — pick a kit to strip", true)
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
