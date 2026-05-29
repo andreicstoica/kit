@@ -9,14 +9,14 @@ import (
 // (The struct name predates the command rename from `dress` → `design`;
 // kept as-is to minimize churn in internal call sites.)
 type DressPlan struct {
-	Name              string
-	Worktree          string
-	CloneDB           bool
-	BackendDeps       bool
-	SymlinkFrontend   bool // symlink frontend node_modules from master
-	GraphiteTrack     bool
-	Gtab              bool
-	OverwriteEnvs     bool // force overwrite if env files already exist in worktree
+	Name            string
+	Worktree        string
+	CloneDB         bool
+	BackendDeps     bool
+	SymlinkFrontend bool // symlink frontend node_modules from master
+	GraphiteTrack   bool
+	Gtab            bool
+	OverwriteEnvs   bool // force overwrite if env files already exist in worktree
 
 	// Result fields populated after RunDress completes successfully.
 	AllocatedSlot int

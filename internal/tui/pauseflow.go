@@ -89,13 +89,8 @@ func NewPauseModel(layout liftoff.Layout, cfg PauseConfig) (tea.Model, error) {
 	if len(items) == 0 {
 		return nil, errors.New("no running services to stop")
 	}
-	dlg := list.NewDefaultDelegate()
-	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)
-	pl := list.New(items, dlg, 0, 0)
-	pl.Title = "kit pause — stop services"
-	pl.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
-	pl.SetShowHelp(true)
-	pl.SetFilteringEnabled(true)
+	pl := list.New(items, NewListDelegate(), 0, 0)
+	StyleList(&pl, "kit pause — stop services", true)
 	m.picker = pl
 	return m, nil
 }

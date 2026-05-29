@@ -66,8 +66,8 @@ type playModel struct {
 	stage playStage
 
 	// Picker stage
-	picker  list.Model
-	chosen  playWtItem
+	picker list.Model
+	chosen playWtItem
 
 	// Toggle stage
 	toggleSvcs   []liftoff.Service
@@ -187,14 +187,8 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	if len(items) == 0 {
 		return nil, errors.New("no worktrees found — run `kit design` first")
 	}
-	dlg := list.NewDefaultDelegate()
-	dlg.Styles.SelectedTitle = dlg.Styles.SelectedTitle.Foreground(colorAccent).BorderForeground(colorAccent)
-	dlg.Styles.SelectedDesc = dlg.Styles.SelectedDesc.Foreground(colorAccent).BorderForeground(colorAccent)
-	pl := list.New(items, dlg, 0, 0)
-	pl.Title = "kit play — pick a kit to put on"
-	pl.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
-	pl.SetShowHelp(true)
-	pl.SetFilteringEnabled(true)
+	pl := list.New(items, NewListDelegate(), 0, 0)
+	StyleList(&pl, "kit play — pick a kit to put on", true)
 	m.picker = pl
 
 	return m, nil

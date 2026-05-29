@@ -14,8 +14,8 @@ import (
 const logRetention = 30 * 24 * time.Hour
 
 var (
-	playOnly      []string
-	playNoCelery  bool
+	playOnly     []string
+	playNoCelery bool
 )
 
 var playCmd = &cobra.Command{
@@ -65,7 +65,6 @@ func init() {
 		"skip celery worker and beat")
 	rootCmd.AddCommand(playCmd)
 }
-
 
 // parseServiceList resolves user input ("app,admin,api") to []Service.
 func parseServiceList(raw []string) ([]liftoff.Service, error) {

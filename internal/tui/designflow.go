@@ -19,11 +19,11 @@ import (
 
 // designAnswers is the form payload from huh.
 type designAnswers struct {
-	name      string
-	cloneDB   bool
-	backend   bool
-	symlink   bool
-	graphite  bool
+	name     string
+	cloneDB  bool
+	backend  bool
+	symlink  bool
+	graphite bool
 }
 
 // runDesignForm presents the huh form, validates everything, and returns answers.
@@ -79,7 +79,7 @@ func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, e
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Clone local database?").
-				Description(databaseHelp(dbDisabled) + "\n\nDefault is No — DB clones take significant disk space. Say Yes if this worktree needs its own data.").
+				Description(databaseHelp(dbDisabled)+"\n\nDefault is No — DB clones take significant disk space. Say Yes if this worktree needs its own data.").
 				Affirmative("Yes").
 				Negative("No").
 				Value(&a.cloneDB),
@@ -132,11 +132,15 @@ func graphiteHelp(disabled bool) string {
 	return "`gt track --parent master` so the branch shows up in your stack"
 }
 
+// minLeftWidth is the narrowest the step list may get before the orb panel
+// is stacked underneath instead of beside it.
+const minLeftWidth = 40
+
 // designModel renders the post-form progress display.
 type designModel struct {
-	layout    liftoff.Layout
-	answers   *designAnswers
-	worktree  string
+	layout   liftoff.Layout
+	answers  *designAnswers
+	worktree string
 
 	spinner       spinner.Model
 	stopwatch     stopwatch.Model
@@ -341,8 +345,28 @@ func (m *designModel) View() string {
 		left.WriteString("\n" + StyleHelp.Render("press enter to continue"))
 	}
 
-	leftPanel := lipgloss.NewStyle().Padding(0, 2).Render(left.String())
-	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, m.orb.View())
+	// Lay the orb panel beside the step list, but never let the (variable-
+	// width) left content push the fixed-width orb past the terminal edge —
+	// that clipped its right border. Cap the left panel to whatever space is
+	// left after reserving the orb's full width; lipgloss MaxWidth truncates
+	// each line so the orb always renders flush inside m.width. When the
+	// terminal is too narrow to hold both side by side, stack the orb below.
+	orbView := m.orb.View()
+	orbW := lipgloss.Width(orbView)
+	leftStyle := lipgloss.NewStyle().Padding(0, 2)
+	var body string
+	switch {
+	case m.width <= 0:
+		// Pre-WindowSizeMsg: no size yet, fall back to the natural layout.
+		body = lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(left.String()), orbView)
+	case m.width < orbW+minLeftWidth:
+		// Too narrow for two columns — stack the orb under the steps.
+		leftPanel := leftStyle.MaxWidth(m.width).Render(left.String())
+		body = lipgloss.JoinVertical(lipgloss.Left, leftPanel, orbView)
+	default:
+		leftPanel := leftStyle.MaxWidth(m.width - orbW).Render(left.String())
+		body = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, orbView)
+	}
 	footer := "\n" + m.help.View(m.keys)
 	return body + footer
 }
@@ -418,30 +442,18 @@ func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout, "") 
 // liftoff.GtabLayout(""). Used by `kit design` (with skip) and
 // `kit swap` after picking Ghostty (without skip).
 func PickGtabLayout(includeSkip bool) (liftoff.GtabLayout, error) {
-	gl := liftoff.GtabSimple
-	opts := []huh.Option[liftoff.GtabLayout]{
-		huh.NewOption("Simple (2 tabs)", liftoff.GtabSimple),
-		huh.NewOption("Detailed (5 tabs)", liftoff.GtabDetailed),
+	opts := []SelectOption[liftoff.GtabLayout]{
+		{Label: "Simple (2 tabs)", Value: liftoff.GtabSimple},
+		{Label: "Detailed (5 tabs)", Value: liftoff.GtabDetailed},
 	}
 	if includeSkip {
-		opts = append(opts, huh.NewOption("Skip — don't open", liftoff.GtabLayout("")))
+		opts = append(opts, SelectOption[liftoff.GtabLayout]{Label: "Skip — don't open", Value: liftoff.GtabLayout("")})
 	}
-	// WithTheme triggers group.WithHeight(rawHeight()) at construction time,
-	// setting the group viewport height before the first render. Without it
-	// the viewport height is 0 and options are invisible until the first keypress.
-	err := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[liftoff.GtabLayout]().
-				Title("Ghostty workspace layout").
-				Description("Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.").
-				Options(opts...).
-				Value(&gl),
-		),
-	).WithTheme(huh.ThemeCharm()).
-		WithShowHelp(true).
-		WithShowErrors(true).
-		Run()
-	return gl, err
+	return RunSelect(
+		"Ghostty workspace layout",
+		"Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service splits.",
+		opts, liftoff.GtabSimple,
+	)
 }
 
 // offerNextSteps asks both follow-up yes/no questions first, then runs
@@ -452,12 +464,15 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
 	fmt.Println()
 
-	gl, err := PickGtabLayout(true)
-	if err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return nil
-		}
-		return err
+	// Same opener as `kit swap`: pick an editor, the Ghostty workspace, or
+	// skip. Non-fatal — a failed/declined open still lets the play prompt run.
+	if _, err := OpenWorktree(OpenRequest{
+		Layout:    layout,
+		Name:      name,
+		Path:      layout.WorktreePath(name),
+		OfferSkip: true,
+	}); err != nil {
+		fmt.Println(StyleErr.Render("open failed: " + err.Error()))
 	}
 
 	wantPlay := true
@@ -473,14 +488,6 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		return err
 	}
 
-	if gl != "" {
-		if _, err := layout.WriteGtabLayout(name, layout.WorktreePath(name), gl); err != nil {
-			fmt.Println(StyleErr.Render("gtab write failed: " + err.Error()))
-		}
-		if err := layout.LaunchGtab(name); err != nil {
-			fmt.Println(StyleErr.Render("gtab launch failed: " + err.Error()))
-		}
-	}
 	if wantPlay {
 		if err := RunPlayTUI(layout, PlayConfig{Name: name}); err != nil {
 			fmt.Println(StyleErr.Render("play failed: " + err.Error()))

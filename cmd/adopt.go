@@ -5,7 +5,6 @@ import (
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -78,12 +77,12 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	if !adoptYes {
-		accept := true
-		if err := huh.NewConfirm().
-			Title(fmt.Sprintf("Adopt %s as a kit-managed worktree?", name)).
-			Affirmative("Yes").
-			Negative("Cancel").
-			Value(&accept).Run(); err != nil {
+		accept, err := tui.RunConfirm(tui.ConfirmConfig{
+			Title:    fmt.Sprintf("Adopt %s as a kit-managed worktree?", name),
+			Negative: "Cancel",
+			Default:  true,
+		})
+		if err != nil {
 			return err
 		}
 		if !accept {

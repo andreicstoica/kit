@@ -69,9 +69,9 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 func (m *mergedModel) Init() tea.Cmd { return m.spinner.Tick }
 
 type mergedRunMsg struct {
-	name   string
-	err    error
-	done   bool
+	name string
+	err  error
+	done bool
 }
 
 func (m *mergedModel) startRun() tea.Cmd {

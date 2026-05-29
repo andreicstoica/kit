@@ -22,17 +22,17 @@ import (
 //	KIT_MASTER_DIR    -- override liftoff-app-master subdir name
 //	KIT_GTAB_DIR      -- override ~/.config/gtab
 type Layout struct {
-	Root      string // e.g. /Users/acs/liftoff
-	Master    string // e.g. /Users/acs/liftoff/liftoff-app-master
-	GtabDir   string // e.g. /Users/acs/.config/gtab
+	Root       string // e.g. /Users/acs/liftoff
+	Master     string // e.g. /Users/acs/liftoff/liftoff-app-master
+	GtabDir    string // e.g. /Users/acs/.config/gtab
 	MainBranch string
 }
 
 // DefaultLayout resolves Layout via three layers, in order:
 //
-//	1. env override (KIT_ROOT etc.)
-//	2. config.toml [settings] block (kit setup writes this)
-//	3. built-in default
+//  1. env override (KIT_ROOT etc.)
+//  2. config.toml [settings] block (kit setup writes this)
+//  3. built-in default
 //
 // Config load failures fall through to env + built-ins so kit always
 // boots.

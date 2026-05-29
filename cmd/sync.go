@@ -7,7 +7,6 @@ import (
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -68,12 +67,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	accept := true
-	if err := huh.NewConfirm().
-		Title("Run `kit wash --merged` to wash them?").
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&accept).Run(); err != nil {
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:    "Run `kit wash --merged` to wash them?",
+		Negative: "Skip",
+		Default:  true,
+	})
+	if err != nil {
 		return err
 	}
 	if !accept {

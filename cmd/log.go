@@ -8,7 +8,6 @@ import (
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -129,13 +128,14 @@ func clearLogsFor(name string) error {
 		fmt.Println("  " + tui.StyleDim.Render(filepath.Base(p)))
 	}
 	fmt.Println()
-	accept := true
-	if err := huh.NewConfirm().
-		Title("Delete contents?").
-		Description("Truncates each .log to 0 bytes; files stay so running tails keep their FD.").
-		Affirmative("Yes, clear").
-		Negative("Cancel").
-		Value(&accept).Run(); err != nil {
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:       "Delete contents?",
+		Description: "Truncates each .log to 0 bytes; files stay so running tails keep their FD.",
+		Affirmative: "Yes, clear",
+		Negative:    "Cancel",
+		Default:     true,
+	})
+	if err != nil {
 		return err
 	}
 	if !accept {

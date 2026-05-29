@@ -6,7 +6,6 @@ import (
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -110,13 +109,13 @@ var slotsRenumberCmd = &cobra.Command{
 		}
 		fmt.Println()
 
-		accept := true
-		if err := huh.NewConfirm().
-			Title("Reassign slots?").
-			Description("Updates config.toml. Services were already stopped — restart with `kit play` after.").
-			Affirmative("Yes").
-			Negative("Cancel").
-			Value(&accept).Run(); err != nil {
+		accept, err := tui.RunConfirm(tui.ConfirmConfig{
+			Title:       "Reassign slots?",
+			Description: "Updates config.toml. Services were already stopped — restart with `kit play` after.",
+			Negative:    "Cancel",
+			Default:     true,
+		})
+		if err != nil {
 			return err
 		}
 		if !accept {

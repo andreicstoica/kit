@@ -15,8 +15,8 @@ var nodeModulesDirs = []string{
 
 // LinkResult describes one symlink operation.
 type LinkResult struct {
-	Path     string
-	Action   string // "linked", "skipped (no source)", "kept (already linked)", "replaced"
+	Path          string
+	Action        string // "linked", "skipped (no source)", "kept (already linked)", "replaced"
 	StaleLockfile bool   // true if package.json/yarn.lock differ vs master
 }
 

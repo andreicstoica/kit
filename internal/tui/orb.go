@@ -48,10 +48,10 @@ type Orb struct {
 	keepSpring  harmonica.Spring
 
 	// Current positions (float).
-	ballX, ballY     float64
-	ballVX, ballVY   float64
-	keepX            float64
-	keepVX           float64
+	ballX, ballY   float64
+	ballVX, ballVY float64
+	keepX          float64
+	keepVX         float64
 
 	// Targets per shot.
 	targetBallX, targetBallY float64
@@ -61,9 +61,9 @@ type Orb struct {
 	restBallX, restBallY float64
 	restKeepX            float64
 
-	phase    penaltyPhase
-	phaseT   int // frame counter inside phase
-	saved    bool
+	phase      penaltyPhase
+	phaseT     int // frame counter inside phase
+	saved      bool
 	totalShots int
 	saves      int
 

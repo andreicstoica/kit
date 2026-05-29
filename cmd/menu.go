@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/charmbracelet/huh"
+	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -31,17 +31,13 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		{"update", "update kit to the latest release"},
 		{"guide", "show the kit guide / daily flow"},
 	}
-	opts := make([]huh.Option[string], 0, len(items))
+	opts := make([]tui.SelectOption[string], 0, len(items))
 	for _, it := range items {
 		label := fmt.Sprintf("%-10s — %s", it.verb, it.desc)
-		opts = append(opts, huh.NewOption(label, it.verb))
+		opts = append(opts, tui.SelectOption[string]{Label: label, Value: it.verb})
 	}
-	var picked string
-	if err := huh.NewSelect[string]().
-		Title("kit · what do you want to do?").
-		Description("pick an action, or Ctrl-C to exit").
-		Options(opts...).
-		Value(&picked).Run(); err != nil {
+	picked, err := tui.RunSelect("kit · what do you want to do?", "pick an action, or Ctrl-C to exit", opts, items[0].verb)
+	if err != nil {
 		return err
 	}
 	if picked == "" {

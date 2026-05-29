@@ -121,7 +121,7 @@ func persistSetupSettings(layout liftoff.Layout) error {
 			}
 		}
 		if c.Settings.Editor == "" {
-			if eds := installedEditors(); len(eds) > 0 {
+			if eds := liftoff.InstalledEditors(); len(eds) > 0 {
 				c.Settings.Editor = eds[0].Binary
 			}
 		}
@@ -167,12 +167,12 @@ func offerBulkAdopt(layout liftoff.Layout) (int, error) {
 	fmt.Println()
 	fmt.Println(tui.StyleDim.Render("kit will allocate a port slot and write metadata for each. stop running dev servers first for accurate slot picks."))
 
-	accept := true
-	if err := huh.NewConfirm().
-		Title("Adopt all? (allocates port slots + writes metadata)").
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&accept).Run(); err != nil {
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:    "Adopt all? (allocates port slots + writes metadata)",
+		Negative: "Skip",
+		Default:  true,
+	})
+	if err != nil {
 		return 0, err
 	}
 	if !accept {
@@ -279,13 +279,12 @@ func fixBrewPath() error {
 	fmt.Println("  " + line)
 	fmt.Println()
 
-	accept := true
-	form := huh.NewConfirm().
-		Title("Append shellenv line to ~/.zshrc?").
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&accept)
-	if err := form.Run(); err != nil {
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:    "Append shellenv line to ~/.zshrc?",
+		Negative: "Skip",
+		Default:  true,
+	})
+	if err != nil {
 		return err
 	}
 	if !accept {
@@ -323,14 +322,13 @@ func fixGh(r liftoff.CheckResult) error {
 	if len(r.FixCmd) > 0 {
 		return fixBrewInstall(r)
 	}
-	accept := true
-	form := huh.NewConfirm().
-		Title("Run `gh auth login` now?").
-		Description("You'll be guided through a browser-based login flow.").
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&accept)
-	if err := form.Run(); err != nil {
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:       "Run `gh auth login` now?",
+		Description: "You'll be guided through a browser-based login flow.",
+		Negative:    "Skip",
+		Default:     true,
+	})
+	if err != nil {
 		return err
 	}
 	if !accept {
@@ -375,13 +373,12 @@ func cloneLiftoffMaster(layout liftoff.Layout) error {
 		return err
 	}
 
-	accept := true
-	confirm := huh.NewConfirm().
-		Title(fmt.Sprintf("Run `git clone %s %s` and then `yarn install`?", url, path)).
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&accept)
-	if err := confirm.Run(); err != nil {
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:    fmt.Sprintf("Run `git clone %s %s` and then `yarn install`?", url, path),
+		Negative: "Skip",
+		Default:  true,
+	})
+	if err != nil {
 		return err
 	}
 	if !accept {
@@ -432,13 +429,12 @@ func fixBrewInstall(r liftoff.CheckResult) error {
 	if r.FixCask {
 		caskFlag = "--cask "
 	}
-	accept := true
-	form := huh.NewConfirm().
-		Title(fmt.Sprintf("Run `brew install %s%s`?", caskFlag, pkgList)).
-		Affirmative("Yes").
-		Negative("Skip").
-		Value(&accept)
-	if err := form.Run(); err != nil {
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:    fmt.Sprintf("Run `brew install %s%s`?", caskFlag, pkgList),
+		Negative: "Skip",
+		Default:  true,
+	})
+	if err != nil {
 		return err
 	}
 	if !accept {

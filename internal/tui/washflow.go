@@ -69,12 +69,12 @@ const (
 )
 
 type washModel struct {
-	layout       liftoff.Layout
-	stage        washStage
-	list         list.Model
-	selected     washItem
-	dropDB       bool
-	removeGtab   bool
+	layout        liftoff.Layout
+	stage         washStage
+	list          list.Model
+	selected      washItem
+	dropDB        bool
+	removeGtab    bool
 	confirmCursor int
 	confirmArmed  bool // second-confirm latch when the branch has unmerged work
 

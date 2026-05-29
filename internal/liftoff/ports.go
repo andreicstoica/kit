@@ -8,12 +8,12 @@ import (
 
 // Ports captures the five-port band assigned to one slot.
 type Ports struct {
-	Slot     int
-	App      int
-	Admin    int
-	API      int
-	AdminBE  int
-	MCP      int
+	Slot    int
+	App     int
+	Admin   int
+	API     int
+	AdminBE int
+	MCP     int
 }
 
 // PortsForSlot returns the deterministic port band for a slot.

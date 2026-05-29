@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/andreicstoica/kit/internal/tui"
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -46,12 +45,12 @@ func MaybeOfferSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println(tui.StyleDim.Render("`kit setup` installs missing tools, clones master, and adopts existing worktrees."))
 	fmt.Println()
 
-	run := true
-	if err := huh.NewConfirm().
-		Title("Run `kit setup` now?").
-		Affirmative("Yes").
-		Negative("Cancel").
-		Value(&run).Run(); err != nil {
+	run, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:    "Run `kit setup` now?",
+		Negative: "Cancel",
+		Default:  true,
+	})
+	if err != nil {
 		return err
 	}
 	if !run {

@@ -269,10 +269,10 @@ func StopService(worktree string, svc Service) error {
 
 // ServiceStatus describes a service's current state.
 type ServiceStatus struct {
-	Service Service
-	PID     int
-	Alive   bool
-	Port    int
+	Service   Service
+	PID       int
+	Alive     bool
+	Port      int
 	Listening bool
 }
 

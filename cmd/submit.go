@@ -10,14 +10,14 @@ import (
 )
 
 var (
-	submitStack   bool
-	submitDraft   bool
-	submitNoEdit  bool
+	submitStack  bool
+	submitDraft  bool
+	submitNoEdit bool
 )
 
 var submitCmd = &cobra.Command{
-	Use:     "submit [name]",
-	Short:   "Submit the worktree's branch to GitHub via `gt submit`",
+	Use:   "submit [name]",
+	Short: "Submit the worktree's branch to GitHub via `gt submit`",
 	Long: "**submit** thin-wraps `gt submit` so you don't have to `cd` into the worktree to push.\n\n" +
 		"With no arg, uses the worktree from cwd, then opens a picker. Pass\n" +
 		"`--stack` to submit the whole stack, `--draft` for draft PRs,\n" +

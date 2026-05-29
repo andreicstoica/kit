@@ -76,7 +76,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		var sortKey int64
 		if isMaster {
 			// Pin master to the top regardless of LastUsed.
-			sortKey = 1<<62
+			sortKey = 1 << 62
 		} else if hasMeta && !meta.LastUsed.IsZero() {
 			sortKey = meta.LastUsed.Unix()
 		}
@@ -174,4 +174,3 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	}
 	return b.String(), nil
 }
-
