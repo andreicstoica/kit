@@ -35,15 +35,15 @@ var restartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		meta, ok := cfg.Worktrees[name]
-		if !ok || meta.Slot == 0 {
-			return fmt.Errorf("%s has no slot — run `kit play %s` first", name, name)
+		slot, err := resolveSlot(cfg, name)
+		if err != nil {
+			return err
 		}
 		path, err := layout.ResolveWorktreePath(name)
 		if err != nil {
 			return err
 		}
-		ports := liftoff.PortsForSlot(meta.Slot)
+		ports := liftoff.PortsForSlot(slot)
 
 		only, err := parseServiceList(restartOnly)
 		if err != nil {
@@ -64,7 +64,7 @@ var restartCmd = &cobra.Command{
 		plan := liftoff.PlayPlan{
 			Worktree:     name,
 			WorktreePath: path,
-			Slot:         meta.Slot,
+			Slot:         slot,
 			Ports:        ports,
 			Services:     svcs,
 		}

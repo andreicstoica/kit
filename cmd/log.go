@@ -93,11 +93,11 @@ func ensurePlaying(name string) error {
 	if err != nil || cfg == nil {
 		return fmt.Errorf("no kit config yet — run `kit play %s` first", name)
 	}
-	meta, ok := cfg.Worktrees[name]
-	if !ok || meta.Slot == 0 {
-		return fmt.Errorf("%s has no slot — run `kit play %s` first", name, name)
+	slot, err := resolveSlot(cfg, name)
+	if err != nil {
+		return err
 	}
-	alive, _ := liftoff.RunningCount(name, liftoff.PortsForSlot(meta.Slot))
+	alive, _ := liftoff.RunningCount(name, liftoff.PortsForSlot(slot))
 	if alive == 0 {
 		return fmt.Errorf("nothing playing for %s — run `kit play %s` first", name, name)
 	}
