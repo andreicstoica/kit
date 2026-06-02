@@ -28,7 +28,7 @@ func mkDesignModel(width int) *designModel {
 		worktree:      "/Users/acs/liftoff/user-prof-intro-preferences",
 		spinner:       spinner.New(),
 		progress:      pb,
-		orb:           NewOrb(),
+		anim:          NewAnimation(),
 		keys:          DefaultKeymap,
 		help:          NewHelp(),
 		stepTitles:    titles,

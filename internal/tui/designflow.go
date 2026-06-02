@@ -145,7 +145,7 @@ type designModel struct {
 	spinner       spinner.Model
 	stopwatch     stopwatch.Model
 	progress      progress.Model
-	orb           Orb
+	anim          Animation
 	keys          KeyMap
 	help          help.Model
 	updates       <-chan liftoff.StepUpdate
@@ -196,7 +196,7 @@ func (m *designModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		m.stopwatch.Init(),
-		m.orb.Init(),
+		m.anim.Init(),
 		designNext(m.updates),
 	)
 }
@@ -225,9 +225,9 @@ func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.stopwatch, cmd = m.stopwatch.Update(msg)
 		return m, cmd
-	case orbTickMsg:
+	case animTickMsg:
 		var cmd tea.Cmd
-		m.orb, cmd = m.orb.Update(msg)
+		m.anim, cmd = m.anim.Update(msg)
 		return m, cmd
 	case designStepMsg:
 		if !msg.ok {
@@ -351,7 +351,7 @@ func (m *designModel) View() string {
 	// left after reserving the orb's full width; lipgloss MaxWidth truncates
 	// each line so the orb always renders flush inside m.width. When the
 	// terminal is too narrow to hold both side by side, stack the orb below.
-	orbView := m.orb.View()
+	orbView := m.anim.View()
 	orbW := lipgloss.Width(orbView)
 	leftStyle := lipgloss.NewStyle().Padding(0, 2)
 	var body string
@@ -415,7 +415,7 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 		spinner:   sp,
 		progress:  pb,
 		stopwatch: sw,
-		orb:       NewOrb(),
+		anim:      NewAnimation(),
 		keys:      DefaultKeymap,
 		help:      NewHelp(),
 	}
@@ -456,25 +456,15 @@ func PickGtabLayout(includeSkip bool) (liftoff.GtabLayout, error) {
 	)
 }
 
-// offerNextSteps asks both follow-up yes/no questions first, then runs
-// the chosen actions in order. Keeps the prompts grouped so the user
-// finishes the questionnaire before anything else opens.
+// offerNextSteps asks the follow-up questions before acting, so the user
+// answers from this terminal before a workspace window steals focus.
 func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println()
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
 	fmt.Println()
 
-	// Same opener as `kit swap`: pick an editor, the Ghostty workspace, or
-	// skip. Non-fatal — a failed/declined open still lets the play prompt run.
-	if _, err := OpenWorktree(OpenRequest{
-		Layout:    layout,
-		Name:      name,
-		Path:      layout.WorktreePath(name),
-		OfferSkip: true,
-	}); err != nil {
-		fmt.Println(StyleErr.Render("open failed: " + err.Error()))
-	}
-
+	// Ask before opening the workspace — that can spawn a window/editor that
+	// steals focus, leaving the user hunting back here to answer.
 	wantPlay, err := RunConfirm(ConfirmConfig{
 		Title:       "Start dev servers?",
 		Description: "Runs `kit play` for this worktree (frontend + backend + celery on its slot's port band).",
@@ -486,6 +476,17 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 			return nil
 		}
 		return err
+	}
+
+	// Same opener as `kit swap`: pick an editor, the Ghostty workspace, or
+	// skip. Non-fatal — a failed/declined open still lets play run.
+	if _, err := OpenWorktree(OpenRequest{
+		Layout:    layout,
+		Name:      name,
+		Path:      layout.WorktreePath(name),
+		OfferSkip: true,
+	}); err != nil {
+		fmt.Println(StyleErr.Render("open failed: " + err.Error()))
 	}
 
 	if wantPlay {
