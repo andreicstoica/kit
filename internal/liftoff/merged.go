@@ -35,7 +35,11 @@ func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 			continue
 		}
 		name := w.Name()
-		if merged[w.Branch] {
+		// `git branch --merged` also lists brand-new branches that never
+		// diverged (tip is an ancestor of main), not just landed work. Require
+		// an upstream (pushed) before trusting it, so a freshly created worktree
+		// is never washed; real merges still get caught by the gh PR check below.
+		if merged[w.Branch] && branchPushed(l.Master, w.Branch) {
 			out = append(out, MergedCandidate{
 				Name: name, Path: w.Path, Branch: w.Branch,
 				Reason: "merged to " + l.MainBranch,
@@ -69,6 +73,13 @@ func mergedBranches(masterRepo, mainBranch string) map[string]bool {
 		m[b] = true
 	}
 	return m
+}
+
+// branchPushed reports whether branch has an upstream (was pushed at least
+// once), gating the local merged-branch heuristic.
+func branchPushed(masterRepo, branch string) bool {
+	_, err := Run(masterRepo, "git", "rev-parse", "--verify", "--quiet", branch+"@{upstream}")
+	return err == nil
 }
 
 // prState returns "MERGED", "CLOSED", "OPEN", or "" via `gh pr view <branch>`.
