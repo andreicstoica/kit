@@ -40,7 +40,7 @@ func TestMergedBranches(t *testing.T) {
 	// A branch whose commits are merged into master.
 	landed := addWorktree(t, l, "landed")
 	commitAndPush(t, landed, "landed", "l.txt")
-	runGit(t, l.Master, "merge", "landed", "--no-edit")
+	runGit(t, l.Master, "merge", "--no-ff", "landed", "--no-edit")
 
 	// A branch with unmerged work.
 	wip := addWorktree(t, l, "wip")
@@ -70,7 +70,7 @@ func TestFindMergedWorktrees_SkipsUnpushed(t *testing.T) {
 	// landed: merged into master and pushed → should be flagged.
 	landed := addWorktree(t, l, "landed")
 	commitAndPush(t, landed, "landed", "l.txt")
-	runGit(t, l.Master, "merge", "landed", "--no-edit")
+	runGit(t, l.Master, "merge", "--no-ff", "landed", "--no-edit")
 
 	// fresh: just created off master, no commits, never pushed → must be
 	// skipped despite `git branch --merged` listing it.
@@ -81,6 +81,12 @@ func TestFindMergedWorktrees_SkipsUnpushed(t *testing.T) {
 	writeFile(t, wip, "w.txt", "wip")
 	runGit(t, wip, "add", ".")
 	runGit(t, wip, "commit", "-m", "wip")
+
+	// pushedEmpty: a worktree pushed before any commit, so its tip sits exactly
+	// at master. `git branch --merged` lists it and it has an upstream, but no
+	// work ever landed → must be skipped (regression: work uncommitted in tree).
+	addWorktree(t, l, "pushedEmpty")
+	runGit(t, l.Master, "push", "-u", "origin", "pushedEmpty")
 
 	got, err := l.FindMergedWorktrees()
 	if err != nil {
@@ -97,6 +103,9 @@ func TestFindMergedWorktrees_SkipsUnpushed(t *testing.T) {
 	}
 	if _, ok := flagged["wip"]; ok {
 		t.Error("FindMergedWorktrees flagged 'wip' — unmerged work must not be washed")
+	}
+	if _, ok := flagged["pushedEmpty"]; ok {
+		t.Error("FindMergedWorktrees flagged 'pushedEmpty' — a pushed branch sitting at the master tip never merged work and must not be washed")
 	}
 	if _, ok := flagged["master"]; ok {
 		t.Error("FindMergedWorktrees flagged the master worktree")

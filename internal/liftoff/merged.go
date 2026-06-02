@@ -35,11 +35,13 @@ func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 			continue
 		}
 		name := w.Name()
-		// `git branch --merged` also lists brand-new branches that never
-		// diverged (tip is an ancestor of main), not just landed work. Require
-		// an upstream (pushed) before trusting it, so a freshly created worktree
-		// is never washed; real merges still get caught by the gh PR check below.
-		if merged[w.Branch] && branchPushed(l.Master, w.Branch) {
+		// `git branch --merged` also lists branches that never diverged (tip is
+		// an ancestor of main), not just landed work — including a pushed branch
+		// sitting at the exact main tip with all its work still uncommitted.
+		// Require main to be strictly ahead (it absorbed commits this branch
+		// lacks) AND an upstream before trusting the local heuristic; real merges
+		// still get caught by the gh PR check below.
+		if merged[w.Branch] && mainAheadOf(l.Master, l.MainBranch, w.Branch) && branchPushed(l.Master, w.Branch) {
 			out = append(out, MergedCandidate{
 				Name: name, Path: w.Path, Branch: w.Branch,
 				Reason: "merged to " + l.MainBranch,
@@ -73,6 +75,17 @@ func mergedBranches(masterRepo, mainBranch string) map[string]bool {
 		m[b] = true
 	}
 	return m
+}
+
+// mainAheadOf reports whether mainBranch has at least one commit that branch
+// lacks (mainBranch is strictly ahead). False when their tips are identical —
+// a branch sitting exactly at main never had work land, so it isn't merged.
+func mainAheadOf(masterRepo, mainBranch, branch string) bool {
+	out, err := Run(masterRepo, "git", "rev-list", "--count", branch+".."+mainBranch)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(out) != "0"
 }
 
 // branchPushed reports whether branch has an upstream (was pushed at least
