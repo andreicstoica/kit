@@ -1,9 +1,19 @@
 # kit
 
-Isolated Liftoff feature worktrees using Bubble Tea TUI. Automatic
-per-worktree port allocation, one-command service spin-up, graphite-aware
-lineup. Inspired by [par](https://github.com/coplane/par), shaped for the
-Liftoff dev loop.
+[![Open onboarding in Claude Code](https://img.shields.io/badge/Onboarding-Open%20in%20Claude%20Code-d97757?logo=anthropic&logoColor=white)](https://claude.ai/claude-code/onboard/adfUH5YojkA_)
+
+New to Liftoff? Click the badge (or paste the link into Claude Code) and it
+walks you through installing kit and creating your first worktree.
+
+**kit** runs many Liftoff features at once, each in its own git worktree with
+its own port slot and full service stack — so you can develop, review, and
+demo several branches side-by-side without killing backends, swapping
+branches, or fighting port conflicts. Every command (`design`, `play`,
+`lineup`, `wash`, …) drives a Bubble Tea TUI; port allocation is automatic,
+service spin-up is one command, and the lineup is graphite-aware.
+
+New here? Jump to [Install](#install) → `kit setup` does the rest. Inspired by
+[par](https://github.com/coplane/par), shaped for the Liftoff dev loop.
 
 ```
 kit                      # interactive menu
@@ -19,9 +29,11 @@ kit pause <name>         # stop services
 kit restart <name>       # stop then start (bounce a hung service)
 kit log <name>           # tail logs (color-coded, / search, t filter)
 kit diff                 # diff vs master (lumen-aware)
+kit submit <name>        # push the branch via gt submit (--stack/--draft)
 kit sync                 # gt sync + prune merged worktrees
 kit wash [--merged]      # strip a kit (--merged bulk-washes merged/closed)
 kit swap [-w] [-d]       # open in IDE (-w: Ghostty workspace, -d: 5-tab)
+kit slots [renumber]     # show port-slot allocations (renumber compacts gaps)
 ```
 
 Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
@@ -30,7 +42,7 @@ Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
 `register` (adopt).
 
 Commands that take a worktree name (`swap`, `play`, `pause`, `restart`,
-`log`, `wash`, `links`, `diff`, `adopt`) accept the same three shapes: pass a name,
+`log`, `wash`, `links`, `diff`, `submit`, `adopt`) accept the same three shapes: pass a name,
 omit to auto-pick from cwd, or get a numbered picker (1-9 quick-select)
 otherwise. Master appears in every picker as 🧊 slot 0.
 
@@ -152,12 +164,16 @@ Interactive, idempotent. Re-run any time. For a read-only report, use
 
 ## What `kit design` does
 
-Wizard asks: name → clone DB? → symlink node_modules? → graphite track?
+![kit design animations](vhs/anim.gif)
+
+A random spring-physics animation plays in the side panel while setup runs
+(`go run ./dev/animgallery` previews them all). Wizard asks: name → clone
+DB? → symlink node_modules? → graphite track?
 
 Then runs:
 
 1. `git fetch origin master`
-2. `git worktree add ~/liftoff/<name> -b <name> origin/master`
+2. `git worktree add ~/liftoff/<name> -b <name> master`
 3. Copies `.env`, `backend/.env`, `frontend/{app,admin}/env/.env.local`
 4. (opt) `createdb liftoff_<name>` + `pg_dump | psql` + rewrites `SQLALCHEMY_DATABASE_NAME`
 5. `pip install` in `backend/` (always)
@@ -354,6 +370,20 @@ pointing editors / coding tools at the raw `.log` files.
 
 Uses [lumen](https://github.com/jnsahaj/lumen) when installed; falls back
 to plain `git diff`. `--plain` forces plain.
+
+### `kit submit [name]` — push to GitHub
+
+Thin-wraps `gt submit` so you don't have to `cd` into the worktree to push.
+Picker/cwd/name resolution like the other worktree commands. `--stack`
+submits the whole gt stack, `--draft` opens draft PRs, `--no-edit` skips the
+PR-description editor. Requires `gt`.
+
+### `kit slots [renumber]` — port-slot allocations
+
+`kit slots` lists every managed worktree's slot and its four ports. `kit
+slots renumber` compacts gaps left after `kit wash`, reassigning slots
+sequentially from 1 (master keeps 0). Renumber refuses to run while any
+managed services are up — `kit pause --all` first.
 
 ### `kit sync` — daily refresh
 

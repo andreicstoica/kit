@@ -13,7 +13,7 @@ type rocket struct {
 	c   canvas
 	rng *rand.Rand
 
-	y     float64 // rocket nose row
+	climb spring1D // rocket nose row, springs up toward off-screen
 	stars []star
 
 	phase    penaltyPhase
@@ -29,6 +29,7 @@ type star struct {
 const (
 	rkCountdown = 30 // frames of 3·2·1·GO
 	rkFlight    = 30 // frames of climb
+	rkClimbTop  = -6 // off-screen target the rocket springs toward
 )
 
 func newRocket(rng *rand.Rand) Animation {
@@ -45,7 +46,9 @@ func newRocket(rng *rand.Rand) Animation {
 	return r
 }
 
-func (r *rocket) padY() { r.y = float64(r.c.h) - 3 }
+// padY parks the rocket on the launch pad. From rest the climb spring eases in
+// — slow off the pad, then accelerating — before it clears the top.
+func (r *rocket) padY() { r.climb = newSpring1D(float64(r.c.h)-3, 4.0, 1.0) }
 
 func (r *rocket) Init() tea.Cmd { return animTick() }
 
@@ -64,7 +67,7 @@ func (r *rocket) Update(msg tea.Msg) (Animation, tea.Cmd) {
 			r.phaseT = 0
 		}
 	case phaseShoot:
-		r.y -= float64(r.c.h+4) / rkFlight // climb fully off the top
+		r.climb.to(rkClimbTop) // spring up and fully off the top
 		if r.phaseT > rkFlight {
 			r.phase = phaseResult
 			r.phaseT = 0
@@ -131,7 +134,7 @@ func (r *rocket) countdownText() string {
 // drawRocket renders the rocket body plus flickering exhaust during the climb.
 func (r *rocket) drawRocket() {
 	cx := r.c.w / 2
-	ny := int(r.y)
+	ny := int(r.climb.pos)
 	r.c.set(cx, ny, '▲', stBall)
 	r.c.set(cx, ny+1, '█', stActor)
 	r.c.set(cx-1, ny+2, '◣', stFrame)

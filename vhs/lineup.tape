@@ -1,4 +1,4 @@
-# Demo for `kit lineup` (table) + `kit formation` (tree).
+# Demo for `kit lineup` (table) + `kit lineup --tree` (tree).
 # Render with: vhs vhs/lineup.tape  → produces vhs/lineup.gif
 
 Output vhs/lineup.gif
@@ -16,7 +16,7 @@ Sleep 500ms
 Enter
 Sleep 3s
 
-Type "kit formation"
+Type "kit lineup --tree"
 Sleep 500ms
 Enter
 Sleep 5s

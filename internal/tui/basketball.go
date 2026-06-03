@@ -14,9 +14,10 @@ type basketball struct {
 	c   canvas
 	rng *rand.Rand
 
-	x0, y0 float64 // launch point
-	make   bool    // does this attempt go in?
-	defl   float64 // horizontal deflection sign on a miss
+	x0, y0 float64  // launch point
+	make   bool     // does this attempt go in?
+	defl   float64  // horizontal deflection sign on a miss
+	prog   spring1D // flight progress, springs 0→1 from launch to rim
 
 	phase  penaltyPhase
 	phaseT int
@@ -47,6 +48,8 @@ func (b *basketball) reset() {
 	} else {
 		b.defl = 1
 	}
+	// Underdamped so the shot leaves the hand quick and settles into the rim.
+	b.prog = newSpring1D(0, 7.0, 0.7)
 }
 
 func (b *basketball) rimCenter() (float64, float64) {
@@ -68,6 +71,7 @@ func (b *basketball) Update(msg tea.Msg) (Animation, tea.Cmd) {
 			b.phaseT = 0
 		}
 	case phaseShoot:
+		b.prog.to(1)
 		if b.phaseT > bbFlight {
 			b.shots++
 			if b.make {
@@ -91,9 +95,9 @@ func (b *basketball) ballPos() (float64, float64) {
 	rx, ry := b.rimCenter()
 	switch b.phase {
 	case phaseShoot:
-		t := float64(b.phaseT) / bbFlight
-		x := b.x0 + (rx-b.x0)*t
-		y := b.y0 + (ry-b.y0)*t - bbArcPeak*math.Sin(math.Pi*t)
+		p := b.prog.pos // spring-eased flight progress, 0→1
+		x := b.x0 + (rx-b.x0)*p
+		y := b.y0 + (ry-b.y0)*p - bbArcPeak*math.Sin(math.Pi*p)
 		return x, y
 	case phaseResult:
 		t := float64(b.phaseT)
