@@ -14,8 +14,8 @@ type race struct {
 	c   canvas
 	rng *rand.Rand
 
-	x [2]float64 // runner positions
-	v [2]float64 // base speeds
+	run [2]spring1D // runner position springs
+	tgt [2]float64  // each runner's target past the line (sets the pace)
 
 	phase  penaltyPhase
 	phaseT int
@@ -38,8 +38,13 @@ func newRace(rng *rand.Rand) Animation {
 }
 
 func (r *race) reset() {
-	r.x = [2]float64{raceStartX, raceStartX}
-	r.v = [2]float64{0.7 + r.rng.Float64()*0.5, 0.7 + r.rng.Float64()*0.5}
+	for i := range r.run {
+		// Per-runner frequency stands in for speed; the target sits past the
+		// line so they cross at pace instead of easing to a stop on it.
+		freq := 2.4 + r.rng.Float64()*0.9
+		r.run[i] = newSpring1D(raceStartX, freq, 1.0)
+		r.tgt[i] = raceFinish + 6 + r.rng.Float64()*6
+	}
 }
 
 func (r *race) lanes() (int, int) { return r.c.h/2 - 1, r.c.h/2 + 1 }
@@ -59,10 +64,10 @@ func (r *race) Update(msg tea.Msg) (Animation, tea.Cmd) {
 			r.phaseT = 0
 		}
 	case phaseShoot:
-		for i := range r.x {
-			r.x[i] += r.v[i] * (0.6 + r.rng.Float64()*0.8) // surge + jitter
+		for i := range r.run {
+			r.run[i].to(r.tgt[i])
 		}
-		if r.x[0] >= raceFinish || r.x[1] >= raceFinish {
+		if r.run[0].pos >= raceFinish || r.run[1].pos >= raceFinish {
 			r.finish()
 			r.phase = phaseResult
 			r.phaseT = 0
@@ -79,12 +84,12 @@ func (r *race) Update(msg tea.Msg) (Animation, tea.Cmd) {
 
 func (r *race) finish() {
 	r.races++
-	if r.x[0] >= r.x[1] {
+	if r.run[0].pos >= r.run[1].pos {
 		r.winner = 0
 	} else {
 		r.winner = 1
 	}
-	r.photo = math.Abs(r.x[0]-r.x[1]) < 1.5
+	r.photo = math.Abs(r.run[0].pos-r.run[1].pos) < 1.5
 	r.wins[r.winner]++
 }
 
@@ -131,7 +136,7 @@ func (r *race) drawRunner(i, row, style int) {
 	if r.phase != phaseShoot {
 		g = 'ʀ'
 	}
-	x := int(math.Round(r.x[i]))
+	x := int(math.Round(r.run[i].pos))
 	// Dust streaming behind while running.
 	if r.phase == phaseShoot {
 		for d := 1; d <= 3; d++ {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/harmonica"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -172,6 +173,31 @@ var animBox = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(colorAccent).
 	Padding(1, 3)
+
+// spring1D pairs a harmonica spring with its position + velocity so every
+// animation drives motion the same way: build one, then call to(target) each
+// frame. Shared so soccer, basketball, race, and rocket all move on the same
+// physics instead of a mix of springs, lerps, and hand-integrated steps.
+type spring1D struct {
+	s        harmonica.Spring
+	pos, vel float64
+}
+
+// newSpring1D builds a spring at the shared 30fps step starting at pos. freq is
+// the angular frequency (higher = snappier); damping is the ratio (1.0 =
+// critical, <1 overshoots, >1 sluggish).
+func newSpring1D(pos, freq, damping float64) spring1D {
+	return spring1D{s: harmonica.NewSpring(harmonica.FPS(30), freq, damping), pos: pos}
+}
+
+// to advances the spring one frame toward target and returns the new position.
+func (sp *spring1D) to(target float64) float64 {
+	sp.pos, sp.vel = sp.s.Update(sp.pos, sp.vel, target)
+	return sp.pos
+}
+
+// set hard-resets the position and zeroes velocity (used when looping to rest).
+func (sp *spring1D) set(pos float64) { sp.pos, sp.vel = pos, 0 }
 
 func clampInt(v, lo, hi int) int {
 	if v < lo {

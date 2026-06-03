@@ -36,6 +36,10 @@ var rootCmd = &cobra.Command{
 		"- `swap` (`open`, `gtab`) — open the worktree in your IDE (`--workspace` for Ghostty)\n" +
 		"- `links` (`urls`, `ports`) — print the worktree's URLs\n" +
 		"- `diff` — show the worktree's diff vs master (via lumen if installed)\n" +
+		"- `submit` — push the worktree's branch via `gt submit` (`--stack`, `--draft`)\n" +
+		"- `sync` — `gt sync` master + prune merged worktrees\n" +
+		"- `adopt` (`register`) — register an existing worktree (allocate a slot)\n" +
+		"- `slots` — show port-slot allocations (`slots renumber` compacts gaps)\n" +
 		"- `doctor` (`physio`) — check your setup\n" +
 		"- `setup` — install missing tools, clone master\n" +
 		"- `update` — rebuild kit at the latest release\n\n" +

@@ -6,7 +6,6 @@ import (
 	"math/rand"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/harmonica"
 )
 
 // penaltyPhase tracks where the penalty-kick animation is in its loop.
@@ -25,14 +24,8 @@ type soccer struct {
 	c   canvas
 	rng *rand.Rand
 
-	ballXSpring harmonica.Spring
-	ballYSpring harmonica.Spring
-	keepSpring  harmonica.Spring
-
-	ballX, ballY   float64
-	ballVX, ballVY float64
-	keepX          float64
-	keepVX         float64
+	bx, by spring1D // ball position springs
+	kp     spring1D // keeper horizontal spring
 
 	targetBallX, targetBallY float64
 	targetKeepX              float64
@@ -58,20 +51,21 @@ const (
 
 func newSoccer(rng *rand.Rand) Animation {
 	c := newCanvas(animWidth, animHeight)
+	restBallX := float64(animWidth) / 2
+	restBallY := float64(animHeight) - 3
+	restKeepX := float64(animWidth) / 2
 	o := &soccer{
-		c:           c,
-		rng:         rng,
-		ballXSpring: harmonica.NewSpring(harmonica.FPS(30), 6.0, 0.55),
-		ballYSpring: harmonica.NewSpring(harmonica.FPS(30), 6.0, 0.55),
-		keepSpring:  harmonica.NewSpring(harmonica.FPS(30), 5.0, 0.45),
-		restBallX:   float64(animWidth) / 2,
-		restBallY:   float64(animHeight) - 3,
-		restKeepX:   float64(animWidth) / 2,
+		c:         c,
+		rng:       rng,
+		bx:        newSpring1D(restBallX, 6.0, 0.55),
+		by:        newSpring1D(restBallY, 6.0, 0.55),
+		kp:        newSpring1D(restKeepX, 5.0, 0.45),
+		restBallX: restBallX,
+		restBallY: restBallY,
+		restKeepX: restKeepX,
 	}
-	o.ballX, o.ballY = o.restBallX, o.restBallY
-	o.keepX = o.restKeepX
-	o.targetBallX, o.targetBallY = o.restBallX, o.restBallY
-	o.targetKeepX = o.restKeepX
+	o.targetBallX, o.targetBallY = restBallX, restBallY
+	o.targetKeepX = restKeepX
 	return o
 }
 
@@ -92,10 +86,10 @@ func (o *soccer) Update(msg tea.Msg) (Animation, tea.Cmd) {
 			o.phaseT = 0
 		}
 	case phaseShoot:
-		o.ballX, o.ballVX = o.ballXSpring.Update(o.ballX, o.ballVX, o.targetBallX)
-		o.ballY, o.ballVY = o.ballYSpring.Update(o.ballY, o.ballVY, o.targetBallY)
-		o.keepX, o.keepVX = o.keepSpring.Update(o.keepX, o.keepVX, o.targetKeepX)
-		o.pushTrail(o.ballX, o.ballY)
+		o.bx.to(o.targetBallX)
+		o.by.to(o.targetBallY)
+		o.kp.to(o.targetKeepX)
+		o.pushTrail(o.bx.pos, o.by.pos)
 		if o.phaseT > 30 { // ~1s of flight
 			o.judge()
 			o.phase = phaseResult
@@ -103,9 +97,9 @@ func (o *soccer) Update(msg tea.Msg) (Animation, tea.Cmd) {
 		}
 	case phaseResult:
 		if o.phaseT > 24 {
-			o.ballX, o.ballY = o.restBallX, o.restBallY
-			o.keepX = o.restKeepX
-			o.ballVX, o.ballVY, o.keepVX = 0, 0, 0
+			o.bx.set(o.restBallX)
+			o.by.set(o.restBallY)
+			o.kp.set(o.restKeepX)
 			o.phase = phasePreShoot
 			o.phaseT = 0
 		}
@@ -141,7 +135,7 @@ func (o *soccer) aim() {
 
 // judge decides save vs goal from keeper/ball proximity at the end of flight.
 func (o *soccer) judge() {
-	o.saved = math.Abs(o.keepX-o.ballX) < 2.5 && o.ballY < float64(soGoalBottom)
+	o.saved = math.Abs(o.kp.pos-o.bx.pos) < 2.5 && o.by.pos < float64(soGoalBottom)
 	o.shots++
 	if o.saved {
 		o.saves++
@@ -202,8 +196,8 @@ func (o *soccer) drawCrowd() {
 
 func (o *soccer) drawKeeper(goalLeft, goalRight int) {
 	row := soGoalBottom - 1
-	col := clampInt(int(math.Round(o.keepX)), goalLeft+1, goalRight-1)
-	diving := math.Abs(o.keepX-o.restKeepX) > 1.5
+	col := clampInt(int(math.Round(o.kp.pos)), goalLeft+1, goalRight-1)
+	diving := math.Abs(o.kp.pos-o.restKeepX) > 1.5
 	armChar := '─'
 	if diving {
 		armChar = '═'
@@ -238,7 +232,7 @@ func (o *soccer) drawBall() {
 		spin := []rune{'◐', '◓', '◑', '◒'}
 		ball = spin[o.frame%len(spin)]
 	}
-	o.c.setf(o.ballX, o.ballY, ball, stBall)
+	o.c.setf(o.bx.pos, o.by.pos, ball, stBall)
 }
 
 // drawResult flashes the verdict and ripples the net on a goal.
@@ -253,7 +247,7 @@ func (o *soccer) drawResult() {
 	o.c.textCenter(o.c.h/2, "GOOAL!", stOK)
 	// Net ripple: scatter sparkles near where the ball hit, pulsing by frame.
 	ripple := []rune{'✦', '✧', '*'}
-	bx, by := int(math.Round(o.ballX)), int(math.Round(o.ballY))
+	bx, by := int(math.Round(o.bx.pos)), int(math.Round(o.by.pos))
 	for dy := -1; dy <= 1; dy++ {
 		for dx := -1; dx <= 1; dx++ {
 			n := o.phaseT + dx + dy
