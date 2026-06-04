@@ -60,10 +60,12 @@ var updateCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 
-		// Clone the tag and build it directly, rather than `go install
+		// Fetch the tag and build it directly, rather than `go install
 		// module@tag` — the module proxy cold-fetches a fresh tag the first
-		// time anyone requests it, which can stall for a minute. git clone is
-		// direct and already fast (same path as the version check).
+		// time anyone requests it, which can stall for a minute. Fetching and
+		// checking out tag^{commit} also keeps annotated tags quiet: `git clone
+		// --branch <annotated-tag>` warns that the tag object is not a commit
+		// and prints detached-HEAD advice.
 		srcDir, err := os.MkdirTemp("", "kit-src-")
 		if err != nil {
 			return err
@@ -71,13 +73,8 @@ var updateCmd = &cobra.Command{
 		defer os.RemoveAll(srcDir)
 
 		fmt.Printf("fetching %s…\n", latest)
-		clone := exec.CommandContext(ctx, "git", "clone", "--quiet", "--depth", "1",
-			"--branch", latest, kitRepoURL, srcDir)
-		clone.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0") // never block on auth
-		clone.Stdout = os.Stderr
-		clone.Stderr = os.Stderr
-		if err := clone.Run(); err != nil {
-			return fmt.Errorf("clone %s failed: %w", latest, err)
+		if err := fetchReleaseTag(ctx, latest, srcDir); err != nil {
+			return err
 		}
 
 		// Build onto the same filesystem as the current binary so the final
@@ -122,6 +119,41 @@ func baseVersion(v string) string {
 func init() {
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "report whether an update is available without installing")
 	rootCmd.AddCommand(updateCmd)
+}
+
+func fetchReleaseTag(ctx context.Context, tag, dir string) error {
+	return fetchReleaseTagFrom(ctx, kitRepoURL, tag, dir)
+}
+
+func fetchReleaseTagFrom(ctx context.Context, repoURL, tag, dir string) error {
+	if err := runUpdateGit(ctx, dir, "init", "--quiet"); err != nil {
+		return fmt.Errorf("init update source: %w", err)
+	}
+	if err := runUpdateGit(ctx, dir, "remote", "add", "origin", repoURL); err != nil {
+		return fmt.Errorf("add update remote: %w", err)
+	}
+	ref := "refs/tags/" + tag + ":refs/tags/" + tag
+	if err := runUpdateGit(ctx, dir, "fetch", "--quiet", "--depth", "1", "origin", ref); err != nil {
+		return fmt.Errorf("fetch %s failed: %w", tag, err)
+	}
+	if err := runUpdateGit(ctx, dir, "checkout", "--quiet", "--detach", tag+"^{commit}"); err != nil {
+		return fmt.Errorf("checkout %s failed: %w", tag, err)
+	}
+	return nil
+}
+
+func runUpdateGit(ctx context.Context, dir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=advice.detachedHead",
+		"GIT_CONFIG_VALUE_0=false",
+	)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // latestRemoteTag returns the highest semver tag on the remote (e.g. "v0.1.5"),
