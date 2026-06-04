@@ -44,8 +44,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 	fmt.Println(tui.StyleTitle.Render("kit sync — gt sync in master"))
 	// Snapshot master's HEAD so we can tell, post-sync, whether it
 	// fast-forwarded onto new migrations. Best-effort: an error here just
-	// disables the migration check (NewMigrations treats "" as no-op).
-	oldHead, _ := layout.MasterHead()
+	// disables the migration check (NewMigrations treats "" as no-op). Only
+	// snapshot when the master repo is actually on the configured trunk branch.
+	oldHead := ""
+	if branch, err := layout.MasterBranch(); err == nil && branch == layout.MainBranch {
+		oldHead, _ = layout.MasterHead()
+	}
 
 	gt := exec.Command("gt", "sync")
 	gt.Dir = layout.Master
@@ -102,6 +106,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 // master didn't move or no migrations landed — so the local master DB always
 // mirrors remote master, staying a clean base for worktrees to clone from.
 func runMasterMigrate(layout liftoff.Layout, oldHead string) error {
+	branch, err := layout.MasterBranch()
+	if err != nil || branch != layout.MainBranch {
+		return nil
+	}
 	newHead, err := layout.MasterHead()
 	if err != nil {
 		return nil // can't compare; skip rather than block the sync
@@ -124,6 +132,7 @@ func runMasterMigrate(layout liftoff.Layout, oldHead string) error {
 		fmt.Println(tui.StyleErr.Render("✗ alembic upgrade failed: " + err.Error()))
 		return nil
 	}
-	fmt.Println(tui.StyleOK.Render("✓ master DB upgraded to head."))
+	fmt.Println(tui.StyleOK.Render("✓ master DB (liftoff) upgraded to head."))
+	fmt.Println(tui.StyleDim.Render("  feature DBs were not migrated."))
 	return nil
 }

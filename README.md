@@ -30,7 +30,7 @@ kit restart <name>       # stop then start (bounce a hung service)
 kit log <name>           # tail logs (color-coded, / search, t filter)
 kit diff                 # diff vs master (lumen-aware)
 kit submit <name>        # push the branch via gt submit (--stack/--draft)
-kit sync                 # gt sync + prune merged worktrees
+kit sync                 # gt sync + migrate master DB + prune merged worktrees
 kit wash [--merged]      # strip a kit (--merged bulk-washes merged/closed)
 kit swap [-w] [-d]       # open in IDE (-w: Ghostty workspace, -d: 5-tab)
 kit slots [renumber]     # show port-slot allocations (renumber compacts gaps)
@@ -387,8 +387,12 @@ managed services are up — `kit pause --all` first.
 
 ### `kit sync` — daily refresh
 
-`gt sync` in master, then prompt to `kit wash --merged` whatever stayed merged.
-Requires `gt`.
+`gt sync` in master. If trunk fast-forwards onto newly added Alembic migration
+files, kit runs `alembic upgrade head` from master `backend/` with the master
+DB env (`SQLALCHEMY_DATABASE_NAME=liftoff`) forced, so only the main DB is
+updated. Feature worktree DBs are not migrated automatically. Then kit prompts
+to `kit wash --merged` whatever stayed merged. Requires `gt`. Use
+`--no-migrate` to skip the Alembic step.
 
 ### `kit adopt [name]` (alias `register`) — register a worktree
 

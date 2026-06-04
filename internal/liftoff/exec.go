@@ -28,8 +28,20 @@ func Run(dir, name string, args ...string) (string, error) {
 // RunStream executes name with args in dir and pipes each output line to onLine.
 // Returns when the process exits. dir may be empty.
 func RunStream(dir, name string, args []string, onLine LineFn) error {
+	return runStream(dir, name, args, nil, onLine)
+}
+
+// RunStreamEnv is RunStream with an explicit process environment.
+func RunStreamEnv(dir, name string, args []string, env []string, onLine LineFn) error {
+	return runStream(dir, name, args, env, onLine)
+}
+
+func runStream(dir, name string, args []string, env []string, onLine LineFn) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	if env != nil {
+		cmd.Env = env
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
