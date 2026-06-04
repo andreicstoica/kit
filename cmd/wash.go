@@ -11,14 +11,14 @@ var washMerged bool
 var washCmd = &cobra.Command{
 	Use:     "wash [name]",
 	Aliases: []string{"rm", "remove", "delete"},
-	Short:   "Strip a kit and clean up (remove worktree + branch + DB + gtab)",
-	Long: `wash removes a worktree's worktree dir, deletes the actual git branch,
-optionally drops the DB, and removes the gtab workspace.
+	Short:   "Delete an old workspace",
+	Long: `wash deletes a workspace folder and its code branch. It can also delete
+the workspace's private database and saved Ghostty layout.
 
 Pass a name to skip the picker; omit to pick from a list (or auto-resolve
-from cwd when run from inside a worktree).
+from cwd when run from inside a workspace).
 
---merged switches to bulk mode: scans every worktree, flags any whose branch
+--merged switches to bulk mode: finds old workspaces whose branch
 is merged into master or whose PR (via gh) is MERGED/CLOSED, and lets you
 multi-select which to wash.`,
 	Args:              cobra.MaximumNArgs(1),
@@ -37,6 +37,6 @@ multi-select which to wash.`,
 }
 
 func init() {
-	washCmd.Flags().BoolVar(&washMerged, "merged", false, "bulk-wash worktrees whose branch/PR is merged or closed")
+	washCmd.Flags().BoolVar(&washMerged, "merged", false, "bulk-delete workspaces whose branch/PR is merged or closed")
 	rootCmd.AddCommand(washCmd)
 }

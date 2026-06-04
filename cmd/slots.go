@@ -110,8 +110,9 @@ var slotsRenumberCmd = &cobra.Command{
 		fmt.Println()
 
 		accept, err := tui.RunConfirm(tui.ConfirmConfig{
-			Title:       "Reassign slots?",
-			Description: "Updates config.toml. Services were already stopped — restart with `kit play` after.",
+			Title:       "Clean up port numbers?",
+			Description: "Kit will remember the new port numbers. Restart workspaces with `kit play` after.",
+			Affirmative: "Clean up",
 			Negative:    "Cancel",
 			Default:     true,
 		})

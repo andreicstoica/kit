@@ -9,20 +9,19 @@ import (
 var designCmd = &cobra.Command{
 	Use:     "design [name]",
 	Aliases: []string{"new"},
-	Short:   "Design a fresh kit (create a new feature worktree)",
-	Long: "**design** walks you through creating a new Liftoff feature worktree:\n\n" +
-		"- `git fetch origin master` then `git worktree add ~/liftoff/<name> -b <name> master`\n" +
-		"- copies the four `.env` files\n" +
-		"- (opt) clones local DB into `liftoff_<name>` and rewrites `SQLALCHEMY_DATABASE_NAME`\n" +
-		"- (opt) installs backend deps with pip\n" +
-		"- (opt) symlinks frontend node_modules from master (saves ~2GB + skips yarn install)\n" +
-		"- (opt) registers the branch with graphite (`gt track`)\n" +
-		"- writes a gtab AppleScript workspace\n" +
-		"- allocates a port slot (recorded in `~/.config/kit/config.toml`)\n\n" +
+	Short:   "Create a fresh workspace",
+	Long: "**design** walks you through creating a new Liftoff workspace:\n\n" +
+		"- asks for a short feature name\n" +
+		"- creates a separate folder and code branch\n" +
+		"- copies app settings from master\n" +
+		"- optionally copies your local database for safe experiments\n" +
+		"- installs backend dependencies\n" +
+		"- optionally reuses master frontend packages to save disk/time\n" +
+		"- optionally adds the branch to Graphite\n" +
+		"- creates a Ghostty workspace and reserves local ports\n\n" +
 		"Passing `name` pre-fills the wizard's first field. A leading `liftoff-`\n" +
-		"is stripped from your input. Worktrees land at `~/liftoff/<name>` with\n" +
-		"branch `<name>`.\n\n" +
-		"Alias: `new` (muscle-memory).",
+		"is stripped from your input.\n\n" +
+		"Alias: `new`.",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prefill := ""

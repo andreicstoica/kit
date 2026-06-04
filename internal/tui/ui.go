@@ -3,7 +3,6 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // kit UI design language
@@ -30,7 +29,7 @@ import (
 // change here propagates across the whole CLI.
 
 // TitleStyle is the bold-accent heading used atop every picker and form.
-var TitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorAccent)
+var TitleStyle = StyleTitle
 
 // NewListDelegate returns the shared bubbles/list delegate: a default
 // two-line delegate with kit's accent color on the selected row. Every

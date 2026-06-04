@@ -1,6 +1,11 @@
 package tui
 
-import "github.com/charmbracelet/huh"
+import (
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
+)
 
 // Shared huh form helpers. Every short-menu select and yes/no confirm in kit
 // goes through these so they share one theme, one set of defaults, and the
@@ -92,3 +97,15 @@ func buildConfirmForm(cfg ConfirmConfig, val *bool) *huh.Form {
 // selectHeight reserves rows for the title + (wrapped) description + every
 // option, so the whole menu is visible on the first frame.
 func selectHeight(numOptions int) int { return numOptions + 4 }
+
+func isConfirmYes(k tea.KeyMsg) bool {
+	return k.Type == tea.KeyEnter || strings.EqualFold(k.String(), "y")
+}
+
+func isConfirmNo(k tea.KeyMsg) bool {
+	return strings.EqualFold(k.String(), "n")
+}
+
+func confirmHelp(yesLabel, noLabel string) string {
+	return StyleHelp.Render("enter/y: " + yesLabel + " · n: " + noLabel + " · esc: cancel")
+}

@@ -47,17 +47,14 @@ func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, e
 		a.graphite = false
 	}
 
-	// Force-set huh theme to honor lipgloss adaptive colors.
-	theme := huh.ThemeCharm()
-
 	// One question per group — huh advances groups individually, so each
 	// prompt occupies its own screen. Backend pip install isn't prompted
 	// anymore; it's always run.
-	form := huh.NewForm(
+	groups := []*huh.Group{
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Feature name").
-				Description("kebab-case · used as initial branch, worktree, and ghostty tab layout names").
+				Description("Use a short name like voice-agent. Kit uses it for the folder, branch, and tabs.").
 				Placeholder("voice-agent").
 				CharLimit(60).
 				Value(&a.name).
@@ -76,31 +73,38 @@ func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, e
 					return nil
 				}),
 		),
-		huh.NewGroup(
+	}
+	if !dbDisabled {
+		groups = append(groups, huh.NewGroup(
 			huh.NewConfirm().
-				Title("Clone local database?").
-				Description(databaseHelp(dbDisabled)+"\n\nDefault is No — DB clones take significant disk space. Say Yes if this worktree needs its own data.").
-				Affirmative("Yes").
-				Negative("No").
+				Title("Copy your local database?").
+				Description(databaseHelp(false)).
+				Affirmative("Copy it").
+				Negative("Skip").
 				Value(&a.cloneDB),
-		),
+		))
+	}
+	groups = append(groups,
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Symlink frontend node_modules from master?").
-				Description("Saves ~2GB + skips a 2-min yarn install. (You can run yarn install in the worktree later if you need worktree-specific deps.)").
-				Affirmative("Yes").
-				Negative("No").
+				Title("Reuse frontend dependencies?").
+				Description("Saves about 2 GB and skips a slow install by sharing the frontend packages already installed in master. You can run yarn install in this workspace later if you need different packages.").
+				Affirmative("Reuse").
+				Negative("Install later").
 				Value(&a.symlink),
 		),
-		huh.NewGroup(
+	)
+	if !gtDisabled {
+		groups = append(groups, huh.NewGroup(
 			huh.NewConfirm().
-				Title("Track in graphite?").
-				Description(graphiteHelp(gtDisabled)).
-				Affirmative("Yes").
-				Negative("No").
+				Title("Add this branch to Graphite?").
+				Description(graphiteHelp(false)).
+				Affirmative("Add it").
+				Negative("Skip").
 				Value(&a.graphite),
-		),
-	).WithTheme(theme).
+		))
+	}
+	form := huh.NewForm(groups...).WithTheme(KitHuhTheme()).
 		WithShowHelp(true).
 		WithShowErrors(true)
 
@@ -120,16 +124,16 @@ func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, e
 
 func databaseHelp(disabled bool) string {
 	if disabled {
-		return "[disabled — pg_dump not on PATH]"
+		return "Database copy is unavailable because Postgres tools are not installed. Kit will skip it."
 	}
-	return "`createdb liftoff_<name>` then `pg_dump | psql` clone, with `SQLALCHEMY_DATABASE_NAME` rewrite in `backend/.env`"
+	return "Makes a private copy of your local data for this workspace, so experiments will not change your main database. Uses extra disk and can take a while. Default: Skip."
 }
 
 func graphiteHelp(disabled bool) string {
 	if disabled {
-		return "[disabled — gt not on PATH]"
+		return "Graphite is not installed on this machine. Kit will skip this."
 	}
-	return "`gt track --parent master` so the branch shows up in your stack"
+	return "Adds the branch to your Graphite stack so it is easier to track and submit later."
 }
 
 // minLeftWidth is the narrowest the step list may get before the orb panel
@@ -310,7 +314,7 @@ func (m *designModel) View() string {
 		default:
 			marker = StyleDim.Render(Glyph("pending"))
 		}
-		line := fmt.Sprintf("  %s  %s", marker, title)
+		line := fmt.Sprintf("  %s  %s", marker, friendlyDesignStepTitle(title))
 		if m.stepElapsed[i] > 0 && m.stepStatuses[i] == liftoff.StepDone {
 			line += StyleDim.Render(fmt.Sprintf("  (%s)", m.stepElapsed[i].Round(10*time.Millisecond)))
 		}
@@ -331,15 +335,15 @@ func (m *designModel) View() string {
 			}
 			left.WriteString(StyleDim.Render("  inspect partial state at "+m.worktree) + "\n")
 		} else {
-			left.WriteString(StyleOK.Render("✓ ready") + "\n\n")
+			left.WriteString(StyleOK.Render("✓ "+m.answers.name+" is ready") + "\n\n")
 			if m.allocatedSlot > 0 {
 				ports := liftoff.PortsForSlot(m.allocatedSlot)
-				left.WriteString(fmt.Sprintf("slot:     %d\n", m.allocatedSlot))
-				left.WriteString(fmt.Sprintf("ports:    app:%d admin:%d api:%d admin_be:%d\n",
+				left.WriteString(fmt.Sprintf("Local slot: %d\n", m.allocatedSlot))
+				left.WriteString(fmt.Sprintf("App ports:  website %d · admin %d · API %d · admin API %d\n",
 					ports.App, ports.Admin, ports.API, ports.AdminBE))
 			}
 			if m.answers.cloneDB {
-				left.WriteString("db:       " + liftoff.DBName(m.answers.name) + "\n")
+				left.WriteString("Database:   " + liftoff.DBName(m.answers.name) + "\n")
 			}
 		}
 		left.WriteString("\n" + StyleHelp.Render("press enter to continue"))
@@ -379,6 +383,35 @@ func truncate(s string, w int) string {
 		return s[:w]
 	}
 	return s[:w-1] + "…"
+}
+
+func friendlyDesignStepTitle(title string) string {
+	switch {
+	case strings.HasPrefix(title, "fetch origin/"):
+		return "Get the latest main code"
+	case strings.HasPrefix(title, "worktree add "):
+		return "Create the workspace folder"
+	case strings.HasPrefix(title, "copy env files"):
+		return "Copy app settings"
+	case strings.HasPrefix(title, "create database "):
+		return "Create a private database"
+	case strings.HasPrefix(title, "clone database "):
+		return "Copy local data"
+	case strings.HasPrefix(title, "update backend/.env "):
+		return "Point the app at the private database"
+	case strings.HasPrefix(title, "pip install backend"):
+		return "Install backend dependencies"
+	case strings.HasPrefix(title, "symlink frontend node_modules"):
+		return "Reuse frontend dependencies"
+	case strings.HasPrefix(title, "gt track "):
+		return "Add the branch to Graphite"
+	case strings.HasPrefix(title, "write gtab workspace"):
+		return "Create workspace tabs"
+	case strings.HasPrefix(title, "allocate port slot"):
+		return "Reserve local ports"
+	default:
+		return title
+	}
 }
 
 // RunDesignTUI is the cobra entry point: huh form → bubble tea progress.
@@ -466,9 +499,10 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	// Ask before opening the workspace — that can spawn a window/editor that
 	// steals focus, leaving the user hunting back here to answer.
 	wantPlay, err := RunConfirm(ConfirmConfig{
-		Title:       "Start dev servers?",
-		Description: "Runs `kit play` for this worktree (frontend + backend + celery on its slot's port band).",
-		Negative:    "Skip",
+		Title:       "Start the app now?",
+		Description: "Starts the website, admin, API, and background worker for this workspace. You can also do this later with `kit play`.",
+		Affirmative: "Start",
+		Negative:    "Not now",
 		Default:     true,
 	})
 	if err != nil {

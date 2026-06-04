@@ -45,7 +45,7 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 		return nil, err
 	}
 	if len(cands) == 0 {
-		return nil, errors.New("no stale worktrees found")
+		return nil, errors.New("no old workspaces found")
 	}
 	sel := map[int]bool{}
 	for i := range cands {
@@ -226,18 +226,18 @@ func (m *mergedModel) View() string {
 	case mergedStageConfirm:
 		body = m.viewConfirm()
 	case mergedStageRun:
-		body = StyleTitle.Render("kit wash --merged — running") + "\n\n  " + m.spinner.View() + " washing selected worktrees…"
+		body = StyleTitle.Render("kit wash --merged — running") + "\n\n  " + m.spinner.View() + " deleting selected workspaces…"
 	case mergedStageDone:
 		body = m.viewDone()
 	case mergedStageAborted:
-		return StyleWarn.Render("aborted.\n")
+		return StyleWarn.Render("cancelled.\n")
 	}
 	return body + "\n" + m.help.View(m.keys)
 }
 
 func (m *mergedModel) viewSelect() string {
 	var b strings.Builder
-	b.WriteString(StyleTitle.Render("kit wash --merged — pick stale worktrees") + "\n\n")
+	b.WriteString(StyleTitle.Render("kit wash --merged — pick old workspaces") + "\n\n")
 	for i, c := range m.candidates {
 		cursor := "  "
 		if i == m.cursor {
@@ -253,7 +253,7 @@ func (m *mergedModel) viewSelect() string {
 		}
 		b.WriteString(fmt.Sprintf("%s%s %s%s  %s\n", cursor, box, emoji, c.Name, StyleDim.Render("("+c.Reason+")")))
 	}
-	b.WriteString("\n" + StyleHelp.Render("space toggle · a all · n none · enter continue · esc abort"))
+	b.WriteString("\n" + StyleHelp.Render("space: choose · a: all · n: none · enter: continue · esc: cancel"))
 	return b.String()
 }
 
@@ -268,8 +268,8 @@ func (m *mergedModel) viewConfirm() string {
 		count++
 		b.WriteString("  " + StyleErr.Render("✗") + " " + c.Name + StyleDim.Render(" — "+c.Reason) + "\n")
 	}
-	b.WriteString(fmt.Sprintf("\nremove %d worktrees? this stops services, deletes worktree dirs, and removes branches.\n\n", count))
-	b.WriteString(StyleHelp.Render("[Y]es · [n] cancel · backspace back · esc abort"))
+	b.WriteString(fmt.Sprintf("\nDelete %d old workspace(s)? Kit will stop them, delete their folders, and remove their branches.\n\n", count))
+	b.WriteString(confirmHelp("Delete selected", "Cancel") + StyleHelp.Render(" · backspace: back"))
 	return b.String()
 }
 

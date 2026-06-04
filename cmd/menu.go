@@ -16,17 +16,17 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		desc string
 	}
 	items := []item{
-		{"lineup", "see all my kits (--tree for tree view)"},
-		{"play", "start a kit's dev servers"},
-		{"pause", "stop a kit's dev servers"},
-		{"restart", "bounce a kit's services (stop then start)"},
-		{"swap", "open a kit in your editor (or Ghostty workspace)"},
-		{"log", "tail a kit's logs"},
-		{"links", "print a kit's URLs"},
+		{"lineup", "see all workspaces"},
+		{"play", "start a workspace"},
+		{"pause", "stop a workspace"},
+		{"restart", "stop and start a workspace"},
+		{"swap", "open a workspace in your editor or Ghostty"},
+		{"log", "watch app logs"},
+		{"links", "show a workspace's URLs"},
 		{"diff", "see what changed vs master"},
-		{"design", "create a new kit"},
-		{"wash", "remove a kit (worktree + branch + DB + gtab)"},
-		{"sync", "pull master + clean up merged branches"},
+		{"design", "create a new workspace"},
+		{"wash", "delete an old workspace"},
+		{"sync", "update master and clean up merged work"},
 		{"setup", "install/check required tools"},
 		{"doctor", "diagnose without changing anything"},
 		{"update", "update kit to the latest release"},
@@ -36,7 +36,7 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		label := fmt.Sprintf("%-10s — %s", it.verb, it.desc)
 		opts = append(opts, tui.SelectOption[string]{Label: label, Value: it.verb})
 	}
-	picked, err := tui.RunSelect("kit · what do you want to do?", "pick an action, or Ctrl-C to exit", opts, items[0].verb)
+	picked, err := tui.RunSelect("kit · what do you want to do?", "Choose an action. Press Ctrl-C to exit.", opts, items[0].verb)
 	if err != nil {
 		return err
 	}

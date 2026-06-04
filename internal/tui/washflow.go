@@ -134,10 +134,10 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 		}
 	}
 	if len(items) == 0 {
-		return nil, errors.New("no removable worktrees found")
+		return nil, errors.New("no removable workspaces found")
 	}
 	l := list.New(items, NewListDelegate(), 0, 0)
-	StyleList(&l, "kit wash — pick a kit to strip", true)
+	StyleList(&l, "kit wash — pick a workspace to delete", true)
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -203,22 +203,24 @@ func (m *washModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
-		switch k.String() {
-		case "enter":
-			if it, ok := m.list.SelectedItem().(washItem); ok {
-				m.pickWash(it)
-				return m, nil
-			}
-		case "esc":
-			m.stage = washStageAborted
-			return m, tea.Quit
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			idx := int(k.String()[0] - '0' - 1)
-			items := m.list.VisibleItems()
-			if idx >= 0 && idx < len(items) {
-				if it, ok := items[idx].(washItem); ok {
+		if m.list.FilterState() != list.Filtering {
+			switch k.String() {
+			case "enter":
+				if it, ok := m.list.SelectedItem().(washItem); ok {
 					m.pickWash(it)
 					return m, nil
+				}
+			case "esc":
+				m.stage = washStageAborted
+				return m, tea.Quit
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				idx := int(k.String()[0] - '0' - 1)
+				items := m.list.VisibleItems()
+				if idx >= 0 && idx < len(items) {
+					if it, ok := items[idx].(washItem); ok {
+						m.pickWash(it)
+						return m, nil
+					}
 				}
 			}
 		}
@@ -364,7 +366,7 @@ func (m *washModel) View() string {
 	case washStageDone:
 		body = m.viewDone()
 	case washStageAborted:
-		return StyleWarn.Render("aborted.\n")
+		return StyleWarn.Render("cancelled.\n")
 	}
 	return body + "\n" + m.help.View(m.keys)
 }
@@ -395,19 +397,19 @@ func (m *washModel) toggleAtCursor() string {
 func (m *washModel) viewConfirm() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit wash — "+m.selected.name) + "\n\n")
-	b.WriteString("worktree: " + m.selected.path + "\n")
-	b.WriteString("branch:   " + m.selected.branch + "\n")
+	b.WriteString("Workspace folder: " + m.selected.path + "\n")
+	b.WriteString("Code branch:      " + m.selected.branch + "\n")
 	if m.selected.dirty {
-		b.WriteString(StyleWarn.Render("⚠ uncommitted changes will be lost") + "\n")
+		b.WriteString(StyleWarn.Render("⚠ Unsaved local file changes will be lost.") + "\n")
 	}
 	if m.selected.aheadCount > 0 {
-		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d commit(s) not in %s — will be permanently deleted (git -D)",
+		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d local commit(s) are not on %s and will be permanently deleted.",
 			m.selected.aheadCount, m.layout.MainBranch)) + "\n")
 	}
 	b.WriteString("\n")
 	toggles := m.visibleToggles()
 	if len(toggles) == 0 {
-		b.WriteString(StyleDim.Render("nothing extra to clean up beyond worktree + branch") + "\n")
+		b.WriteString(StyleDim.Render("Kit will remove the workspace folder and code branch.") + "\n")
 	}
 	for i, id := range toggles {
 		cursor := "  "
@@ -421,17 +423,17 @@ func (m *washModel) viewConfirm() string {
 		label := ""
 		switch id {
 		case "db":
-			label = "drop database " + liftoff.DBName(m.selected.name)
+			label = "Delete private database " + liftoff.DBName(m.selected.name)
 		case "gtab":
-			label = "remove gtab workspace " + m.selected.name + ".applescript"
+			label = "Remove saved Ghostty workspace"
 		}
 		b.WriteString(cursor + box + " " + label + "\n")
 	}
 	b.WriteString("\n")
 	if m.confirmArmed {
-		b.WriteString(StyleWarn.Render("press enter again to permanently delete · esc to abort"))
+		b.WriteString(StyleWarn.Render("Press Enter again to permanently delete this workspace · esc to cancel"))
 	} else {
-		b.WriteString(StyleHelp.Render("space: toggle · enter: confirm · backspace: back · esc: abort"))
+		b.WriteString(StyleHelp.Render("space: choose cleanup options · enter: wash workspace · backspace: back · esc: cancel"))
 	}
 	return b.String()
 }

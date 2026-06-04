@@ -129,9 +129,9 @@ func clearLogsFor(name string) error {
 	}
 	fmt.Println()
 	accept, err := tui.RunConfirm(tui.ConfirmConfig{
-		Title:       "Delete contents?",
-		Description: "Truncates each .log to 0 bytes; files stay so running tails keep their FD.",
-		Affirmative: "Yes, clear",
+		Title:       "Clear saved log text?",
+		Description: "Keeps the log files in place, but empties their current contents.",
+		Affirmative: "Clear logs",
 		Negative:    "Cancel",
 		Default:     true,
 	})

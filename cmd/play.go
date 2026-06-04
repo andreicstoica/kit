@@ -21,13 +21,12 @@ var (
 var playCmd = &cobra.Command{
 	Use:     "play [name]",
 	Aliases: []string{"start"},
-	Short:   "Spin up the kit's services (frontend/app, frontend/admin, backend, celery)",
-	Long: `play starts the dev servers for a worktree:
+	Short:   "Start a workspace",
+	Long: `play starts the app for a workspace:
 
-  app, admin (Vite), api, admin_be (uvicorn --reload), celery worker, beat
+  website, admin, API, admin API, background worker
 
-Each worktree gets a 5-port band based on its slot:
-  app:3000+slot*10  admin:3001+slot*10  api:9000+slot*10  admin_be:9001+slot*10
+Each workspace gets its own local ports so multiple features can run at once.
 
 If no <name> is given, you'll get a Bubble Tea picker. Use --only to skip
 the service-selection screen.`,

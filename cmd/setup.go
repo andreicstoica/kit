@@ -24,8 +24,8 @@ var setupCmd = &cobra.Command{
 	Short: "Install missing tools and bootstrap your kit environment",
 	Long: "**setup** runs the same checks as `kit doctor`, then offers to fix each " +
 		"failure: installs missing tools via Homebrew, runs `gh auth login`, clones " +
-		"the Liftoff master repo, and runs `yarn install` so worktree node_modules " +
-		"symlinks work.\n\n" +
+		"the Liftoff master repo, and installs frontend packages so new " +
+		"workspaces start faster.\n\n" +
 		"You'll be asked before anything is changed. Setup is idempotent — re-run " +
 		"any time.\n\n" +
 		"Pass `--dry-run` (or `-n`) to walk the flow and see what setup would do " +
@@ -98,10 +98,10 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	if adopted > 0 {
-		fmt.Println(tui.StyleOK.Render("✓ existing worktrees ready to go."))
-		fmt.Println(tui.StyleDim.Render("to make a new one, try ") + tui.Code("kit design my-first-kit"))
+		fmt.Println(tui.StyleOK.Render("✓ existing workspaces ready to go."))
+		fmt.Println(tui.StyleDim.Render("to make a new workspace, try ") + tui.Code("kit design my-first-kit"))
 	} else {
-		fmt.Println(tui.StyleOK.Render("✓ ready to go.") + tui.StyleDim.Render(" make a new kit with ") + tui.Code("kit design my-first-kit"))
+		fmt.Println(tui.StyleOK.Render("✓ ready to go.") + tui.StyleDim.Render(" make a new workspace with ") + tui.Code("kit design my-first-kit"))
 	}
 	return nil
 }
@@ -160,17 +160,18 @@ func offerBulkAdopt(layout liftoff.Layout) (int, error) {
 		return 0, nil
 	}
 	fmt.Println()
-	fmt.Println(tui.StyleTitle.Render(fmt.Sprintf("found %d unmanaged worktree(s)", len(cands))))
+	fmt.Println(tui.StyleTitle.Render(fmt.Sprintf("found %d existing workspace(s)", len(cands))))
 	for _, c := range cands {
 		fmt.Printf("  %s  %s\n", c.Name, tui.StyleDim.Render("("+c.Branch+")"))
 	}
 	fmt.Println()
-	fmt.Println(tui.StyleDim.Render("kit will allocate a port slot and write metadata for each. stop running dev servers first for accurate slot picks."))
+	fmt.Println(tui.StyleDim.Render("Kit will remember each workspace and reserve local ports for it. Stop running apps first for the best port picks."))
 
 	accept, err := tui.RunConfirm(tui.ConfirmConfig{
-		Title:    "Adopt all? (allocates port slots + writes metadata)",
-		Negative: "Skip",
-		Default:  true,
+		Title:       "Set up all existing workspaces?",
+		Affirmative: "Set up all",
+		Negative:    "Skip",
+		Default:     true,
 	})
 	if err != nil {
 		return 0, err

@@ -252,7 +252,7 @@ func (m *pauseModel) View() string {
 	case pauseStageDone:
 		body = m.viewDone()
 	case pauseStageAborted:
-		return StyleWarn.Render("aborted.\n")
+		return StyleWarn.Render("cancelled.\n")
 	}
 	return body + "\n" + m.help.View(m.keys)
 }
@@ -260,11 +260,11 @@ func (m *pauseModel) View() string {
 func (m *pauseModel) viewConfirm() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit pause — "+m.chosen.name) + "\n\n")
-	b.WriteString("services to stop:\n")
+	b.WriteString("Apps to stop:\n")
 	for _, s := range m.running {
 		b.WriteString("  " + StyleWarn.Render(Glyph("running")) + "  " + s.Label() + "\n")
 	}
-	b.WriteString("\n" + StyleHelp.Render("[Y]es stop · [n] cancel · backspace back · esc abort"))
+	b.WriteString("\n" + confirmHelp("Stop selected", "Cancel") + StyleHelp.Render(" · backspace: back"))
 	return b.String()
 }
 

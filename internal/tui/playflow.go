@@ -185,10 +185,10 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 		return nil, err
 	}
 	if len(items) == 0 {
-		return nil, errors.New("no worktrees found — run `kit design` first")
+		return nil, errors.New("no workspaces found — run `kit design` first")
 	}
 	pl := list.New(items, NewListDelegate(), 0, 0)
-	StyleList(&pl, "kit play — pick a kit to put on", true)
+	StyleList(&pl, "kit play — pick a workspace", true)
 	m.picker = pl
 
 	return m, nil
@@ -440,24 +440,26 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
-		switch k.String() {
-		case "enter":
-			if it, ok := m.picker.SelectedItem().(playWtItem); ok {
-				m.chosen = it
-				m.stage = playStageToggle
-				return m, nil
-			}
-		case "esc":
-			m.stage = playStageAborted
-			return m, tea.Quit
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			idx := int(k.String()[0] - '0' - 1)
-			items := m.picker.VisibleItems()
-			if idx >= 0 && idx < len(items) {
-				if it, ok := items[idx].(playWtItem); ok {
+		if m.picker.FilterState() != list.Filtering {
+			switch k.String() {
+			case "enter":
+				if it, ok := m.picker.SelectedItem().(playWtItem); ok {
 					m.chosen = it
 					m.stage = playStageToggle
 					return m, nil
+				}
+			case "esc":
+				m.stage = playStageAborted
+				return m, tea.Quit
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				idx := int(k.String()[0] - '0' - 1)
+				items := m.picker.VisibleItems()
+				if idx >= 0 && idx < len(items) {
+					if it, ok := items[idx].(playWtItem); ok {
+						m.chosen = it
+						m.stage = playStageToggle
+						return m, nil
+					}
 				}
 			}
 		}
@@ -504,13 +506,13 @@ func (m *playModel) updateAdopt(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	switch k.String() {
-	case "y", "Y", "enter":
+	switch {
+	case isConfirmYes(k):
 		// Run adopt off the Update loop — it takes a config flock that may
 		// block, which would otherwise freeze the UI.
 		m.stage = playStageAdopting
 		return m, tea.Batch(m.spinner.Tick, m.runAdoptCmd())
-	case "n", "N", "esc":
+	case isConfirmNo(k) || k.String() == "esc":
 		m.stage = playStageAborted
 		return m, tea.Quit
 	}
@@ -551,8 +553,8 @@ func (m *playModel) updateAdopting(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *playModel) updateCelery(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
-		switch k.String() {
-		case "y", "Y", "enter":
+		switch {
+		case isConfirmYes(k):
 			m.celeryAccept = true
 			m.plan.ReplaceCelery = true
 			m.plan.ReplaceVictim = m.celeryVictim
@@ -560,7 +562,7 @@ func (m *playModel) updateCelery(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runOrder = m.plan.Services
 			m.runUpdates = m.layout.RunPlay(m.plan)
 			return m, tea.Batch(m.spinner.Tick, playNext(m.runUpdates))
-		case "n", "N":
+		case isConfirmNo(k):
 			// Drop celery + beat from the plan, then proceed.
 			filtered := make([]liftoff.Service, 0, len(m.plan.Services))
 			for _, s := range m.plan.Services {
@@ -573,7 +575,7 @@ func (m *playModel) updateCelery(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runOrder = m.plan.Services
 			m.runUpdates = m.layout.RunPlay(m.plan)
 			return m, tea.Batch(m.spinner.Tick, playNext(m.runUpdates))
-		case "esc":
+		case k.String() == "esc":
 			m.stage = playStageAborted
 			return m, tea.Quit
 		}
@@ -629,7 +631,7 @@ func (m *playModel) View() string {
 	case playStageDone:
 		body = m.viewDone()
 	case playStageAborted:
-		return StyleWarn.Render("aborted.\n")
+		return StyleWarn.Render("cancelled.\n")
 	}
 	footer := "\n" + m.help.View(m.keys)
 	return body + footer
@@ -639,11 +641,11 @@ func (m *playModel) viewToggle() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit play — "+m.chosen.name) + "\n\n")
 	if m.chosen.slot > 0 {
-		b.WriteString(StyleDim.Render(fmt.Sprintf("slot %d  ports %d/%d/%d/%d\n", m.chosen.slot,
+		b.WriteString(StyleDim.Render(fmt.Sprintf("local slot %d · website %d · admin %d · API %d · admin API %d\n", m.chosen.slot,
 			3000+m.chosen.slot*10, 3001+m.chosen.slot*10,
 			9000+m.chosen.slot*10, 9001+m.chosen.slot*10)))
 	} else {
-		b.WriteString(StyleDim.Render("slot will be allocated when you press Enter\n"))
+		b.WriteString(StyleDim.Render("kit will reserve local ports when you continue\n"))
 	}
 	b.WriteString("\n")
 	ports := liftoff.PortsForSlot(m.chosen.slot)
@@ -668,31 +670,31 @@ func (m *playModel) viewToggle() string {
 		}
 		b.WriteString(cursor + box + " " + padRight(label, 12) + "  " + state + "\n")
 	}
-	b.WriteString("\n" + StyleHelp.Render("space/tab: toggle · enter: continue · backspace: back · esc: abort"))
+	b.WriteString("\n" + StyleHelp.Render("space/tab: choose services · enter: start · backspace: back · esc: cancel"))
 	return b.String()
 }
 
 func (m *playModel) viewAdopt() string {
 	var b strings.Builder
-	b.WriteString(StyleTitle.Render("kit play — adopt first") + "\n\n")
-	b.WriteString(fmt.Sprintf("worktree %s isn't adopted yet.\n", StyleHi.Render(m.chosen.name)))
+	b.WriteString(StyleTitle.Render("kit play — set up this workspace") + "\n\n")
+	b.WriteString(fmt.Sprintf("%s is not saved in kit yet.\n", StyleHi.Render(m.chosen.name)))
+	b.WriteString("Kit can reserve local ports and remember it for next time.\n")
 	if m.adoptBranch != "" {
-		b.WriteString(StyleDim.Render("  branch: "+m.adoptBranch) + "\n")
+		b.WriteString(StyleDim.Render("  Code branch:      "+m.adoptBranch) + "\n")
 	}
 	if m.adoptPath != "" {
-		b.WriteString(StyleDim.Render("  path:   "+m.adoptPath) + "\n")
+		b.WriteString(StyleDim.Render("  Workspace folder: "+m.adoptPath) + "\n")
 	}
-	b.WriteString("\nadopt now? this allocates a port slot + records it in config.toml.\n")
-	b.WriteString("\n" + StyleHelp.Render("[Y]es adopt and continue · [n] abort · esc abort"))
+	b.WriteString("\n" + confirmHelp("Set up and continue", "Cancel"))
 	return b.String()
 }
 
 func (m *playModel) viewCelery() string {
 	var b strings.Builder
-	b.WriteString(StyleTitle.Render("kit play — celery already running") + "\n\n")
-	b.WriteString(fmt.Sprintf("celery is running for %s (pid %d).\n", StyleHi.Render(m.celeryVictim), m.celeryPID))
-	b.WriteString("\nstarting " + StyleHi.Render(m.chosen.name) + "'s celery will kill it.\n\n")
-	b.WriteString(StyleHelp.Render("[Y]es replace · [n] skip celery for this run · esc abort"))
+	b.WriteString(StyleTitle.Render("kit play — background worker already running") + "\n\n")
+	b.WriteString(fmt.Sprintf("Background jobs are already running for %s (pid %d).\n", StyleHi.Render(m.celeryVictim), m.celeryPID))
+	b.WriteString("Starting them here will stop the old ones and move background jobs to " + StyleHi.Render(m.chosen.name) + ".\n\n")
+	b.WriteString(confirmHelp("Move workers here", "Skip workers this time"))
 	return b.String()
 }
 
