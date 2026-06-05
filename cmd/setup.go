@@ -64,12 +64,17 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	applied := 0
+	pendingRestart := map[string]bool{} // check IDs whose fix needs a new shell
 	for _, r := range results {
 		if r.Status == liftoff.CheckOK || r.Status == liftoff.CheckSkip {
 			continue
 		}
-		if err := applyFix(layout, r); err != nil {
+		restart, err := applyFix(layout, r)
+		if err != nil {
 			fmt.Println(tui.StyleErr.Render("error: " + err.Error()))
+		}
+		if restart {
+			pendingRestart[r.ID] = true
 		}
 		applied++
 	}
@@ -81,7 +86,13 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Print(tui.RenderDoctor(results))
 	}
 
-	if liftoff.AnyFailed(results) {
+	// PATH fixes only load in a new shell, so the in-process re-check still
+	// reports them as failing — that's expected, not a real failure. Surface a
+	// restart hint and exclude them from the exit-1 gate.
+	if anyPendingStillFailing(results, pendingRestart) {
+		fmt.Println(tui.StyleWarn.Render("PATH updated — restart your terminal or run `source " + liftoff.ShellProfilePath() + "` for it to take effect."))
+	}
+	if failedExcluding(results, pendingRestart) {
 		fmt.Println(tui.StyleWarn.Render("still has failures — see hints above or re-run `kit setup`."))
 		os.Exit(1)
 	}
@@ -105,6 +116,28 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Println(tui.StyleOK.Render("✓ ready to go.") + tui.StyleDim.Render(" make a new workspace with ") + tui.Code("kit design my-first-kit"))
 	}
 	return nil
+}
+
+// anyPendingStillFailing reports whether any pending-restart check still shows
+// as failing on the re-check (the expected state until the shell reloads).
+func anyPendingStillFailing(results []liftoff.CheckResult, pending map[string]bool) bool {
+	for _, r := range results {
+		if pending[r.ID] && r.Status == liftoff.CheckFail {
+			return true
+		}
+	}
+	return false
+}
+
+// failedExcluding reports whether any check failed, ignoring pending-restart
+// checks (PATH fixes the running process can't see yet).
+func failedExcluding(results []liftoff.CheckResult, pending map[string]bool) bool {
+	for _, r := range results {
+		if r.Status == liftoff.CheckFail && !pending[r.ID] {
+			return true
+		}
+	}
+	return false
 }
 
 // persistSetupSettings writes Root + MasterDir + first installed editor
@@ -246,20 +279,24 @@ func printDryRunPlan(layout liftoff.Layout, results []liftoff.CheckResult) {
 	fmt.Println(tui.StyleDim.Render("rerun without --dry-run to apply."))
 }
 
-func applyFix(layout liftoff.Layout, r liftoff.CheckResult) error {
+// applyFix runs the remediation for one failed check. It returns
+// pendingRestart=true when the fix only takes effect in a new shell (PATH
+// edits), so the caller can skip the in-process re-check for that check —
+// the running process can't see a freshly-appended PATH line.
+func applyFix(layout liftoff.Layout, r liftoff.CheckResult) (pendingRestart bool, err error) {
 	switch r.ID {
 	case "brew":
-		return fixBrewMissing()
+		return false, fixBrewMissing()
 	case "brew-path":
 		return fixBrewPath()
 	case "kit-path":
 		return fixKitPath()
 	case "gh":
-		return fixGh(r)
+		return false, fixGh(r)
 	case "liftoff-master":
-		return fixLiftoffMaster(layout, r)
+		return false, fixLiftoffMaster(layout, r)
 	default:
-		return fixBrewInstall(r)
+		return false, fixBrewInstall(r)
 	}
 }
 
@@ -273,28 +310,30 @@ func fixBrewMissing() error {
 	return nil
 }
 
-func fixBrewPath() error {
+func fixBrewPath() (bool, error) {
 	st := liftoff.DetectBrew()
 	if st.BinaryAt == "" {
-		return nil
+		return false, nil
 	}
 	return fixPathEntry("Homebrew", st.BinaryAt, liftoff.BrewShellenvLine(st.BinaryAt), brewFenceComment)
 }
 
 // fixKitPath adds kit's own bin directory to PATH in the login shell's rc
 // file — the "command not found: kit" fix after go install / make install.
-func fixKitPath() error {
+func fixKitPath() (bool, error) {
 	dir := liftoff.KitBinDir()
 	if liftoff.DirOnPath(dir) {
-		return nil
+		return false, nil
 	}
 	return fixPathEntry("kit", dir, liftoff.PathExportLine(dir), kitPathFenceComment)
 }
 
 // fixPathEntry prompts to append `line` (guarded by `fence` for idempotence)
 // to the login shell's rc file, explaining that `what` lives at `loc` but
-// isn't on PATH. Shared by the brew-path and kit-path fixes.
-func fixPathEntry(what, loc, line, fence string) error {
+// isn't on PATH. Shared by the brew-path and kit-path fixes. Returns true when
+// the line was written (or already present) — the change only takes effect in
+// a new shell, so the caller treats it as pending-restart, not resolved.
+func fixPathEntry(what, loc, line, fence string) (bool, error) {
 	rc := liftoff.ShellProfilePath()
 	fmt.Println(what + " is installed at " + loc + " but isn't on your PATH.")
 	fmt.Println("Adding this line to " + rc + " fixes it:")
@@ -308,16 +347,16 @@ func fixPathEntry(what, loc, line, fence string) error {
 		Default:  true,
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !accept {
-		return nil
+		return false, nil
 	}
 	if err := appendToShellProfile(fence, line); err != nil {
-		return err
+		return false, err
 	}
 	fmt.Println(tui.StyleOK.Render("✓ appended. Restart your terminal or run `source " + rc + "`."))
-	return nil
+	return true, nil
 }
 
 // appendToShellProfile appends a fenced block (fence comment + lines) to the

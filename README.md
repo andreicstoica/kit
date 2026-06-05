@@ -102,6 +102,17 @@ it). `kit play` boots all five (minus mcp) in parallel.
 
 ## Install
 
+One line — installs Go + kit if missing, wires PATH into your shell, runs setup:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/andreicstoica/kit/main/install.sh | bash
+```
+
+After it finishes, open a new terminal so `kit` is on PATH. Works on zsh and bash.
+
+<details>
+<summary>Manual install</summary>
+
 Requires Go. If you don't have it:
 
 ```sh
@@ -131,6 +142,8 @@ kit setup
 Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH` — `kit setup`
 detects your login shell and offers to add it to the right rc file (`~/.zshrc`
 or `~/.bash_profile`). Run `kit completion --help` for shell tab-completion.
+
+</details>
 
 ## Updating
 
