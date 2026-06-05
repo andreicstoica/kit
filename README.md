@@ -387,12 +387,13 @@ managed services are up — `kit pause --all` first.
 
 ### `kit sync` — daily refresh
 
-`gt sync` in master. If trunk fast-forwards onto newly added Alembic migration
-files, kit runs `alembic upgrade head` from master `backend/` with the master
-DB env (`SQLALCHEMY_DATABASE_NAME=liftoff`) forced, so only the main DB is
-updated. Feature worktree DBs are not migrated automatically. Then kit prompts
-to `kit wash --merged` whatever stayed merged. Requires `gt`. Use
-`--no-migrate` to skip the Alembic step.
+`gt sync` in master. When master is on the trunk branch, kit checks whether the
+liftoff DB is at Alembic head and runs `alembic upgrade head` from master
+`backend/` if migrations are pending (master DB env forced:
+`SQLALCHEMY_DATABASE_NAME=liftoff`). Feature worktree DBs are not migrated
+automatically. Ends with a one-line migration status (upgraded, already at head,
+or skipped). Then kit prompts to `kit wash --merged` whatever stayed merged.
+Requires `gt`. Use `--no-migrate` to skip the Alembic step.
 
 ### `kit adopt [name]` (alias `register`) — register a worktree
 

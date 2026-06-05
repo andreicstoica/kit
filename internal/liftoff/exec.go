@@ -15,8 +15,16 @@ type LineFn func(line string)
 // Run executes name with args in dir. Returns combined output on error.
 // Use this for short, non-streaming commands.
 func Run(dir, name string, args ...string) (string, error) {
+	return RunEnv(dir, name, args, nil)
+}
+
+// RunEnv is Run with an explicit process environment.
+func RunEnv(dir, name string, args []string, env []string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	if env != nil {
+		cmd.Env = env
+	}
 	out, err := cmd.CombinedOutput()
 	s := strings.TrimRight(string(out), "\n")
 	if err != nil {

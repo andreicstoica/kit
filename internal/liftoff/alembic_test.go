@@ -129,6 +129,127 @@ func TestAlembicUpgradeHeadForcesMasterDBEnv(t *testing.T) {
 	}
 }
 
+func installFakeAlembicCurrent(t *testing.T, currentOut string) {
+	t.Helper()
+	venv := filepath.Join(t.TempDir(), "venv")
+	bin := filepath.Join(venv, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeAlembic := filepath.Join(bin, "alembic")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  current) printf '%s\\n' \"$CURRENT\" ;;\n" +
+		"  upgrade) echo \"Running upgrade\" ;;\n" +
+		"  *) echo \"unexpected: $*\" >&2; exit 1 ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(fakeAlembic, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KIT_PY_VENV", venv)
+	t.Setenv("CURRENT", currentOut)
+}
+
+func TestAlembicAtHead(t *testing.T) {
+	l := newMasterRepo(t)
+	backend := filepath.Join(l.Master, "backend")
+	if err := os.MkdirAll(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	installFakeAlembicCurrent(t, "a4b8c1e9d6f3 (head)")
+	atHead, err := l.AlembicAtHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !atHead {
+		t.Fatal("AlembicAtHead = false, want true when current shows (head)")
+	}
+
+	t.Setenv("CURRENT", "e58a3c2f9d10")
+	atHead, err = l.AlembicAtHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if atHead {
+		t.Fatal("AlembicAtHead = true, want false when current is behind head")
+	}
+}
+
+func TestAlembicAtHeadEmptyCurrentIsBehind(t *testing.T) {
+	l := newMasterRepo(t)
+	backend := filepath.Join(l.Master, "backend")
+	if err := os.MkdirAll(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installFakeAlembicCurrent(t, "")
+
+	atHead, err := l.AlembicAtHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if atHead {
+		t.Fatal("AlembicAtHead = true, want false when no revision is applied")
+	}
+}
+
+func TestAlembicAtHeadIgnoresLogLines(t *testing.T) {
+	l := newMasterRepo(t)
+	backend := filepath.Join(l.Master, "backend")
+	if err := os.MkdirAll(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installFakeAlembicCurrent(t, "INFO Context impl PostgresqlImpl.\na4b8c1e9d6f3 (head)")
+
+	atHead, err := l.AlembicAtHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !atHead {
+		t.Fatal("AlembicAtHead = false, want true when (head) appears among log lines")
+	}
+}
+
+func TestAlembicAtHeadRefusesFeatureDBInMasterEnv(t *testing.T) {
+	l := newMasterRepo(t)
+	backend := filepath.Join(l.Master, "backend")
+	if err := os.MkdirAll(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backend, ".env"), []byte("SQLALCHEMY_DATABASE_NAME=liftoff_feature\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	installFakeAlembicCurrent(t, "a4b8c1e9d6f3 (head)")
+
+	_, err := l.AlembicAtHead()
+	if err == nil || !strings.Contains(err.Error(), "refusing alembic") {
+		t.Fatalf("AlembicAtHead error = %v, want refusal", err)
+	}
+}
+
+func TestMasterBackendEnvDBName(t *testing.T) {
+	l := newMasterRepo(t)
+	backend := filepath.Join(l.Master, "backend")
+	if err := os.MkdirAll(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	name, found, err := l.MasterBackendEnvDBName()
+	if err != nil || found || name != "" {
+		t.Fatalf("missing .env = (%q, %v, %v), want (\"\", false, nil)", name, found, err)
+	}
+
+	if err := os.WriteFile(filepath.Join(backend, ".env"), []byte(
+		"# comment\nSQLALCHEMY_DATABASE_NAME=\"liftoff\"\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	name, found, err = l.MasterBackendEnvDBName()
+	if err != nil || !found || name != "liftoff" {
+		t.Fatalf("quoted liftoff = (%q, %v, %v), want (liftoff, true, nil)", name, found, err)
+	}
+}
+
 func TestAlembicUpgradeHeadRefusesFeatureDBInMasterEnv(t *testing.T) {
 	l := newMasterRepo(t)
 	backend := filepath.Join(l.Master, "backend")
@@ -140,7 +261,7 @@ func TestAlembicUpgradeHeadRefusesFeatureDBInMasterEnv(t *testing.T) {
 	}
 
 	err := l.AlembicUpgradeHead(nil)
-	if err == nil || !strings.Contains(err.Error(), "refusing alembic upgrade") {
+	if err == nil || !strings.Contains(err.Error(), "refusing alembic") {
 		t.Fatalf("AlembicUpgradeHead error = %v, want refusal", err)
 	}
 }

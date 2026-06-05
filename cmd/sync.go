@@ -20,7 +20,7 @@ var syncCmd = &cobra.Command{
 	Short: "Run `gt sync` in master, then offer to wash merged/closed worktrees",
 	Long: "**sync** is the daily refresh:\n\n" +
 		"1. Runs `gt sync` inside the master repo (pulls trunk, restacks, prunes merged local branches).\n" +
-		"2. If `gt sync` fast-forwarded master onto new Alembic migrations, runs `alembic upgrade head` in master's backend so the local master DB mirrors remote master.\n" +
+		"2. When master is on the trunk branch, checks the liftoff DB against Alembic head and runs `alembic upgrade head` if migrations are pending.\n" +
 		"3. Scans worktrees for merged/closed PR branches; if any remain, prompts to run `kit wash --merged` (multi-select wash).\n\n" +
 		"Requires `gt` (Graphite). Pass `--no-tear` to skip the post-sync merged-wash, `--no-migrate` to skip the Alembic upgrade.",
 	RunE: runSync,
@@ -30,6 +30,22 @@ func init() {
 	syncCmd.Flags().BoolVar(&syncSkipTear, "no-tear", false, "skip the merged-wash prompt after `gt sync`")
 	syncCmd.Flags().BoolVar(&syncSkipMigrate, "no-migrate", false, "skip the `alembic upgrade head` after `gt sync`")
 	rootCmd.AddCommand(syncCmd)
+}
+
+type migrateStatus int
+
+const (
+	migrateSkippedNoMigrate migrateStatus = iota
+	migrateSkippedNotTrunk
+	migrateAtHead
+	migrateUpgraded
+	migrateFailed
+)
+
+type migrateResult struct {
+	status migrateStatus
+	branch string
+	err    error
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -42,10 +58,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println(tui.StyleTitle.Render("kit sync — gt sync in master"))
-	// Snapshot master's HEAD so we can tell, post-sync, whether it
-	// fast-forwarded onto new migrations. Best-effort: an error here just
-	// disables the migration check (NewMigrations treats "" as no-op). Only
-	// snapshot when the master repo is actually on the configured trunk branch.
+	// Snapshot master's HEAD so we can list migrations that landed during this
+	// sync. Best-effort: an error here just disables the listing. Only snapshot
+	// when the master repo is actually on the configured trunk branch.
 	oldHead := ""
 	if branch, err := layout.MasterBranch(); err == nil && branch == layout.MainBranch {
 		oldHead, _ = layout.MasterHead()
@@ -60,14 +75,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("gt sync failed: %w", err)
 	}
 
+	migrate := migrateResult{status: migrateSkippedNoMigrate}
 	if !syncSkipMigrate {
-		if err := runMasterMigrate(layout, oldHead); err != nil {
-			return err
-		}
+		migrate = runMasterMigrate(layout, oldHead)
 	}
 
+	var retErr error
 	if syncSkipTear {
-		return nil
+		printMigrateSummary(layout, migrate)
+		return retErr
 	}
 
 	cands, err := layout.FindMergedWorktrees()
@@ -75,9 +91,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if len(cands) == 0 {
-		fmt.Println()
+		printMigrateSummary(layout, migrate)
 		fmt.Println(tui.StyleOK.Render("✓ no merged worktrees to wash."))
-		return nil
+		return retErr
 	}
 
 	fmt.Println()
@@ -96,43 +112,75 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if !accept {
-		return nil
+		printMigrateSummary(layout, migrate)
+		return retErr
 	}
-	return tui.RunMergedWashTUI(layout)
+	retErr = tui.RunMergedWashTUI(layout)
+	printMigrateSummary(layout, migrate)
+	return retErr
 }
 
-// runMasterMigrate runs `alembic upgrade head` in master's backend when
-// `gt sync` fast-forwarded master onto new Alembic version files. No-op when
-// master didn't move or no migrations landed — so the local master DB always
-// mirrors remote master, staying a clean base for worktrees to clone from.
-func runMasterMigrate(layout liftoff.Layout, oldHead string) error {
+func printMigrateSummary(layout liftoff.Layout, migrate migrateResult) {
+	fmt.Println()
+	switch migrate.status {
+	case migrateSkippedNoMigrate:
+		fmt.Println(tui.StyleDim.Render("⊘ master DB migration skipped (--no-migrate)."))
+	case migrateSkippedNotTrunk:
+		fmt.Println(tui.StyleDim.Render(fmt.Sprintf(
+			"⊘ master DB migration skipped (master on %s, want %s).",
+			migrate.branch, layout.MainBranch,
+		)))
+	case migrateAtHead:
+		fmt.Println(tui.StyleOK.Render("✓ master DB (liftoff) already at head."))
+	case migrateUpgraded:
+		fmt.Println(tui.StyleOK.Render("✓ master DB (liftoff) upgraded to head."))
+	case migrateFailed:
+		if migrate.err != nil {
+			fmt.Println(tui.StyleErr.Render("✗ master DB migration failed: " + migrate.err.Error()))
+		} else {
+			fmt.Println(tui.StyleErr.Render("✗ master DB migration failed."))
+		}
+	}
+	if migrate.status != migrateSkippedNoMigrate && migrate.status != migrateSkippedNotTrunk {
+		fmt.Println(tui.StyleDim.Render("  feature DBs were not migrated."))
+	}
+}
+
+// runMasterMigrate runs `alembic upgrade head` in master's backend when the
+// liftoff DB is behind Alembic head. Master must be on the trunk branch.
+func runMasterMigrate(layout liftoff.Layout, oldHead string) migrateResult {
 	branch, err := layout.MasterBranch()
-	if err != nil || branch != layout.MainBranch {
-		return nil
-	}
-	newHead, err := layout.MasterHead()
 	if err != nil {
-		return nil // can't compare; skip rather than block the sync
+		return migrateResult{status: migrateSkippedNotTrunk, branch: "?"}
 	}
-	migs, err := layout.NewMigrations(oldHead, newHead)
-	if err != nil || len(migs) == 0 {
-		return nil
+	if branch != layout.MainBranch {
+		return migrateResult{status: migrateSkippedNotTrunk, branch: branch}
+	}
+
+	newHead, _ := layout.MasterHead()
+	newMigs, _ := layout.NewMigrations(oldHead, newHead)
+
+	atHead, err := layout.AlembicAtHead()
+	if err != nil {
+		return migrateResult{status: migrateFailed, err: err}
+	}
+	if atHead {
+		return migrateResult{status: migrateAtHead}
 	}
 
 	fmt.Println()
-	fmt.Println(tui.StyleTitle.Render(fmt.Sprintf("%d new migration(s) on master — alembic upgrade head", len(migs))))
-	for _, m := range migs {
+	title := "master DB behind head — alembic upgrade head"
+	if len(newMigs) > 0 {
+		title = fmt.Sprintf("%d new migration(s) on master — alembic upgrade head", len(newMigs))
+	}
+	fmt.Println(tui.StyleTitle.Render(title))
+	for _, m := range newMigs {
 		fmt.Printf("  %s\n", tui.StyleDim.Render(m))
 	}
 	if err := layout.AlembicUpgradeHead(func(line string) {
 		fmt.Println("  " + tui.StyleDim.Render(line))
 	}); err != nil {
-		// Don't abort the sync on a failed upgrade — surface it and let the
-		// merged-wash flow continue.
-		fmt.Println(tui.StyleErr.Render("✗ alembic upgrade failed: " + err.Error()))
-		return nil
+		return migrateResult{status: migrateFailed, err: err}
 	}
-	fmt.Println(tui.StyleOK.Render("✓ master DB (liftoff) upgraded to head."))
-	fmt.Println(tui.StyleDim.Render("  feature DBs were not migrated."))
-	return nil
+	return migrateResult{status: migrateUpgraded}
 }

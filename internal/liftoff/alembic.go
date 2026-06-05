@@ -83,14 +83,39 @@ func (l Layout) MasterBackendEnvDBName() (name string, found bool, err error) {
 	return "", false, nil
 }
 
+func (l Layout) validateMasterAlembicDB() error {
+	if dbName, found, err := l.MasterBackendEnvDBName(); err != nil {
+		return err
+	} else if found && dbName != "" && dbName != masterAlembicDBName {
+		return fmt.Errorf("refusing alembic: master backend/.env points at SQLALCHEMY_DATABASE_NAME=%s, want %s", dbName, masterAlembicDBName)
+	}
+	return nil
+}
+
+func (l Layout) runAlembic(args ...string) (string, error) {
+	if err := l.validateMasterAlembicDB(); err != nil {
+		return "", err
+	}
+	backend := filepath.Join(l.Master, "backend")
+	return RunEnv(backend, venvBin("alembic"), args, masterAlembicEnv())
+}
+
+// AlembicAtHead reports whether master's liftoff DB is at the Alembic head
+// revision. False with a nil error means migrations are pending.
+func (l Layout) AlembicAtHead() (bool, error) {
+	out, err := l.runAlembic("current")
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(out, "(head)"), nil
+}
+
 // AlembicUpgradeHead runs `alembic upgrade head` in master's backend dir, using
 // the venv's alembic (same resolution as pip in InstallBackend) so it works
 // without an activated shell.
 func (l Layout) AlembicUpgradeHead(onLine LineFn) error {
-	if dbName, found, err := l.MasterBackendEnvDBName(); err != nil {
+	if err := l.validateMasterAlembicDB(); err != nil {
 		return err
-	} else if found && dbName != "" && dbName != masterAlembicDBName {
-		return fmt.Errorf("refusing alembic upgrade: master backend/.env points at SQLALCHEMY_DATABASE_NAME=%s, want %s", dbName, masterAlembicDBName)
 	}
 	backend := filepath.Join(l.Master, "backend")
 	return RunStreamEnv(backend, venvBin("alembic"), []string{"upgrade", "head"}, masterAlembicEnv(), onLine)
