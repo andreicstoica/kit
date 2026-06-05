@@ -3,7 +3,6 @@ package liftoff
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"text/template"
 )
 
@@ -215,12 +214,8 @@ func (l Layout) EnsureGtabDir() error {
 // interactive PATH. Falls back to "kit" if resolution fails — the
 // gtab will still work for users whose system PATH covers it.
 func kitBinaryPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "kit"
+	if exe, err := ResolvedExecutable(); err == nil {
+		return exe
 	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		return resolved
-	}
-	return exe
+	return "kit"
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/charmbracelet/bubbles/list"
@@ -44,7 +45,7 @@ func PickEditor(editors []liftoff.EditorCandidate) (*liftoff.EditorCandidate, er
 		items = append(items, editorItem{c: e, displayIdx: len(items) + 1})
 	}
 	if len(items) == 0 {
-		return nil, errors.New("no supported editor found (looked for Zed, Cursor, VS Code on PATH or in /Applications)")
+		return nil, fmt.Errorf("no supported editor found (looked for %s on PATH or in /Applications)", strings.Join(liftoff.EditorNames(), ", "))
 	}
 	chosen, ok, err := RunListPicker(ListPickerConfig{
 		Title:  "kit swap — pick an editor",

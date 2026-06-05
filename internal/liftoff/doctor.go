@@ -43,6 +43,7 @@ func DefaultChecks(layout Layout) []Check {
 	return []Check{
 		{ID: "brew", Run: checkBrew},
 		{ID: "brew-path", Run: checkBrewPath},
+		{ID: "kit-path", Run: checkKitPath},
 		{ID: "git", Run: checkGit},
 		{ID: "gh", Run: checkGh},
 		{ID: "node-yarn", Run: checkNodeYarn},
@@ -162,7 +163,25 @@ func checkBrewPath() CheckResult {
 	}
 	r.Status = CheckFail
 	r.Detail = "brew at " + st.BinaryAt + " but not on PATH"
-	r.FixHint = `add this line to ~/.zshrc: ` + BrewShellenvLine(st.BinaryAt)
+	r.FixHint = "add to " + ShellProfilePath() + ": " + BrewShellenvLine(st.BinaryAt)
+	return r
+}
+
+// checkKitPath flags the case where kit's own bin directory isn't on PATH —
+// the usual "command not found: kit" after `go install`/`make install` when
+// ~/.local/bin (or GOPATH/bin) was never added to the shell. Skipped (not
+// shown) when the dir is already on PATH. Like brew-path, FixCmd stays nil:
+// the fix is a shell-profile edit (fixKitPath in setup.go), not a brew install.
+func checkKitPath() CheckResult {
+	r := CheckResult{Name: "kit-path"}
+	dir := KitBinDir()
+	if DirOnPath(dir) {
+		r.Status = CheckSkip
+		return r
+	}
+	r.Status = CheckFail
+	r.Detail = "kit at " + dir + " but not on PATH"
+	r.FixHint = "add to " + ShellProfilePath() + ": " + PathExportLine(dir)
 	return r
 }
 

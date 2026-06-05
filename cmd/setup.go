@@ -15,7 +15,8 @@ import (
 
 const liftoffMasterRepoURL = "https://github.com/liftoff-inc/liftoff-app.git"
 const brewInstallScript = `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
-const zshrcFenceComment = "# kit-setup: brew shellenv"
+const brewFenceComment = "# kit-setup: brew shellenv"
+const kitPathFenceComment = "# kit-setup: kit on PATH"
 
 var setupDryRun bool
 
@@ -211,7 +212,9 @@ func printDryRunPlan(layout liftoff.Layout, results []liftoff.CheckResult) {
 			fmt.Printf("      print Homebrew install command, exit (no auto-run)\n")
 		case "brew-path":
 			st := liftoff.DetectBrew()
-			fmt.Printf("      prompt to append %q to ~/.zshrc\n", liftoff.BrewShellenvLine(st.BinaryAt))
+			fmt.Printf("      prompt to append %q to %s\n", liftoff.BrewShellenvLine(st.BinaryAt), liftoff.ShellProfilePath())
+		case "kit-path":
+			fmt.Printf("      prompt to append %q to %s\n", liftoff.PathExportLine(liftoff.KitBinDir()), liftoff.ShellProfilePath())
 		case "gh":
 			if len(r.FixCmd) > 0 {
 				fmt.Printf("      brew install %s\n", strings.Join(r.FixCmd, " "))
@@ -249,6 +252,8 @@ func applyFix(layout liftoff.Layout, r liftoff.CheckResult) error {
 		return fixBrewMissing()
 	case "brew-path":
 		return fixBrewPath()
+	case "kit-path":
+		return fixKitPath()
 	case "gh":
 		return fixGh(r)
 	case "liftoff-master":
@@ -273,15 +278,32 @@ func fixBrewPath() error {
 	if st.BinaryAt == "" {
 		return nil
 	}
-	line := liftoff.BrewShellenvLine(st.BinaryAt)
-	fmt.Println("Homebrew is installed at " + st.BinaryAt + " but `brew` isn't on your PATH.")
-	fmt.Println("Adding this line to ~/.zshrc fixes it:")
+	return fixPathEntry("Homebrew", st.BinaryAt, liftoff.BrewShellenvLine(st.BinaryAt), brewFenceComment)
+}
+
+// fixKitPath adds kit's own bin directory to PATH in the login shell's rc
+// file — the "command not found: kit" fix after go install / make install.
+func fixKitPath() error {
+	dir := liftoff.KitBinDir()
+	if liftoff.DirOnPath(dir) {
+		return nil
+	}
+	return fixPathEntry("kit", dir, liftoff.PathExportLine(dir), kitPathFenceComment)
+}
+
+// fixPathEntry prompts to append `line` (guarded by `fence` for idempotence)
+// to the login shell's rc file, explaining that `what` lives at `loc` but
+// isn't on PATH. Shared by the brew-path and kit-path fixes.
+func fixPathEntry(what, loc, line, fence string) error {
+	rc := liftoff.ShellProfilePath()
+	fmt.Println(what + " is installed at " + loc + " but isn't on your PATH.")
+	fmt.Println("Adding this line to " + rc + " fixes it:")
 	fmt.Println()
 	fmt.Println("  " + line)
 	fmt.Println()
 
 	accept, err := tui.RunConfirm(tui.ConfirmConfig{
-		Title:    "Append shellenv line to ~/.zshrc?",
+		Title:    "Append line to " + filepath.Base(rc) + "?",
 		Negative: "Skip",
 		Default:  true,
 	})
@@ -291,24 +313,23 @@ func fixBrewPath() error {
 	if !accept {
 		return nil
 	}
-	if err := appendToZshrc(line); err != nil {
+	if err := appendToShellProfile(fence, line); err != nil {
 		return err
 	}
-	fmt.Println(tui.StyleOK.Render("✓ appended. Restart your terminal or run `source ~/.zshrc`."))
+	fmt.Println(tui.StyleOK.Render("✓ appended. Restart your terminal or run `source " + rc + "`."))
 	return nil
 }
 
-func appendToZshrc(shellenv string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(home, ".zshrc")
+// appendToShellProfile appends a fenced block (fence comment + lines) to the
+// login shell's rc file, detected via $SHELL so bash users get ~/.bash_profile
+// and zsh users get ~/.zshrc. Idempotent: a present fence comment is a no-op.
+func appendToShellProfile(fence string, lines ...string) error {
+	path := liftoff.ShellProfilePath()
 	existing, _ := os.ReadFile(path)
-	if strings.Contains(string(existing), zshrcFenceComment) {
+	if strings.Contains(string(existing), fence) {
 		return nil
 	}
-	block := "\n" + zshrcFenceComment + "\n" + shellenv + "\n"
+	block := "\n" + fence + "\n" + strings.Join(lines, "\n") + "\n"
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err

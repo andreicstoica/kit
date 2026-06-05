@@ -29,11 +29,12 @@ const SkipSentinel = "__skip__"
 // so UseOpen records whether to launch via `open -a App` vs the CLI binary.
 type EditorCandidate struct {
 	Name      string
-	Binary    string // CLI binary name (preferred when on PATH)
+	Binary    string // CLI binary name (preferred when on PATH unless AppOnly)
 	App       string // .app bundle name (e.g. "Zed.app") for `open -a`
 	Desc      string
 	Installed bool
 	UseOpen   bool // true when launch is via `open -a App` not `binary`
+	AppOnly   bool // always launch via the .app bundle; ignore any PATH binary
 }
 
 // editorDefs is the canonical candidate list, ordered by preference.
@@ -42,7 +43,24 @@ func editorDefs() []EditorCandidate {
 		{Name: "Zed", Binary: "zed", App: "Zed.app", Desc: "open in Zed"},
 		{Name: "Cursor", Binary: "cursor", App: "Cursor.app", Desc: "open in Cursor"},
 		{Name: "VS Code", Binary: "code", App: "Visual Studio Code.app", Desc: "open in VS Code"},
+		// Claude Code desktop's GUI is Claude.app, which registers public.folder
+		// as an Editor doc type — so `open -a Claude.app <path>` opens the
+		// worktree as a Claude Code session. AppOnly forces that bundle launch:
+		// the `claude` CLI starts a terminal session, not the GUI, so we never
+		// want the PATH-binary path. Binary stays the `-e` invocation token.
+		{Name: "Claude Code desktop", Binary: "claude-code-desktop", App: "Claude.app", Desc: "open in Claude Code desktop", AppOnly: true},
 	}
+}
+
+// EditorNames returns the display names of all known editor candidates, for
+// user-facing "looked for ..." messages so they stay in sync with editorDefs.
+func EditorNames() []string {
+	defs := editorDefs()
+	names := make([]string, len(defs))
+	for i, d := range defs {
+		names[i] = d.Name
+	}
+	return names
 }
 
 // InstalledEditors returns only candidates that are actually installed.
@@ -67,8 +85,10 @@ func InstalledEditors() []EditorCandidate {
 			if appBundleExists(c.App) {
 				c.Installed = true
 				c.UseOpen = true
-				if _, err := exec.LookPath(c.Binary); err == nil {
-					c.UseOpen = false
+				if !c.AppOnly {
+					if _, err := exec.LookPath(c.Binary); err == nil {
+						c.UseOpen = false
+					}
 				}
 				out = append(out, c)
 			}
@@ -98,9 +118,11 @@ func ResolveEditor(name string) *EditorCandidate {
 	for _, def := range editorDefs() {
 		if def.Binary == name || strings.EqualFold(def.Name, name) {
 			c := def
-			if _, err := exec.LookPath(c.Binary); err == nil {
-				c.Installed = true
-				return &c
+			if !c.AppOnly {
+				if _, err := exec.LookPath(c.Binary); err == nil {
+					c.Installed = true
+					return &c
+				}
 			}
 			if c.App != "" && appBundleExists(c.App) {
 				c.Installed = true

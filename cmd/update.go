@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -48,12 +49,9 @@ var updateCmd = &cobra.Command{
 			return nil
 		}
 
-		self, err := os.Executable()
+		self, err := liftoff.ResolvedExecutable()
 		if err != nil {
 			return err
-		}
-		if resolved, err := filepath.EvalSymlinks(self); err == nil {
-			self = resolved
 		}
 
 		// Cap the whole operation so a network/VCS stall can't hang forever.

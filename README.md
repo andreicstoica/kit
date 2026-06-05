@@ -106,8 +106,10 @@ Requires Go. If you don't have it:
 
 ```sh
 brew install go
-echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
-source ~/.zshrc
+# append to the right rc for your login shell (zsh → ~/.zshrc, bash → ~/.bash_profile)
+profile="$HOME/.zshrc"; [ "$(basename "$SHELL")" = bash ] && profile="$HOME/.bash_profile"
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> "$profile"
+source "$profile"
 ```
 
 Then install kit and run setup:
@@ -126,8 +128,9 @@ make install                  # → ~/.local/bin/kit
 kit setup
 ```
 
-Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH`. Run
-`kit completion --help` for shell tab-completion.
+Make sure `~/.local/bin` (or `$(go env GOPATH)/bin`) is on `PATH` — `kit setup`
+detects your login shell and offers to add it to the right rc file (`~/.zshrc`
+or `~/.bash_profile`). Run `kit completion --help` for shell tab-completion.
 
 ## Updating
 
