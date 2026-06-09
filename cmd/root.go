@@ -35,7 +35,7 @@ var rootCmd = &cobra.Command{
 		"- `wash` (`rm`, `remove`, `delete`) — strip a kit (`--merged` bulk-washes merged/closed)\n" +
 		"- `swap` (`open`, `gtab`) — open the worktree in your IDE (`--workspace` for Ghostty)\n" +
 		"- `links` (`urls`, `ports`) — print the worktree's URLs\n" +
-		"- `diff` — show the worktree's diff vs master (via lumen if installed)\n" +
+		"- `diff` — show the worktree's diff vs master (via hunk if installed)\n" +
 		"- `submit` — push the worktree's branch via `gt submit` (`--stack`, `--draft`)\n" +
 		"- `sync` — `gt sync` master + prune merged worktrees\n" +
 		"- `adopt` (`register`) — register an existing worktree (allocate a slot)\n" +
