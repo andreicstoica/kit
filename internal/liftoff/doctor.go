@@ -53,7 +53,7 @@ func DefaultChecks(layout Layout) []Check {
 		{ID: "postgres", Run: checkPostgres},
 		{ID: "ghostty", Run: checkGhostty},
 		{ID: "editor", Run: checkEditor},
-		{ID: "lumen", Run: checkLumen},
+		{ID: "hunk", Run: checkHunk},
 		{ID: "liftoff-master", Run: func() CheckResult { return checkLiftoffMaster(layout) }},
 		{ID: "kit-config", Run: checkKitConfig},
 	}
@@ -404,16 +404,16 @@ func checkEditor() CheckResult {
 	return r
 }
 
-func checkLumen() CheckResult {
-	r := CheckResult{Name: "lumen"}
-	if _, err := exec.LookPath("lumen"); err != nil {
+func checkHunk() CheckResult {
+	r := CheckResult{Name: "hunk"}
+	if _, err := exec.LookPath("hunk"); err != nil {
 		r.Status = CheckWarn
 		r.Detail = "not installed — `kit diff` falls back to plain `git diff`"
-		r.FixHint = "brew install jnsahaj/lumen/lumen"
-		r.FixCmd = []string{"jnsahaj/lumen/lumen"}
+		r.FixHint = "brew install modem-dev/tap/hunk"
+		r.FixCmd = []string{"modem-dev/tap/hunk"}
 		return r
 	}
-	ver, _ := ToolVersion("lumen", "--version")
+	ver, _ := ToolVersion("hunk", "--version")
 	r.Status = CheckOK
 	r.Detail = firstLine(ver)
 	return r

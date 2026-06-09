@@ -16,8 +16,8 @@ var diffCmd = &cobra.Command{
 	Use:   "diff [name]",
 	Short: "Show the worktree's diff vs master",
 	Long: "**diff** runs an interactive diff of the worktree against master.\n\n" +
-		"Uses [lumen](https://github.com/jnsahaj/lumen) when installed " +
-		"(side-by-side viewer + syntax highlight); falls back to plain " +
+		"Uses [hunk](https://github.com/modem-dev/hunk) when installed " +
+		"(desktop-style side-by-side viewer + syntax highlight); falls back to plain " +
 		"`git diff` otherwise. Pass `--plain` to force git's default.\n\n" +
 		"With no arg, resolves the worktree from cwd or opens a picker.",
 	Args:              cobra.MaximumNArgs(1),
@@ -47,14 +47,14 @@ var diffCmd = &cobra.Command{
 
 		var c *exec.Cmd
 		if !diffPlain {
-			if _, err := exec.LookPath("lumen"); err == nil {
-				c = exec.Command("lumen", "diff", ref)
+			if _, err := exec.LookPath("hunk"); err == nil {
+				c = exec.Command("hunk", "diff", ref)
 			}
 		}
 		if c == nil {
 			c = exec.Command("git", "diff", mainBranch+"...HEAD")
 			if !diffPlain {
-				fmt.Println(tui.StyleDim.Render("(install `lumen` for an interactive side-by-side viewer)"))
+				fmt.Println(tui.StyleDim.Render("(install `hunk` for an interactive side-by-side viewer)"))
 			}
 		}
 		c.Dir = path
@@ -66,6 +66,6 @@ var diffCmd = &cobra.Command{
 }
 
 func init() {
-	diffCmd.Flags().BoolVar(&diffPlain, "plain", false, "use plain git diff even if lumen is installed")
+	diffCmd.Flags().BoolVar(&diffPlain, "plain", false, "use plain git diff even if hunk is installed")
 	rootCmd.AddCommand(diffCmd)
 }

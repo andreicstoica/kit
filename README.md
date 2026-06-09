@@ -28,7 +28,7 @@ kit play <name>          # start services
 kit pause <name>         # stop services
 kit restart <name>       # stop then start (bounce a hung service)
 kit log <name>           # tail logs (color-coded, / search, t filter)
-kit diff                 # diff vs master (lumen-aware)
+kit diff                 # diff vs master (hunk-aware)
 kit submit <name>        # push the branch via gt submit (--stack/--draft)
 kit sync                 # gt sync + migrate master DB + prune merged worktrees
 kit wash [--merged]      # strip a kit (--merged bulk-washes merged/closed)
@@ -98,7 +98,7 @@ it). `kit play` boots all five (minus mcp) in parallel.
 | `gt` (graphite) | "Track in graphite" toggle, `kit sync`, gt stack in lineup |
 | `gh` (GitHub CLI) | `kit wash --merged` checks PR state |
 | `zed` / `cursor` / `code` | any one suffices for `kit swap`. Override via `KIT_EDITOR`. |
-| `lumen` | nicer side-by-side `kit diff` |
+| `hunk` | nicer side-by-side `kit diff` |
 
 ## Install
 
@@ -170,7 +170,7 @@ kit setup
 ```
 
 Walks the toolchain (brew, gt, gh, node/yarn, python+venv, redis, rabbitmq,
-postgres, Ghostty, an editor, lumen), offers to install missing pieces via
+postgres, Ghostty, an editor, hunk), offers to install missing pieces via
 Homebrew, runs `gh auth login` if needed, clones the Liftoff master repo,
 runs `yarn install` so frontend node_modules symlinks work, and bulk-adopts
 any existing worktrees.
@@ -384,7 +384,7 @@ pointing editors / coding tools at the raw `.log` files.
 
 ### `kit diff [name]` — diff vs master
 
-Uses [lumen](https://github.com/jnsahaj/lumen) when installed; falls back
+Uses [hunk](https://github.com/modem-dev/hunk) when installed; falls back
 to plain `git diff`. `--plain` forces plain.
 
 ### `kit submit [name]` — push to GitHub

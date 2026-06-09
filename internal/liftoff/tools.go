@@ -57,6 +57,11 @@ func BrewInstall(pkg string, cask bool, onLine LineFn) error {
 	return RunStream("", "brew", args, onLine)
 }
 
+// BrewUninstall runs `brew uninstall pkg` and streams output via onLine.
+func BrewUninstall(pkg string, onLine LineFn) error {
+	return RunStream("", "brew", []string{"uninstall", pkg}, onLine)
+}
+
 // ToolVersion runs `name <args...>` and returns trimmed stdout.
 // Returns "" + error on failure.
 func ToolVersion(name string, args ...string) (string, error) {

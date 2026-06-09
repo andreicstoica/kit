@@ -63,6 +63,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// kit migrated its diff viewer from lumen to hunk — remove the stale tool.
+	if err := offerLumenRemoval(); err != nil {
+		fmt.Println(tui.StyleErr.Render("error: " + err.Error()))
+	}
+
 	applied := 0
 	pendingRestart := map[string]bool{} // check IDs whose fix needs a new shell
 	for _, r := range results {
@@ -234,6 +239,11 @@ func offerBulkAdopt(layout liftoff.Layout) (int, error) {
 func printDryRunPlan(layout liftoff.Layout, results []liftoff.CheckResult) {
 	fmt.Println(tui.StyleTitle.Render("planned actions"))
 	any := false
+	if _, err := exec.LookPath("lumen"); err == nil {
+		any = true
+		fmt.Printf("  %s\n", tui.StyleHi.Render("• lumen"))
+		fmt.Printf("      brew uninstall lumen (kit now diffs via hunk)\n")
+	}
 	for _, r := range results {
 		if r.Status == liftoff.CheckOK || r.Status == liftoff.CheckSkip {
 			continue
@@ -473,6 +483,33 @@ func masterYarnInstall(layout liftoff.Layout) error {
 		}
 	}
 	return nil
+}
+
+// offerLumenRemoval uninstalls the old `lumen` diff viewer if it's still
+// present. kit's `diff` now drives `hunk`; leaving lumen around is harmless
+// but confusing, so setup offers to clean it up. Skipped silently when lumen
+// isn't installed or brew isn't reachable.
+func offerLumenRemoval() error {
+	if _, err := exec.LookPath("lumen"); err != nil {
+		return nil // not installed — nothing to migrate
+	}
+	st := liftoff.DetectBrew()
+	if !st.OnPath {
+		return nil // can't uninstall without brew on PATH
+	}
+	accept, err := tui.RunConfirm(tui.ConfirmConfig{
+		Title:    "kit now uses `hunk` for diffs — run `brew uninstall lumen`?",
+		Negative: "Keep",
+		Default:  true,
+	})
+	if err != nil {
+		return err
+	}
+	if !accept {
+		return nil
+	}
+	fmt.Println(tui.StyleDim.Render("brew uninstall lumen …"))
+	return liftoff.BrewUninstall("lumen", streamLine)
 }
 
 func fixBrewInstall(r liftoff.CheckResult) error {
