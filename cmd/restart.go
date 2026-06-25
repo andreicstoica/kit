@@ -8,7 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var restartOnly []string
+var (
+	restartOnly      []string
+	restartKeepCache bool
+)
 
 var restartCmd = &cobra.Command{
 	Use:     "restart [name]",
@@ -17,6 +20,10 @@ var restartCmd = &cobra.Command{
 	Long: "**restart** stops and re-spawns a worktree's services. With no " +
 		"`--only`, it restarts exactly the services currently running, so a " +
 		"hung frontend can be bounced without touching the rest.\n\n" +
+		"Before re-spawning a frontend, it clears that app's Vite cache " +
+		"(`node_modules/.vite`) so a stale dep-optimizer cache can't survive " +
+		"the bounce — the usual reason hot-module reload stays broken. Pass " +
+		"`--keep-cache` for a plain bounce that leaves the cache in place.\n\n" +
 		"Headless and scriptable — prints each service's status and the log " +
 		"dir on exit.",
 	Args:              cobra.MaximumNArgs(1),
@@ -61,6 +68,21 @@ var restartCmd = &cobra.Command{
 			}
 		}
 
+		// Wipe the Vite dep-optimizer cache for any frontend being bounced —
+		// the process is stopped now, so nothing's holding it. Skipped with
+		// --keep-cache. node_modules is symlinked to master, so this clears a
+		// cache shared by every worktree (see liftoff.ViteCacheDir).
+		if !restartKeepCache {
+			for _, svc := range svcs {
+				cleared, err := liftoff.ClearViteCache(path, svc)
+				if err != nil {
+					fmt.Println(tui.StyleErr.Render("    clear " + svc.Label() + " vite cache: " + err.Error()))
+				} else if cleared != "" {
+					fmt.Println(tui.StyleDim.Render("  cleared " + svc.Label() + " vite cache"))
+				}
+			}
+		}
+
 		plan := liftoff.PlayPlan{
 			Worktree:     name,
 			WorktreePath: path,
@@ -92,6 +114,8 @@ var restartCmd = &cobra.Command{
 func init() {
 	restartCmd.Flags().StringSliceVar(&restartOnly, "only", nil,
 		"comma-separated services to restart (default: whatever's running)")
+	restartCmd.Flags().BoolVar(&restartKeepCache, "keep-cache", false,
+		"don't clear the frontend Vite cache before restarting (plain bounce)")
 	rootCmd.AddCommand(restartCmd)
 }
 
