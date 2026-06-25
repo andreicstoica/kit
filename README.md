@@ -240,9 +240,16 @@ a service hangs (e.g. Vite wedges). Headless and scriptable: with no `--only` it
 restarts exactly what's currently running, prints each service's status, and
 ends with the log dir path.
 
+Before re-spawning a frontend it clears that app's Vite cache
+(`node_modules/.vite`), so a stale dep-optimizer cache can't survive the bounce
+— the usual reason hot-module reload stays broken. (node_modules is symlinked to
+master, so this cache is shared across worktrees; clearing it re-optimizes deps
+on the next dev start.) Use `--keep-cache` for a plain bounce that leaves it.
+
 ```sh
-kit restart voice-agent              # bounce everything running
+kit restart voice-agent              # clear frontend .vite, then bounce
 kit restart voice-agent --only app   # bounce just the app frontend
+kit restart voice-agent --keep-cache # plain bounce, leave the Vite cache
 ```
 
 ## Port slot scheme
@@ -371,7 +378,9 @@ Picker → confirm → kill (parallel). `--all` stops everything everywhere
 ### `kit restart [name]` (alias `bounce`) — stop then start
 
 Headless. No `--only` restarts whatever's running; `--only <svcs>` bounces a
-subset. Prints status per service and the log dir on exit.
+subset. Clears each restarted frontend's Vite cache (`node_modules/.vite`)
+first so stale-dep HMR breakage doesn't survive the bounce; `--keep-cache`
+skips that. Prints status per service and the log dir on exit.
 
 ### `kit log [name]` (alias `logs`) — tail logs
 
