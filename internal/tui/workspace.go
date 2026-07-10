@@ -21,6 +21,9 @@ type OpenRequest struct {
 	WorkspaceOnly bool
 	// Detailed selects the 5-tab Ghostty layout for WorkspaceOnly.
 	Detailed bool
+	// HerdrOnly skips the editor entirely and adds the worktree as a
+	// workspace to the running herdr multiplexer.
+	HerdrOnly bool
 	// OfferSkip adds a "don't open" entry to the interactive picker (used by
 	// post-design where opening is optional).
 	OfferSkip bool
@@ -44,6 +47,15 @@ func OpenWorktree(req OpenRequest) (bool, error) {
 	// Forced Ghostty workspace.
 	if req.WorkspaceOnly {
 		return true, openWorkspaceLayout(req, gtabFromFlag(req.Detailed))
+	}
+
+	// Forced herdr workspace.
+	if req.HerdrOnly {
+		if err := liftoff.OpenHerdr(req.Name, req.Path); err != nil {
+			return false, err
+		}
+		fmt.Printf("added %s to herdr\n", req.Name)
+		return true, nil
 	}
 
 	// Interactive: build the unified candidate list.
@@ -81,6 +93,12 @@ func openCandidate(req OpenRequest, c liftoff.EditorCandidate) (bool, error) {
 			return false, err
 		}
 		return true, openWorkspaceLayout(req, gl)
+	case liftoff.HerdrSentinel:
+		if err := liftoff.OpenHerdr(req.Name, req.Path); err != nil {
+			return false, err
+		}
+		fmt.Printf("added %s to herdr\n", req.Name)
+		return true, nil
 	default:
 		if err := liftoff.LaunchEditor(c, req.Path); err != nil {
 			return false, err

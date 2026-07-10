@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ var (
 	swapEditorFlag string
 	swapWorkspace  bool
 	swapDetailed   bool
+	swapHerdr      bool
 )
 
 var swapCmd = &cobra.Command{
@@ -29,6 +31,7 @@ var swapCmd = &cobra.Command{
 		"kit swap notebook -e zed   # opens immediately\n" +
 		"kit swap -w                # skip editor → Ghostty workspace (2 tabs)\n" +
 		"kit swap -w -d notebook    # Ghostty workspace, detailed (5 tabs)\n" +
+		"kit swap -H                # skip editor → add to running herdr\n" +
 		"```\n\n" +
 		"## Flags\n\n" +
 		"`-e` / `--editor` accepts: `zed`, `cursor`, `code`, or any binary on PATH.\n" +
@@ -36,11 +39,20 @@ var swapCmd = &cobra.Command{
 		"`-w` / `--workspace` skips the editor and launches the Ghostty gtab " +
 		"workspace directly; `-d` / `--detailed` selects the 5-tab layout. " +
 		"(Ghostty is also offered in the editor picker when no flag is given.)\n\n" +
+		"`-H` / `--herdr` skips the editor and adds the worktree as a workspace " +
+		"to the running [herdr](https://herdr.dev) multiplexer (herdr must be " +
+		"running). Also offered in the picker when `herdr` is on PATH.\n\n" +
 		"On macOS, editors are detected via `.app` bundle in `/Applications` " +
 		"OR a CLI binary on PATH. Bundle-only installs are launched via `open -a`.",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// -w and -H both mean "skip the editor and do X" — refusing the
+		// combination beats silently preferring one.
+		if swapWorkspace && swapHerdr {
+			return fmt.Errorf("choose one of --workspace (-w) or --herdr (-H), not both")
+		}
+
 		layout := liftoff.DefaultLayout()
 
 		name, err := resolveTarget(layout, args, "kit swap — pick a kit")
@@ -64,6 +76,7 @@ var swapCmd = &cobra.Command{
 			EditorFlag:    swapEditorFlag,
 			WorkspaceOnly: swapWorkspace,
 			Detailed:      swapDetailed,
+			HerdrOnly:     swapHerdr,
 		})
 		return err
 	},
@@ -106,5 +119,6 @@ func init() {
 	swapCmd.Flags().StringVarP(&swapEditorFlag, "editor", "e", "", "editor to open with (zed, cursor, code, or any PATH binary)")
 	swapCmd.Flags().BoolVarP(&swapWorkspace, "workspace", "w", false, "skip editor; launch the Ghostty gtab workspace")
 	swapCmd.Flags().BoolVarP(&swapDetailed, "detailed", "d", false, "with --workspace: use the 5-tab detailed layout")
+	swapCmd.Flags().BoolVarP(&swapHerdr, "herdr", "H", false, "skip editor; add worktree as a herdr workspace")
 	rootCmd.AddCommand(swapCmd)
 }

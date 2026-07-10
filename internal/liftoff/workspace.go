@@ -24,6 +24,12 @@ const WorkspaceSentinel = "__workspace__"
 // (like post-design) that want a no-op escape hatch in the same picker.
 const SkipSentinel = "__skip__"
 
+// HerdrSentinel is the synthetic EditorCandidate.Binary value marking the
+// "herdr agent multiplexer" target. Callers route it to OpenHerdr instead
+// of LaunchEditor. Like the Ghostty workspace, herdr is a distinct intent
+// (not an editor), so its presence keeps the picker visible.
+const HerdrSentinel = "__herdr__"
+
 // EditorCandidate describes one possible editor + its install state. On
 // macOS an editor may be installed as a `.app` bundle without a PATH binary,
 // so UseOpen records whether to launch via `open -a App` vs the CLI binary.
@@ -108,6 +114,17 @@ func InstalledEditors() []EditorCandidate {
 			Installed: true,
 		})
 	}
+	// herdr is an agent multiplexer: one persistent window holding every
+	// worktree. Offered only when the CLI is on PATH; opening a worktree
+	// adds a workspace to the running herdr rather than launching a window.
+	if _, err := exec.LookPath("herdr"); err == nil {
+		out = append(out, EditorCandidate{
+			Name:      "herdr (agent multiplexer)",
+			Binary:    HerdrSentinel,
+			Desc:      "add a workspace to the running herdr",
+			Installed: true,
+		})
+	}
 	return out
 }
 
@@ -140,22 +157,25 @@ func ResolveEditor(name string) *EditorCandidate {
 
 // LoneEditor returns the single installed editor when no picker is needed.
 // Returns nil when there are zero editors, two or more editors, or any number
-// plus the Ghostty target (Ghostty is a distinct intent, so the picker still
-// appears). The WorkspaceSentinel and SkipSentinel candidates are ignored.
+// plus the Ghostty or herdr target (each is a distinct intent, so the picker
+// still appears). The SkipSentinel candidates are ignored.
 func LoneEditor(eds []EditorCandidate) *EditorCandidate {
 	var editors []EditorCandidate
 	hasGhostty := false
+	hasHerdr := false
 	for _, e := range eds {
 		switch e.Binary {
 		case WorkspaceSentinel:
 			hasGhostty = true
+		case HerdrSentinel:
+			hasHerdr = true
 		case SkipSentinel:
 			// ignore
 		default:
 			editors = append(editors, e)
 		}
 	}
-	if len(editors) == 1 && !hasGhostty {
+	if len(editors) == 1 && !hasGhostty && !hasHerdr {
 		c := editors[0]
 		return &c
 	}
@@ -188,6 +208,55 @@ func OpenWorkspace(layout Layout, name, path string, gl GtabLayout) error {
 	}
 	TouchLastUsedName(name)
 	return nil
+}
+
+// OpenHerdr adds a workspace for the worktree to the running herdr agent
+// multiplexer via its socket CLI, focuses it, and records the worktree as
+// last-used. herdr runs a persistent server holding one window for every
+// worktree, so kit adds to that instance rather than launching its own.
+//
+// The server must already be running: creating the workspace in a headless
+// server the user can't see would be worse than a clear hint, so we precheck
+// `herdr status server` and point at `herdr` when it's down.
+//
+// Invocation matches herdr 0.7's socket CLI
+// (`herdr workspace create --cwd <path> --label <text> --focus`); this is the
+// one spot to adjust if a future herdr changes the surface.
+func OpenHerdr(name, path string) error {
+	if !herdrServerRunning() {
+		return fmt.Errorf("herdr server not running — start it first with `herdr` " +
+			"(or `brew services start herdr`), then retry")
+	}
+	label := name
+	if e := EmojiFor(name); e != "" {
+		label = e + " " + name
+	}
+	// `workspace create` emits a JSON result on stdout — discard it (the caller
+	// prints a clean confirmation). Keep stderr for real failures.
+	cmd := exec.Command("herdr", "workspace", "create", "--cwd", path, "--label", label, "--focus")
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("herdr workspace create: %w", err)
+	}
+	TouchLastUsedName(name)
+	return nil
+}
+
+// herdrServerRunning reports whether the herdr server is up. `herdr status
+// server` always exits 0, printing "status: running" or "status: not
+// running" — so we parse the output rather than the exit code.
+func herdrServerRunning() bool {
+	out, err := exec.Command("herdr", "status", "server").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return herdrServerUp(string(out))
+}
+
+// herdrServerUp reports whether `herdr status server` output indicates a
+// running server. Split from the exec call so it's unit-testable.
+func herdrServerUp(statusOutput string) bool {
+	return strings.Contains(statusOutput, "status: running")
 }
 
 // TouchLastUsedName bumps the worktree's LastUsed timestamp. No-op for master,
