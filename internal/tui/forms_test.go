@@ -3,13 +3,14 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // These tests render the first frame of the shared forms without a TTY, by
-// building the form and calling Init()+View() directly. They guard the
-// first-frame visibility fix: huh's select viewport starts at height 0, so
-// without an explicit Height the options + "> " cursor are blank until a key
-// lands. selectHeight()/buildSelectForm must keep them visible from frame 1.
+// building the model/form and calling Init()+View() directly. They guard the
+// first-frame contract: every option, its 1-9 quick-pick number, and the "> "
+// cursor must be visible from frame 1 — no key/WindowSize msg required.
 
 func TestRunSelectFirstFrameShowsAllOptions(t *testing.T) {
 	opts := []SelectOption[string]{
@@ -17,18 +18,44 @@ func TestRunSelectFirstFrameShowsAllOptions(t *testing.T) {
 		{Label: "Detailed (5 tabs)", Value: "d"},
 		{Label: "Skip — don't open", Value: ""},
 	}
-	val := "s"
-	f := buildSelectForm("Ghostty workspace layout", "pick a layout", opts, &val)
-	_ = f.Init()
-	view := f.View()
+	m := newSelectModel("Ghostty workspace layout", "pick a layout", opts, "s")
+	_ = m.Init()
+	view := m.View()
 
 	for _, o := range opts {
 		if !strings.Contains(view, o.Label) {
 			t.Errorf("first frame missing option %q\n%s", o.Label, view)
 		}
 	}
+	for _, prefix := range []string{"1 ", "2 "} {
+		if !strings.Contains(view, prefix) {
+			t.Errorf("first frame missing quick-pick number %q\n%s", prefix, view)
+		}
+	}
 	if !strings.Contains(view, "> ") {
 		t.Errorf("first frame missing selection cursor\n%s", view)
+	}
+}
+
+func TestRunSelectDigitQuickPick(t *testing.T) {
+	opts := []SelectOption[string]{
+		{Label: "First", Value: "a"},
+		{Label: "Second", Value: "b"},
+		{Label: "Third", Value: "c"},
+	}
+	m := newSelectModel("pick one", "", opts, "a")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if cmd == nil {
+		t.Fatal("expected quit cmd after digit quick-pick")
+	}
+	if m.cancel {
+		t.Fatal("digit quick-pick must not cancel")
+	}
+	if m.chosen != 1 {
+		t.Fatalf("chosen = %d, want 1", m.chosen)
+	}
+	if got := m.opts[m.chosen].Value; got != "b" {
+		t.Fatalf("chosen value = %q, want %q", got, "b")
 	}
 }
 
@@ -52,12 +79,5 @@ func TestRunConfirmDefaultsToYesNo(t *testing.T) {
 	view := f.View()
 	if !strings.Contains(view, "Yes") || !strings.Contains(view, "No") {
 		t.Errorf("expected default Yes/No buttons\n%s", view)
-	}
-}
-
-func TestSelectHeightReservesRows(t *testing.T) {
-	// title + wrapped description + every option + slack.
-	if got := selectHeight(3); got != 7 {
-		t.Errorf("selectHeight(3) = %d, want 7", got)
 	}
 }

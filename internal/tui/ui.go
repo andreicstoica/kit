@@ -17,8 +17,9 @@ import (
 //      1-9 numeric quick-pick, esc/ctrl+c cancels, "/" filters when enabled.
 //
 //   2. Select       — choosing one option from a short, fixed menu
-//      (workspace layout, root menu). Built with huh via RunSelect. Always
-//      sized so the options + "> " cursor render on the first frame.
+//      (workspace layout, root menu). A hand-rolled inline bubbletea model
+//      via RunSelect. Always: "> " cursor, 1-9 numeric quick-pick, options
+//      visible on the first frame, esc/ctrl+c cancels.
 //
 //   3. Confirm      — a yes/no decision. Built with huh via RunConfirm.
 //      Always affirmative-left / negative-right with consistent wording.
