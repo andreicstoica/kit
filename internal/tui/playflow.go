@@ -144,6 +144,11 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 			m.toggleOn[s] = true
 		}
 	}
+	// Celery + beat are always paired (mirrors the toggle UI). An explicit
+	// --only celery must carry beat too, or the worker runs without its scheduler.
+	if m.toggleOn[liftoff.SvcCelery] {
+		m.toggleOn[liftoff.SvcBeat] = true
+	}
 	// UI toggle shows display services only — beat is collapsed into celery
 	// (toggling celery flips both internally, see updateToggle).
 	m.toggleSvcs = liftoff.DisplayServices

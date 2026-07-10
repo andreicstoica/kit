@@ -205,3 +205,30 @@ func TestRunDir_EnvOverride(t *testing.T) {
 		t.Errorf("RunDir not created: %v", err)
 	}
 }
+
+func TestParseLsofPIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []int
+	}{
+		{"multi-line", "123\n456\n", []int{123, 456}},
+		{"trailing blanks", "123\n\n456\n\n\n", []int{123, 456}},
+		{"duplicates deduped", "123\n123\n456\n", []int{123, 456}},
+		{"non-numeric skipped", "123\nabc\n456\n", []int{123, 456}},
+		{"empty", "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseLsofPIDs(tt.in)
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseLsofPIDs(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseLsofPIDs(%q)[%d] = %d, want %d", tt.in, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

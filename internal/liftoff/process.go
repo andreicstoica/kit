@@ -220,6 +220,41 @@ func KillGroup(pid int) error {
 	return fmt.Errorf("pid %d still alive after SIGKILL", pid)
 }
 
+// parseLsofPIDs parses the newline-separated PID list that `lsof -ti` prints
+// into a deduped []int, skipping blanks and non-numeric lines.
+func parseLsofPIDs(out string) []int {
+	var pids []int
+	seen := map[int]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		pid, err := strconv.Atoi(strings.TrimSpace(line))
+		if err != nil || seen[pid] {
+			continue
+		}
+		seen[pid] = true
+		pids = append(pids, pid)
+	}
+	return pids
+}
+
+// KillListenersOnPort finds every process listening on the given loopback
+// TCP port (via lsof) and group-kills it. Used as a fallback when kit's
+// recorded PID is stale but the service is still bound — e.g. a uvicorn
+// --reload worker that re-exec'd out from under the recorded pid. Best-effort;
+// returns nil when nothing is listening.
+func KillListenersOnPort(port int) error {
+	out, err := exec.Command("lsof", "-ti", fmt.Sprintf("tcp:%d", port), "-sTCP:LISTEN").Output()
+	if err != nil {
+		return nil // lsof exits non-zero when nothing matches
+	}
+	var firstErr error
+	for _, pid := range parseLsofPIDs(string(out)) {
+		if e := KillGroup(pid); e != nil && firstErr == nil {
+			firstErr = e
+		}
+	}
+	return firstErr
+}
+
 // SweepStalePID removes the pid file if its process is gone.
 func SweepStalePID(worktree, service string) {
 	pid := ReadPID(worktree, service)

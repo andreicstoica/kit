@@ -95,18 +95,23 @@ func NewPauseModel(layout liftoff.Layout, cfg PauseConfig) (tea.Model, error) {
 	return m, nil
 }
 
-func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
+// slotFor resolves a worktree's port slot from saved state (0 if unknown).
+// discoverRunning and updateConfirm must agree on the slot, so both use this.
+func slotFor(name string) int {
 	st, _ := liftoff.LoadState()
-	var slot int
 	if st != nil {
 		if meta, ok := st.Worktrees[name]; ok {
-			slot = meta.Slot
+			return meta.Slot
 		}
 	}
-	ports := liftoff.PortsForSlot(slot)
+	return 0
+}
+
+func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
+	ports := liftoff.PortsForSlot(slotFor(name))
 	var out []liftoff.Service
 	for _, svc := range liftoff.AllServices {
-		if liftoff.StatusOf(name, svc, ports).Alive {
+		if liftoff.IsServiceAlive(name, svc, ports) {
 			out = append(out, svc)
 		}
 	}
@@ -114,6 +119,10 @@ func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
 		filter := map[liftoff.Service]bool{}
 		for _, s := range m.onlyServices {
 			filter[s] = true
+		}
+		// celery + beat are paired — stopping one must stop the other.
+		if filter[liftoff.SvcCelery] {
+			filter[liftoff.SvcBeat] = true
 		}
 		var trimmed []liftoff.Service
 		for _, s := range out {
@@ -203,7 +212,11 @@ func (m *pauseModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch k.String() {
 		case "y", "Y", "enter":
-			plan := liftoff.PausePlan{Worktree: m.chosen.name, Services: m.running}
+			plan := liftoff.PausePlan{
+				Worktree: m.chosen.name,
+				Services: m.running,
+				Ports:    liftoff.PortsForSlot(slotFor(m.chosen.name)),
+			}
 			m.updates = m.layout.RunPause(plan)
 			m.stage = pauseStageRun
 			return m, tea.Batch(m.spinner.Tick, playNext(m.updates))
@@ -325,12 +338,16 @@ func PauseAll(layout liftoff.Layout) error {
 	for name, meta := range st.Worktrees {
 		ports := liftoff.PortsForSlot(meta.Slot)
 		for _, svc := range liftoff.AllServices {
-			s := liftoff.StatusOf(name, svc, ports)
-			if !s.Alive {
+			if !liftoff.IsServiceAlive(name, svc, ports) {
 				continue
 			}
-			fmt.Printf("  stopping %s/%s (pid %d)\n", name, svc.Label(), s.PID)
+			// PID may be 0/stale for reloaded services detected by port; the
+			// port fallback below still catches them.
+			fmt.Printf("  stopping %s/%s (pid %d)\n", name, svc.Label(), liftoff.StatusOf(name, svc, ports).PID)
 			_ = liftoff.StopService(name, svc)
+			if port := liftoff.ServicePort(svc, ports); port > 0 && liftoff.PortListening(port) {
+				_ = liftoff.KillListenersOnPort(port)
+			}
 			count++
 		}
 	}

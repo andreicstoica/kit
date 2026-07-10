@@ -43,3 +43,39 @@ func TestRunPlay_SkipsAlreadyListening(t *testing.T) {
 		t.Errorf("title = %q, want it to mention 'already running'", u.Title)
 	}
 }
+
+// TestRunPause_SkipsWhenNoPIDAndNoListener: no recorded pid and nothing bound
+// on the service's port → StepSkipped (nothing to stop).
+func TestRunPause_SkipsWhenNoPIDAndNoListener(t *testing.T) {
+	setRunDir(t)
+
+	// Grab a free port, then close it so nothing is listening.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+
+	plan := PausePlan{
+		Worktree: "fake",
+		Services: []Service{SvcApp},
+		Ports:    Ports{App: port},
+	}
+
+	var updates []PlayUpdate
+	for u := range (Layout{}).RunPause(plan) {
+		updates = append(updates, u)
+	}
+
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 update (skip), got %d: %+v", len(updates), updates)
+	}
+	u := updates[0]
+	if u.Status != StepSkipped {
+		t.Errorf("status = %v, want StepSkipped", u.Status)
+	}
+	if !strings.Contains(u.Title, "not running") {
+		t.Errorf("title = %q, want it to mention 'not running'", u.Title)
+	}
+}

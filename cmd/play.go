@@ -82,6 +82,7 @@ func parseServiceList(raw []string) ([]liftoff.Service, error) {
 		"beat":     liftoff.SvcBeat,
 	}
 	var out []liftoff.Service
+	seen := map[liftoff.Service]bool{}
 	for _, item := range raw {
 		for _, part := range strings.Split(item, ",") {
 			part = strings.TrimSpace(strings.ToLower(part))
@@ -92,6 +93,10 @@ func parseServiceList(raw []string) ([]liftoff.Service, error) {
 			if !ok {
 				return nil, fmt.Errorf("unknown service %q (valid: app, admin, api, admin_be, mcp, celery, beat)", part)
 			}
+			if seen[svc] {
+				continue
+			}
+			seen[svc] = true
 			out = append(out, svc)
 		}
 	}

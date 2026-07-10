@@ -146,6 +146,7 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 type PausePlan struct {
 	Worktree string
 	Services []Service
+	Ports    Ports // Ports lets RunPause fall back to killing by port when a recorded PID is stale.
 }
 
 // RunPause kills selected services in parallel and removes their PID
@@ -162,14 +163,26 @@ func (l Layout) RunPause(p PausePlan) <-chan PlayUpdate {
 			go func() {
 				defer wg.Done()
 				pid := ReadPID(p.Worktree, string(svc))
-				if pid == 0 {
+				port := ServicePort(svc, p.Ports)
+				// pid 0 usually means not running — but a reloaded service
+				// (uvicorn --reload re-exec) can outlive its recorded pid, so
+				// a still-listening port proceeds to the port-kill fallback.
+				if pid == 0 && !(port > 0 && PortListening(port)) {
 					ch <- PlayUpdate{Service: svc, Status: StepSkipped, Title: "stop " + svc.Label() + " (not running)"}
 					return
 				}
-				title := fmt.Sprintf("stop %s (pid %d)", svc.Label(), pid)
+				title := fmt.Sprintf("stop %s", svc.Label())
+				if pid > 0 {
+					title += fmt.Sprintf(" (pid %d)", pid)
+				}
 				ch <- PlayUpdate{Service: svc, Status: StepRunning, Title: title, PID: pid}
 				start := time.Now()
 				err := StopService(p.Worktree, svc)
+				if err == nil && port > 0 && PortListening(port) {
+					// Recorded pid was stale (or absent) but the port is still
+					// bound — kill whatever is actually listening.
+					_ = KillListenersOnPort(port)
+				}
 				elapsed := time.Since(start)
 				if err != nil {
 					ch <- PlayUpdate{Service: svc, Status: StepFailed, Title: title, Err: err, Elapsed: elapsed}
