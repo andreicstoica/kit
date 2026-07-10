@@ -48,7 +48,7 @@ func runDesignForm(layout liftoff.Layout, prefillName string) (*designAnswers, e
 	}
 
 	// One question per group — huh advances groups individually, so each
-	// prompt occupies its own screen. Backend pip install isn't prompted
+	// prompt occupies its own screen. Backend uv install isn't prompted
 	// anymore; it's always run.
 	groups := []*huh.Group{
 		huh.NewGroup(
@@ -399,7 +399,7 @@ func friendlyDesignStepTitle(title string) string {
 		return "Copy local data"
 	case strings.HasPrefix(title, "update backend/.env "):
 		return "Point the app at the private database"
-	case strings.HasPrefix(title, "pip install backend"):
+	case strings.HasPrefix(title, "uv install backend"):
 		return "Install backend dependencies"
 	case strings.HasPrefix(title, "symlink frontend node_modules"):
 		return "Reuse frontend dependencies"

@@ -48,7 +48,7 @@ kit setup
 ```
 
 This is interactive and idempotent. It walks the whole toolchain (brew, gt,
-gh, node/yarn, python+venv, redis, rabbitmq, postgres, Ghostty, an editor,
+gh, node/yarn, python+venv, uv, ruff, redis, rabbitmq, postgres, Ghostty, an editor,
 lumen), offers to install missing pieces via Homebrew, runs `gh auth login` if
 needed, **clones the Liftoff master repo to `~/liftoff/liftoff-app-master`**,
 runs `yarn install` so worktree node_modules symlinks work, and adopts any

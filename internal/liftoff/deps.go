@@ -5,15 +5,20 @@ import (
 	"path/filepath"
 )
 
-// InstallBackend runs `pip install -q -r requirements.txt -r requirements_test.txt`
-// inside the worktree's backend/ dir, using the venv's pip directly so it
-// works even when the user hasn't run `source ~/.envs/py314/bin/activate`
-// in the shell that launched kit.
+// InstallBackend runs `uv pip install --python <venv>/bin/python -q
+// -r requirements.txt -r requirements_test.txt` inside the worktree's backend/
+// dir. uv (same maker as ruff) replaced pip for dramatically faster cold
+// installs; upstream switched CI + Dockerfiles in liftoff-app #7677.
+//
+// `--python` targets the configured venv's interpreter directly, so installs
+// land in the right env even when the user hasn't run
+// `source ~/.envs/py314/bin/activate` in the shell that launched kit.
 func InstallBackend(worktree string, onLine LineFn) error {
 	dir := filepath.Join(worktree, "backend")
-	pip := venvBin("pip")
-	return RunStream(dir, pip, []string{
-		"install", "-q",
+	venvPy := venvBin("python")
+	return RunStream(dir, "uv", []string{
+		"pip", "install", "-q",
+		"--python", venvPy,
 		"-r", "requirements.txt",
 		"-r", "requirements_test.txt",
 	}, onLine)

@@ -48,10 +48,13 @@ func DefaultChecks(layout Layout) []Check {
 		{ID: "gh", Run: checkGh},
 		{ID: "node-yarn", Run: checkNodeYarn},
 		{ID: "python", Run: checkPython},
+		{ID: "uv", Run: checkUv},
+		{ID: "ruff", Run: checkRuff},
 		{ID: "redis", Run: checkRedis},
 		{ID: "rabbitmq", Run: checkRabbitMQ},
 		{ID: "postgres", Run: checkPostgres},
 		{ID: "ghostty", Run: checkGhostty},
+		{ID: "herdr", Run: checkHerdr},
 		{ID: "editor", Run: checkEditor},
 		{ID: "hunk", Run: checkHunk},
 		{ID: "liftoff-master", Run: func() CheckResult { return checkLiftoffMaster(layout) }},
@@ -279,6 +282,42 @@ func checkPython() CheckResult {
 	return r
 }
 
+// checkUv reports uv, the installer `kit design` uses for backend deps
+// (replaced pip in liftoff-app #7677). CheckFail when missing: without it the
+// "uv install backend" step can't run.
+func checkUv() CheckResult {
+	r := CheckResult{Name: "uv"}
+	if _, err := exec.LookPath("uv"); err != nil {
+		r.Status = CheckFail
+		r.Detail = "not installed — `kit design` can't install backend deps"
+		r.FixHint = "brew install uv"
+		r.FixCmd = []string{"uv"}
+		return r
+	}
+	ver, _ := ToolVersion("uv", "--version")
+	r.Status = CheckOK
+	r.Detail = firstLine(ver)
+	return r
+}
+
+// checkRuff reports ruff, the backend linter/formatter (replaced
+// black/isort/flake8 in liftoff-app #7676). CheckWarn, not CheckFail: kit
+// doesn't invoke ruff itself, but backend dev + CI expect it locally.
+func checkRuff() CheckResult {
+	r := CheckResult{Name: "ruff"}
+	if _, err := exec.LookPath("ruff"); err != nil {
+		r.Status = CheckWarn
+		r.Detail = "not installed — backend lint/format (ruff) unavailable locally"
+		r.FixHint = "brew install ruff"
+		r.FixCmd = []string{"ruff"}
+		return r
+	}
+	ver, _ := ToolVersion("ruff", "--version")
+	r.Status = CheckOK
+	r.Detail = firstLine(ver)
+	return r
+}
+
 func checkRedis() CheckResult {
 	r := CheckResult{Name: "redis"}
 	if _, err := exec.LookPath("redis-cli"); err != nil {
@@ -375,6 +414,24 @@ func checkGhostty() CheckResult {
 	r.FixHint = "brew install --cask ghostty"
 	r.FixCmd = []string{"ghostty"}
 	r.FixCask = true
+	return r
+}
+
+// checkHerdr reports the herdr agent multiplexer. Optional (CheckWarn, not
+// CheckFail): without it `kit swap` simply doesn't offer the herdr target and
+// falls back to editors / the Ghostty workspace. Plain formula, not a cask.
+func checkHerdr() CheckResult {
+	r := CheckResult{Name: "herdr"}
+	if _, err := exec.LookPath("herdr"); err != nil {
+		r.Status = CheckWarn
+		r.Detail = "not installed — `kit swap` won't offer the herdr multiplexer"
+		r.FixHint = "brew install herdr"
+		r.FixCmd = []string{"herdr"}
+		return r
+	}
+	ver, _ := ToolVersion("herdr", "--version")
+	r.Status = CheckOK
+	r.Detail = firstLine(ver)
 	return r
 }
 

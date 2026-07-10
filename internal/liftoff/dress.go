@@ -115,7 +115,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			},
 		},
 		{
-			title: "pip install backend",
+			title: "uv install backend",
 			skip:  !p.BackendDeps,
 			run: func(emit func(string)) error {
 				return InstallBackend(p.Worktree, emit)

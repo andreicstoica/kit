@@ -62,7 +62,7 @@ func TestFriendlyDesignStepTitle(t *testing.T) {
 		"create database liftoff_voice":                                "Create a private database",
 		"clone database liftoff -> liftoff_voice":                      "Copy local data",
 		"update backend/.env SQLALCHEMY_DATABASE_NAME=liftoff_voice":   "Point the app at the private database",
-		"pip install backend":                                          "Install backend dependencies",
+		"uv install backend":                                           "Install backend dependencies",
 		"symlink frontend node_modules from master":                    "Reuse frontend dependencies",
 		"gt track --parent master":                                     "Add the branch to Graphite",
 		"write gtab workspace":                                         "Create workspace tabs",

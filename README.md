@@ -86,6 +86,7 @@ it). `kit play` boots all five (minus mcp) in parallel.
 | macOS | gtab uses AppleScript; symlink staleness check uses `stat -f` |
 | Liftoff repo at `~/liftoff/liftoff-app-master/` | default layout. Override via `KIT_ROOT` / `KIT_MASTER_DIR`. |
 | Python venv at `~/.envs/py314` | backend activates this before launch. Override via `KIT_PY_VENV`. |
+| `uv` on PATH | `kit design` installs backend deps with `uv pip install` (replaced pip) |
 | `yarn` on PATH | Vite dev servers |
 | Go 1.22+ | install-time only |
 
@@ -99,6 +100,7 @@ it). `kit play` boots all five (minus mcp) in parallel.
 | `gh` (GitHub CLI) | `kit wash --merged` checks PR state |
 | `zed` / `cursor` / `code` | any one suffices for `kit swap`. Override via `KIT_EDITOR`. |
 | `hunk` | nicer side-by-side `kit diff` |
+| `ruff` | backend lint/format (replaced black/isort/flake8); kit doesn't run it, but backend dev + CI expect it |
 
 ## Install
 
@@ -169,8 +171,8 @@ check. The nudge is silent in scripts/pipes and for local dev builds.
 kit setup
 ```
 
-Walks the toolchain (brew, gt, gh, node/yarn, python+venv, redis, rabbitmq,
-postgres, Ghostty, an editor, hunk), offers to install missing pieces via
+Walks the toolchain (brew, gt, gh, node/yarn, python+venv, uv, ruff, redis,
+rabbitmq, postgres, Ghostty, an editor, hunk), offers to install missing pieces via
 Homebrew, runs `gh auth login` if needed, clones the Liftoff master repo,
 runs `yarn install` so frontend node_modules symlinks work, and bulk-adopts
 any existing worktrees.
@@ -192,7 +194,7 @@ Then runs:
 2. `git worktree add ~/liftoff/<name> -b <name> master`
 3. Copies `.env`, `backend/.env`, `frontend/{app,admin}/env/.env.local`
 4. (opt) `createdb liftoff_<name>` + `pg_dump | psql` + rewrites `SQLALCHEMY_DATABASE_NAME`
-5. `pip install` in `backend/` (always)
+5. `uv pip install` in `backend/` (always)
 6. (opt) Symlinks `frontend/{app,admin}/node_modules` to master
 7. (opt) `gt track --parent master`
 8. Writes `~/.config/gtab/<name>.applescript`
