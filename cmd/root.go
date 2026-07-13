@@ -32,8 +32,12 @@ var rootCmd = &cobra.Command{
 		"- `pause` (`stop`) — halt services\n" +
 		"- `restart` (`bounce`) — stop then start (bounce a hung service)\n" +
 		"- `log` (`logs`) — tail service logs\n" +
-		"- `wash` (`rm`, `remove`, `delete`) — strip a kit (`--merged` bulk-washes merged/closed)\n" +
-		"- `swap` (`open`, `gtab`) — open the worktree in your IDE (`--workspace` for Ghostty)\n" +
+		"- `wash` (`rm`, `remove`, `delete`) — delete a kit and its paired Herdr space (`--merged` bulk-washes merged/closed)\n" +
+		"- `open` — attach to the worktree's persistent Herdr space\n" +
+		"- `close` — explicitly delete a worktree's Herdr space\n" +
+		"- `focus` — make a worktree the active Herdr + editor environment\n" +
+		"- `remote` — pick a worktree and attach to Herdr\n" +
+		"- `swap` (`gtab`) — open the worktree in your IDE (`--workspace` for legacy Ghostty)\n" +
 		"- `links` (`urls`, `ports`) — print the worktree's URLs\n" +
 		"- `diff` — show the worktree's diff vs master (via hunk if installed)\n" +
 		"- `submit` — push the worktree's branch via `gt submit` (`--stack`, `--draft`)\n" +

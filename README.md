@@ -25,23 +25,28 @@ kit design <name>        # new feature worktree (wizard)
 kit lineup [--tree]      # table of kits (--tree for stack/setup/services tree)
 kit links                # print this worktree's URLs
 kit play <name>          # start services
+kit play <name> --open   # start services, then attach to Herdr
+kit open <name>          # pick 2/5 tabs on first open, then attach to Herdr
+kit close <name>         # explicitly delete Herdr terminal state
+kit focus <name>         # Herdr + optional Cursor/Ghostty client
+kit remote               # pick a worktree/space, then attach
 kit pause <name>         # stop services
 kit restart <name>       # stop then start (bounce a hung service)
 kit log <name>           # tail logs (color-coded, / search, t filter)
 kit diff                 # diff vs master (hunk-aware)
 kit submit <name>        # push the branch via gt submit (--stack/--draft)
 kit sync                 # gt sync + migrate master DB + prune merged worktrees
-kit wash [--merged]      # strip a kit (--merged bulk-washes merged/closed)
-kit swap [-w] [-d]       # open in IDE (-w: Ghostty workspace, -d: 5-tab)
+kit wash [--merged]      # delete kit + paired Herdr space (--merged bulk-washes merged/closed)
+kit swap [-w] [-d]       # legacy IDE/Ghostty opener
 kit slots [renumber]     # show port-slot allocations (renumber compacts gaps)
 ```
 
 Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
 `bounce` (restart), `logs` (log), `rm`/`remove`/`delete` (wash),
-`open`/`gtab` (swap), `urls`/`ports` (links), `physio` (doctor),
+`gtab` (swap), `urls`/`ports` (links), `physio` (doctor),
 `register` (adopt).
 
-Commands that take a worktree name (`swap`, `play`, `pause`, `restart`,
+Commands that take a worktree name (`open`, `close`, `focus`, `remote`, `swap`, `play`, `pause`, `restart`,
 `log`, `wash`, `links`, `diff`, `submit`, `adopt`) accept the same three shapes: pass a name,
 omit to auto-pick from cwd, or get a numbered picker (1-9 quick-select)
 otherwise. Master appears in every picker as 🧊 slot 0.
@@ -95,6 +100,7 @@ it). `kit play` boots all five (minus mcp) in parallel.
 | Tool | Unlocks |
 |------|---------|
 | Ghostty | `kit swap -w` workspace — 2 tabs (shell + combined logs) or 5 with `-d` |
+| Herdr | `kit open` / `kit focus` — persistent worktree spaces, tabs, panes, and agents |
 | `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
 | `gt` (graphite) | "Track in graphite" toggle, `kit sync`, gt stack in lineup |
 | `gh` (GitHub CLI) | `kit wash --merged` checks PR state |
@@ -332,6 +338,15 @@ last_used = 2026-05-11T16:01:00Z
 branch    = "acs/voice-agent-cleanup"
 path      = "/Users/acs/liftoff/voice-agent"
 adopted   = false
+space    = "voice-agent"
+layout   = "default"
+last_opened = 2026-05-11T16:04:00Z
+
+[layouts.default]
+tabs = ["shell", "logs"]
+
+[layouts.ai]
+tabs = ["shell", "claude", "codex", "gemini", "logs"]
 ```
 
 `kit setup` writes `[settings]` from what it learned (clone path, first
@@ -348,6 +363,8 @@ alone. Env vars still override config values for CI / power users:
 | `KIT_MAIN_BRANCH` | `master`                |
 | `KIT_PY_VENV`     | `~/.envs/py314`         |
 | `KIT_EDITOR`      | (auto-detect)           |
+| `KIT_HERDR_SESSION` | `default`              |
+| `KIT_HERDR_LAYOUT`  | `default`              |
 | `KIT_NO_EMOJI`    | (unset = emoji on)      |
 
 ## Subcommands
@@ -360,7 +377,8 @@ layout (simple / detailed / skip) and offers to start servers.
 
 ### `kit lineup [--tree]` (alias `ls`) — list kits
 
-Table: `NAME · SLOT · RUNNING · BRANCH · STATUS`. Branch emoji prefix.
+Table: `NAME · SLOT · RUNNING · HERDR · BRANCH · STATUS`. HERDR shows the
+persistent space or active agent states. Branch emoji prefix.
 Master at slot 0 with 🧊.
 
 `--tree` renders the same set hierarchically: master root, worktrees as
@@ -428,20 +446,50 @@ Allocates slot + writes metadata for an existing on-disk worktree.
 
 ### `kit wash [name]` (alias `rm`) — strip a kit
 
-Picker → confirm with DB+gtab toggles → cleanup. Auto-stops services and
-frees the slot. Warns + double-confirms when the branch has commits not in
-master.
+Picker → confirm with DB+gtab toggles → cleanup. Auto-stops services, removes
+the paired Herdr space, and frees the slot. Warns + double-confirms when the
+branch has commits not in master. Use `kit close <name>` instead when you want
+to remove only Herdr terminal state while keeping the Git worktree.
 
 `kit wash --merged` is the bulk mode: scans for worktrees whose branch is
 merged into master or whose PR is MERGED/CLOSED, then multi-select → washes
 each.
 
-### `kit swap [name]` (aliases `open`, `gtab`) — open in IDE or Ghostty
+### `kit open [name]` — attach to a persistent Herdr space
+
+Every worktree maps to one Herdr workspace in Kit's configured persistent
+session. On first open, Kit shows the same layout picker as the old Ghostty
+flow: **Simple (2 tabs)** for shell + combined logs, or **Detailed (5 tabs)**
+with per-service log tabs and splits. Later opens focus the same workspace and
+attach without prompting or duplicating tabs. Use `--layout detailed` (or
+`--layout ai`) for scripting and other Kit-owned layouts.
+
+Herdr owns terminal state, so closing Ghostty, disconnecting SSH, or leaving a
+Moshi/Tailscale session does not stop the worktree's shells, services, logs, or
+agents.
+
+Use `kit close <name>` only when you explicitly want to delete that
+worktree's Herdr tabs, panes, and agents. It leaves the Git worktree intact;
+the next `kit open` recreates the space.
+
+### `kit focus [name]` — make a worktree active
+
+Focuses the Herdr workspace and attaches the current terminal. Add `--cursor`
+or `--editor <name>` to open an editor too; `--ghostty` starts a Herdr client
+inside Ghostty and `--no-attach` leaves the current terminal alone.
+
+### `kit remote [name]` — reconnect interactively
+
+With no name, shows worktrees with Herdr tab/pane counts, detected agent
+states, and Kit service status. Selecting a row focuses its persistent space
+and attaches the Herdr client.
+
+### `kit swap [name]` (alias `gtab`) — open in IDE or legacy Ghostty
 
 Picker over installed editors (Zed, Cursor, VS Code) plus Ghostty.
 Auto-picks when exactly one editor is installed. `-e zed` skips the picker.
 
-`-w` / `--workspace` skips the editor and launches the Ghostty gtab
+`-w` / `--workspace` skips the editor and launches the legacy Ghostty gtab
 workspace directly — 2 tabs (worktree root + a `logs` tab running
 `kit log --wait`), or 5 with `-d` / `--detailed`: shell, frontend split
 (app + admin), backend split (api + admin_be), celery, combined logs. The

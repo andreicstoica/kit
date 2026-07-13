@@ -306,6 +306,7 @@ func washStepTitles(p liftoff.WashPlan) []string {
 	}
 	return []string{
 		"stop running services",
+		"remove Herdr workspace",
 		"remove worktree " + p.WorktreePath,
 		"delete branch " + branch,
 		"drop database " + liftoff.DBName(p.Name),
@@ -343,8 +344,8 @@ func (m *washModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if u.Line != "" {
 				m.stepLines[u.Index] = append(m.stepLines[u.Index], u.Line)
 			}
-			// Only worktree-remove (index 1) is fatal — matches RunWash.
-			if u.Status == liftoff.StepFailed && u.Index == 1 {
+			// Only worktree-remove (index 2) is fatal — matches RunWash.
+			if u.Status == liftoff.StepFailed && u.Index == 2 {
 				m.failed = true
 				m.failureErr = u.Err
 			}
@@ -409,7 +410,7 @@ func (m *washModel) viewConfirm() string {
 	b.WriteString("\n")
 	toggles := m.visibleToggles()
 	if len(toggles) == 0 {
-		b.WriteString(StyleDim.Render("Kit will remove the workspace folder and code branch.") + "\n")
+		b.WriteString(StyleDim.Render("Kit will remove the workspace folder, code branch, and paired Herdr space (when present).") + "\n")
 	}
 	for i, id := range toggles {
 		cursor := "  "

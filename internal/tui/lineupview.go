@@ -28,6 +28,10 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	if state == nil {
 		state = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
+	var herdrState liftoff.HerdrState
+	if liftoff.HerdrAvailable() {
+		herdrState, _ = liftoff.ReadHerdrState()
+	}
 
 	type row struct {
 		name       string
@@ -35,6 +39,8 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		hasSlot    bool
 		running    string
 		hasRunning bool
+		herdr      string
+		hasHerdr   bool
 		branch     string
 		status     string
 		statusOK   bool
@@ -64,6 +70,16 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		}
 
 		meta, hasMeta := state.Worktrees[name]
+		herdrStatus := "—"
+		if hasMeta && meta.HerdrSpace != "" {
+			herdrStatus = meta.HerdrSpace
+		}
+		if space := liftoff.FindHerdrWorkspace(herdrState, meta.HerdrID, name, w.Path); space != nil {
+			herdrStatus = liftoff.TruncateHerdrStatus(herdrState.WorkspaceAgentSummary(space.WorkspaceID), 28)
+			if herdrStatus == "idle" {
+				herdrStatus = "ready"
+			}
+		}
 		ports := liftoff.PortsForSlot(meta.Slot)
 
 		running, total := liftoff.RunningCount(name, ports)
@@ -112,6 +128,8 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			hasSlot:    isMaster || (hasMeta && meta.Slot > 0),
 			running:    runningStr,
 			hasRunning: hasRunning,
+			herdr:      herdrStatus,
+			hasHerdr:   herdrStatus != "—",
 			branch:     branchDisp,
 			status:     stRaw,
 			statusOK:   !strings.Contains(stRaw, "dirty"),
@@ -152,9 +170,14 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 					return colDim
 				}
 				return colCell.Foreground(colorOK).Bold(true)
-			case 3: // BRANCH
+			case 3: // HERDR
+				if !data.hasHerdr {
+					return colDim
+				}
+				return colCell.Foreground(colorAccent)
+			case 4: // BRANCH
 				return colCell.Foreground(colorMuted)
-			case 4: // STATUS
+			case 5: // STATUS
 				if data.statusOK {
 					return colCell.Foreground(colorOK)
 				}
@@ -162,10 +185,10 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			}
 			return colCell
 		}).
-		Headers("NAME", "SLOT", "RUNNING", "BRANCH", "STATUS")
+		Headers("NAME", "SLOT", "RUNNING", "HERDR", "BRANCH", "STATUS")
 
 	for _, r := range rows {
-		tbl.Row(r.name, r.slot, r.running, r.branch, r.status)
+		tbl.Row(r.name, r.slot, r.running, r.herdr, r.branch, r.status)
 	}
 
 	b.WriteString(tbl.Render() + "\n")

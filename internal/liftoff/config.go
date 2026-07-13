@@ -22,13 +22,15 @@ const (
 // existing env-var override; env wins at read time when set. Persisted by
 // `kit setup` and editable by hand.
 type Settings struct {
-	Root        string `toml:"root,omitempty"`
-	MasterDir   string `toml:"master_dir,omitempty"`
-	GtabDir     string `toml:"gtab_dir,omitempty"`
-	MainBranch  string `toml:"main_branch,omitempty"`
-	PyVenv      string `toml:"py_venv,omitempty"`
-	Editor      string `toml:"editor,omitempty"`
-	LiftoffRepo string `toml:"liftoff_repo,omitempty"`
+	Root         string `toml:"root,omitempty"`
+	MasterDir    string `toml:"master_dir,omitempty"`
+	GtabDir      string `toml:"gtab_dir,omitempty"`
+	MainBranch   string `toml:"main_branch,omitempty"`
+	PyVenv       string `toml:"py_venv,omitempty"`
+	Editor       string `toml:"editor,omitempty"`
+	LiftoffRepo  string `toml:"liftoff_repo,omitempty"`
+	HerdrSession string `toml:"herdr_session,omitempty"`
+	HerdrLayout  string `toml:"herdr_layout,omitempty"`
 }
 
 // WorktreeMeta is the persisted record for one worktree in config.toml.
@@ -36,12 +38,24 @@ type Settings struct {
 // Branch, Path, and Adopted were added in schema 2. Older schema-1 files
 // load with empty values and are migrated transparently on next write.
 type WorktreeMeta struct {
-	Slot     int       `toml:"slot"`
-	Created  time.Time `toml:"created"`
-	LastUsed time.Time `toml:"last_used"`
-	Branch   string    `toml:"branch,omitempty"`  // actual git branch (may differ from key)
-	Path     string    `toml:"path,omitempty"`    // worktree path (for adoption troubleshooting)
-	Adopted  bool      `toml:"adopted,omitempty"` // true when added via kit adopt (vs kit design)
+	Slot            int       `toml:"slot"`
+	Created         time.Time `toml:"created"`
+	LastUsed        time.Time `toml:"last_used"`
+	Branch          string    `toml:"branch,omitempty"`  // actual git branch (may differ from key)
+	Path            string    `toml:"path,omitempty"`    // worktree path (for adoption troubleshooting)
+	Adopted         bool      `toml:"adopted,omitempty"` // true when added via kit adopt (vs kit design)
+	HerdrSpace      string    `toml:"space,omitempty"`   // durable Herdr workspace label
+	HerdrID         string    `toml:"herdr_workspace_id,omitempty"`
+	HerdrLayout     string    `toml:"layout,omitempty"`
+	LastOpened      time.Time `toml:"last_opened,omitempty"`
+	PreferredAgents []string  `toml:"preferred_agents,omitempty"`
+}
+
+// HerdrLayout describes the tabs Kit materializes inside a Herdr workspace.
+// Tab names are intentionally user-facing; Kit owns the commands each
+// built-in tab runs.
+type HerdrLayout struct {
+	Tabs []string `toml:"tabs"`
 }
 
 // Config is the on-disk shape of ~/.config/kit/config.toml.
@@ -49,6 +63,7 @@ type Config struct {
 	Schema    int                     `toml:"schema"`
 	Settings  Settings                `toml:"settings,omitempty"`
 	Worktrees map[string]WorktreeMeta `toml:"worktrees,omitempty"`
+	Layouts   map[string]HerdrLayout  `toml:"layouts,omitempty"`
 }
 
 // State is the legacy name for Config; kept as a type alias so callers
@@ -73,7 +88,7 @@ func configDir() string {
 
 // LoadConfig reads config.toml. Missing file returns an empty Config.
 func LoadConfig() (*Config, error) {
-	c := &Config{Schema: configSchema, Worktrees: map[string]WorktreeMeta{}}
+	c := &Config{Schema: configSchema, Worktrees: map[string]WorktreeMeta{}, Layouts: map[string]HerdrLayout{}}
 	data, err := os.ReadFile(ConfigPath())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -86,6 +101,9 @@ func LoadConfig() (*Config, error) {
 	}
 	if c.Worktrees == nil {
 		c.Worktrees = map[string]WorktreeMeta{}
+	}
+	if c.Layouts == nil {
+		c.Layouts = map[string]HerdrLayout{}
 	}
 	if c.Schema == 0 {
 		c.Schema = configSchema

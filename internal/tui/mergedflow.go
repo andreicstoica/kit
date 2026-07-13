@@ -107,6 +107,12 @@ func mergedWashOne(layout liftoff.Layout, c liftoff.MergedCandidate) error {
 			}
 		}
 	}
+	// Remove the paired Herdr workspace before deleting its checkout path.
+	// This is best-effort: merged cleanup should still remove the Git worktree
+	// if a disconnected Herdr server cannot be reached.
+	if liftoff.HerdrAvailable() {
+		_ = liftoff.CloseHerdr(c.Name, c.Path)
+	}
 	// Remove worktree + branch.
 	if err := layout.RemoveWorktree(c.Path, nil); err != nil {
 		return err

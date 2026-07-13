@@ -12,8 +12,10 @@ var washCmd = &cobra.Command{
 	Use:     "wash [name]",
 	Aliases: []string{"rm", "remove", "delete"},
 	Short:   "Delete an old workspace",
-	Long: `wash deletes a workspace folder and its code branch. It can also delete
-the workspace's private database and saved Ghostty layout.
+	Long: `wash deletes a workspace folder, its code branch, and its paired Herdr
+space. It can also delete the workspace's private database and saved Ghostty
+layout. Use kit close when you want to delete only terminal state while
+keeping the Git worktree.
 
 Pass a name to skip the picker; omit to pick from a list (or auto-resolve
 from cwd when run from inside a workspace).

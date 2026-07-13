@@ -18,9 +18,9 @@ var (
 
 var swapCmd = &cobra.Command{
 	Use:     "swap [name]",
-	Aliases: []string{"open", "gtab"},
-	Short:   "Sub into a kit — open its worktree in your IDE (or --workspace for Ghostty)",
-	Long: "**swap** opens a kit's worktree in your editor.\n\n" +
+	Aliases: []string{"gtab"},
+	Short:   "Open a worktree in an editor or the legacy Ghostty layout",
+	Long: "**swap** is the legacy editor/Ghostty opener. Use `kit open` or `kit focus` for the persistent Herdr environment.\n\n" +
 		"## Examples\n\n" +
 		"```\n" +
 		"kit swap                   # kit picker → editor picker\n" +
@@ -33,7 +33,7 @@ var swapCmd = &cobra.Command{
 		"## Flags\n\n" +
 		"`-e` / `--editor` accepts: `zed`, `cursor`, `code`, or any binary on PATH.\n" +
 		"Honors `$KIT_EDITOR` if no flag is given and only one editor is installed.\n\n" +
-		"`-w` / `--workspace` skips the editor and launches the Ghostty gtab " +
+		"`-w` / `--workspace` skips the editor and launches the legacy Ghostty gtab " +
 		"workspace directly; `-d` / `--detailed` selects the 5-tab layout. " +
 		"(Ghostty is also offered in the editor picker when no flag is given.)\n\n" +
 		"On macOS, editors are detected via `.app` bundle in `/Applications` " +
