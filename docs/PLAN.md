@@ -158,9 +158,10 @@ emoji shown in `kit lineup`, the play picker, and the gtab tab title.
 
 - `kit play <name>` (or via picker)
 - `kit swap <name>` opens the IDE
+- `kit open <name>` attaches Herdr and updates `last_opened`
 - (deferred) shell hook on `cd` into a worktree
 
-`kit lineup` sorts rows by `last_used` desc. Columns: `NAME · SLOT · RUNNING · BRANCH · STATUS`. SLOT and RUNNING sit adjacent because both describe the port-allocation lifecycle (slot = ports reserved, running = ports actually serving).
+`kit lineup` sorts rows by `last_used` desc. Columns: `NAME · SLOT · RUNNING · HERDR · BRANCH · STATUS`. HERDR shows the persistent space or active agents.
 
 ## Charm/bubble component map
 
@@ -185,12 +186,16 @@ emoji shown in `kit lineup`, the play picker, and the gtab tab title.
 | `kit design` | `new` | Create new worktree (huh wizard + Bubble Tea progress) |
 | `kit lineup` | `ls`, `list` | List active worktrees |
 | `kit play [name]` | — | Start services (picker if no name; cwd-aware) |
+| `kit open [name]` | — | Attach to the worktree's persistent Herdr space |
+| `kit close [name]` | — | Explicitly delete Herdr terminal state |
+| `kit focus [name]` | — | Focus Herdr plus optional editor/client |
+| `kit remote [name]` | — | Pick a worktree and attach to Herdr |
 | `kit pause [name]` | — | Stop services |
 | `kit log [name]` | — | Tail all `.log` files (scrollable) |
-| `kit wash` | `rm`, `remove` | Strip a single kit (picker) |
+| `kit wash` | `rm`, `remove` | Delete a single kit and its paired Herdr space (picker) |
 | `kit tear` | `prune` | Bulk-wash merged/closed branches (multi-select) |
 | `kit warmup <name>` | `gtab` | Launch ghostty workspace |
-| `kit swap <name> [editor]` | `open` | Open worktree in editor |
+| `kit swap <name> [editor]` | `gtab` | Open worktree in editor or legacy Ghostty |
 
 Flags worth knowing:
 - `kit play <name> --only api,app` — skip toggle screen
@@ -209,7 +214,7 @@ script. Behavior:
 - Symlinking node_modules + service start work identically
 - `kit warmup <legacy>` finds gtabs at the legacy filename
   (`liftoff-<name>.applescript`)
-- `kit wash` works as today
+- `kit wash` removes the paired Herdr space together with the Git worktree
 
 ## Configuration knobs (env vars)
 
@@ -223,6 +228,8 @@ script. Behavior:
 | `KIT_MAIN_BRANCH` | `master`             | upstream branch |
 | `KIT_PY_VENV`     | `~/.envs/py314`      | python venv for backend services |
 | `KIT_EDITOR`      | (unset)              | force editor for `swap` |
+| `KIT_HERDR_SESSION` | `default`           | named persistent Herdr session |
+| `KIT_HERDR_LAYOUT`  | `default`           | default Kit-owned Herdr layout |
 | `KIT_NO_EMOJI`    | (unset)              | disable emoji prefixes |
 
 ## Roadmap

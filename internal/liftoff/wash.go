@@ -23,8 +23,11 @@ func branchForDelete(p WashPlan) string {
 	return p.Name
 }
 
-// RunWash executes removal: stop services → worktree → branch → DB → gtab → free slot.
-// Emits StepUpdate events. Worktree+branch failures are fatal; the rest are best-effort.
+// RunWash executes removal: stop services → Herdr → worktree → branch → DB →
+// gtab → free slot. A worktree wash is an explicit deletion, so its paired
+// Herdr workspace is removed too. Worktree failures are fatal; cleanup of
+// terminal/editor state is best-effort so a stale client cannot strand the
+// Git worktree.
 func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 	ch := make(chan StepUpdate, 32)
 	go func() {
@@ -55,6 +58,16 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 						emit("nothing running")
 					}
 					return nil
+				},
+			},
+			{
+				title: "remove Herdr workspace",
+				run: func(emit func(string)) error {
+					if !HerdrAvailable() {
+						emit("Herdr not installed; nothing to remove")
+						return nil
+					}
+					return CloseHerdr(p.Name, p.WorktreePath)
 				},
 			},
 			{
@@ -106,9 +119,9 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			err := s.run(emit)
 			if err != nil {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: fmt.Errorf("%w", err), Elapsed: time.Since(start)}
-				// Only worktree-remove (step 1) is fatal; the rest are
-				// best-effort so a late failure still frees the slot (step 5).
-				if i == 1 {
+				// Only worktree-remove (step 2) is fatal; the rest are
+				// best-effort so a late failure still frees the slot (step 6).
+				if i == 2 {
 					return
 				}
 				continue

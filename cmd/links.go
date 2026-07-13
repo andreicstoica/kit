@@ -122,7 +122,7 @@ func runLinks(cmd *cobra.Command, args []string) error {
 	fmt.Println(tui.StyleDim.Render("tip: " + strings.Join([]string{
 		"kit play " + name,
 		"kit pause " + name,
-		"kit swap " + name,
+		"kit open " + name,
 	}, " · ")))
 	return nil
 }

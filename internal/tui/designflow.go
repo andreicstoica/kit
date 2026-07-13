@@ -489,6 +489,21 @@ func PickGtabLayout(includeSkip bool) (liftoff.GtabLayout, error) {
 	)
 }
 
+// PickHerdrLayout prompts for the Kit-owned persistent terminal layout. It
+// mirrors the existing Ghostty picker so the first `kit open` feels familiar:
+// simple keeps the two-tab workflow, while detailed keeps the five-tab one.
+func PickHerdrLayout() (string, error) {
+	opts := []SelectOption[string]{
+		{Label: "Simple (2 tabs)", Value: "default"},
+		{Label: "Detailed (5 tabs)", Value: "detailed"},
+	}
+	return RunSelect(
+		"Herdr workspace layout",
+		"Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service logs.",
+		opts, "default",
+	)
+}
+
 // offerNextSteps asks the follow-up questions before acting, so the user
 // answers from this terminal before a workspace window steals focus.
 func offerNextSteps(layout liftoff.Layout, name string) error {

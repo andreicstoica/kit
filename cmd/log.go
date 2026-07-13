@@ -67,7 +67,7 @@ func init() {
 
 // ensureRunDir creates the run dir + pre-touches the default service log
 // files so the log viewer can open and start tailing before `kit play`
-// has actually run. Used in --wait mode (e.g. gtab logs tab).
+// has actually run. Used in --wait mode (e.g. legacy gtab or Herdr logs tab).
 func ensureRunDir(name string) error {
 	if _, err := liftoff.RunDir(name); err != nil {
 		return fmt.Errorf("create run dir: %w", err)

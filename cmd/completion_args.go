@@ -6,8 +6,8 @@ import (
 )
 
 // completeWorktreeNames returns the list of worktree names eligible for
-// the first positional arg of commands like swap / play / pause / restart
-// / log / wash / links / diff. Includes "master" plus every managed
+// the first positional arg of commands like open / close / focus / remote /
+// swap / play / pause / restart / log / wash / links / diff. Includes "master" plus every managed
 // worktree from config, with on-disk feature worktrees as a fallback so
 // completion still works before adoption.
 func completeWorktreeNames(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {

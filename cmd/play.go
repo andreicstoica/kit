@@ -16,6 +16,7 @@ const logRetention = 30 * 24 * time.Hour
 var (
 	playOnly     []string
 	playNoCelery bool
+	playOpen     bool
 )
 
 var playCmd = &cobra.Command{
@@ -49,11 +50,26 @@ the service-selection screen.`,
 		if err != nil {
 			return err
 		}
-		return tui.RunPlayTUI(layout, tui.PlayConfig{
+		err = tui.RunPlayTUI(layout, tui.PlayConfig{
 			Name:     name,
 			Only:     only,
 			NoCelery: playNoCelery,
 		})
+		if err != nil || !playOpen || name == "" {
+			return err
+		}
+		path, err := layout.ResolveWorktreePath(name)
+		if err != nil {
+			return err
+		}
+		chosenLayout, err := resolveHerdrLayout(name, path, "")
+		if err != nil {
+			return err
+		}
+		if _, err := liftoff.OpenHerdr(name, path, chosenLayout); err != nil {
+			return err
+		}
+		return liftoff.AttachHerdr()
 	},
 }
 
@@ -62,6 +78,10 @@ func init() {
 		"comma-separated services to start (app,admin,api,admin_be,mcp,celery,beat)")
 	playCmd.Flags().BoolVar(&playNoCelery, "no-celery", false,
 		"skip celery worker and beat")
+	playCmd.Flags().BoolVar(&playOpen, "open", false,
+		"attach to the worktree's Herdr space after services start")
+	playCmd.Flags().BoolVar(&playOpen, "attach", false,
+		"alias for --open")
 	rootCmd.AddCommand(playCmd)
 }
 

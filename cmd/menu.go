@@ -17,10 +17,14 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 	}
 	items := []item{
 		{"lineup", "see all workspaces"},
+		{"open", "attach to a persistent Herdr space"},
+		{"close", "delete a Herdr space (keep the worktree)"},
+		{"focus", "make a workspace your active environment"},
+		{"remote", "pick a remote-ready Herdr space"},
 		{"play", "start a workspace"},
 		{"pause", "stop a workspace"},
 		{"restart", "stop and start a workspace"},
-		{"swap", "open a workspace in your editor or Ghostty"},
+		{"swap", "open a workspace in your editor or legacy Ghostty"},
 		{"log", "watch app logs"},
 		{"links", "show a workspace's URLs"},
 		{"diff", "see what changed vs master"},

@@ -418,13 +418,13 @@ func checkGhostty() CheckResult {
 }
 
 // checkHerdr reports the herdr agent multiplexer. Optional (CheckWarn, not
-// CheckFail): without it `kit swap` simply doesn't offer the herdr target and
-// falls back to editors / the Ghostty workspace. Plain formula, not a cask.
+// CheckFail): without it `kit open` and `kit focus` cannot attach to persistent
+// worktree spaces. Plain formula, not a cask.
 func checkHerdr() CheckResult {
 	r := CheckResult{Name: "herdr"}
 	if _, err := exec.LookPath("herdr"); err != nil {
 		r.Status = CheckWarn
-		r.Detail = "not installed — `kit swap` won't offer the herdr multiplexer"
+		r.Detail = "not installed — `kit open` and `kit focus` need Herdr"
 		r.FixHint = "brew install herdr"
 		r.FixCmd = []string{"herdr"}
 		return r

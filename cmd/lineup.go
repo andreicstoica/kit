@@ -14,7 +14,8 @@ var lineupCmd = &cobra.Command{
 	Use:     "lineup",
 	Aliases: []string{"ls", "list"},
 	Short:   "Show the kits currently available (--tree for the tree view)",
-	Long: "**lineup** lists every kit. Default is a table; `--tree` renders the " +
+	Long: "**lineup** lists every kit. Default is a table with Herdr space/agent " +
+		"status when Herdr is available; `--tree` renders the " +
 		"same set as a tree rooted at master, expanding each worktree's gt " +
 		"stack, setup signals (db ownership + node_modules wiring), and " +
 		"running services.",

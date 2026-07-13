@@ -22,7 +22,7 @@ var adoptCmd = &cobra.Command{
 	Long: "**adopt** registers a worktree that exists on disk + in git but isn't " +
 		"yet known to kit. Allocates the next available port slot and writes the " +
 		"branch + path to `config.toml` so `kit play`, `kit links`, `kit wash` " +
-		"recognize it.\n\n" +
+		"and `kit open` recognize it.\n\n" +
 		"Pass a name, or run from inside the worktree, or pick from a list of " +
 		"adoptable candidates.",
 	Args:              cobra.MaximumNArgs(1),
