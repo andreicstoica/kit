@@ -129,10 +129,7 @@ func (l Layout) WriteGtabLayout(name, worktree string, layout GtabLayout) (strin
 		return "", err
 	}
 	defer f.Close()
-	tabTitle := name
-	if e := EmojiFor(name); e != "" {
-		tabTitle = e + " " + name
-	}
+	tabTitle := HerdrShellTabLabel(name)
 	appLog, _ := LogFile(name, string(SvcApp))
 	adminLog, _ := LogFile(name, string(SvcAdmin))
 	apiLog, _ := LogFile(name, string(SvcAPI))
