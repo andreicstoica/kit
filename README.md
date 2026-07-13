@@ -459,9 +459,10 @@ each.
 
 Every worktree maps to one Herdr workspace in Kit's configured persistent
 session. On first open, Kit shows the same layout picker as the old Ghostty
-flow: **Simple (2 tabs)** for shell + combined logs, or **Detailed (5 tabs)**
-with per-service log tabs and splits. Later opens focus the same workspace and
-attach without prompting or duplicating tabs. Use `--layout detailed` (or
+flow: **Simple (2 tabs)** for the emoji + worktree shell tab and combined logs,
+or **Detailed (5 tabs)** with the same emoji + worktree root and per-service
+log tabs/splits. Later opens focus the same workspace and attach without
+prompting or duplicating tabs. Use `--layout detailed` (or
 `--layout ai`) for scripting and other Kit-owned layouts.
 
 Herdr owns terminal state, so closing Ghostty, disconnecting SSH, or leaving a

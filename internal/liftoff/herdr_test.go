@@ -69,6 +69,20 @@ func TestBuiltinHerdrLayouts(t *testing.T) {
 	}
 }
 
+func TestHerdrShellTabLabelMatchesGhostty(t *testing.T) {
+	t.Setenv("KIT_NO_EMOJI", "")
+	name := "voice-agent"
+	want := EmojiFor(name) + " " + name
+	if got := HerdrShellTabLabel(name); got != want {
+		t.Fatalf("Herdr shell label = %q, want %q", got, want)
+	}
+
+	t.Setenv("KIT_NO_EMOJI", "1")
+	if got := HerdrShellTabLabel(name); got != name {
+		t.Fatalf("emoji-disabled Herdr shell label = %q, want %q", got, name)
+	}
+}
+
 func TestHerdrMetadataAndLayoutsRoundTrip(t *testing.T) {
 	setStateDir(t)
 	c, err := LoadConfig()

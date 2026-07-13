@@ -51,9 +51,9 @@ type HerdrPane struct {
 const defaultHerdrSession = "default"
 
 // BuiltinHerdrLayouts are the Kit-owned layouts. The first two preserve the
-// existing Ghostty workflow: simple is shell + logs, detailed is the old
-// five-tab frontend/backend/celery/logs layout. AI is a forward-looking
-// layout that keeps each agent in its own durable tab.
+// existing Ghostty workflow: simple is the emoji/worktree shell tab + logs,
+// detailed is the old five-tab frontend/backend/celery/logs layout. AI is a
+// forward-looking layout that keeps each agent in its own durable tab.
 func BuiltinHerdrLayouts() map[string]HerdrLayout {
 	return map[string]HerdrLayout{
 		"default":  {Tabs: []string{"shell", "logs"}},
@@ -61,6 +61,16 @@ func BuiltinHerdrLayouts() map[string]HerdrLayout {
 		"detailed": {Tabs: []string{"shell", "frontend", "backend", "celery", "logs"}},
 		"ai":       {Tabs: []string{"shell", "claude", "codex", "gemini", "logs"}},
 	}
+}
+
+// HerdrShellTabLabel is the stable root-tab label shared by Herdr and the
+// legacy Ghostty workspace. The worktree name identifies the workspace; the
+// emoji makes the root tab recognizable when several workspaces are attached.
+func HerdrShellTabLabel(name string) string {
+	if emoji := EmojiFor(name); emoji != "" {
+		return emoji + " " + name
+	}
+	return name
 }
 
 // HerdrSessionName returns the named persistent Herdr session Kit uses. The
@@ -420,21 +430,37 @@ func materializeHerdrLayout(name, path, workspaceID, layoutName string, state He
 	}
 	seen := map[string]bool{}
 	var workspaceTabs []HerdrTab
-	for _, tab := range state.Tabs {
+	shellLabel := HerdrShellTabLabel(name)
+	for i := range state.Tabs {
+		tab := &state.Tabs[i]
 		if tab.WorkspaceID == workspaceID {
-			workspaceTabs = append(workspaceTabs, tab)
-			seen[tab.Label] = true
+			workspaceTabs = append(workspaceTabs, *tab)
+			switch tab.Label {
+			case "shell":
+				// Migrate spaces created before v0.3.1 in place.
+				if _, err := runHerdr("tab", "rename", tab.TabID, shellLabel); err != nil {
+					return fmt.Errorf("name Herdr shell tab: %w", err)
+				}
+				tab.Label = shellLabel
+				seen["shell"] = true
+				seen[shellLabel] = true
+			case shellLabel:
+				seen["shell"] = true
+				seen[shellLabel] = true
+			default:
+				seen[tab.Label] = true
+			}
 		}
 	}
-	// workspace create normally supplies the first tab. Give it the stable
-	// Kit name so subsequent opens can recognize the layout without creating
-	// duplicates.
+	// workspace create normally supplies the first tab. Give it the legacy
+	// Ghostty-compatible label so subsequent opens can recognize the layout
+	// without creating duplicates.
 	if !seen["shell"] && len(workspaceTabs) == 1 {
-		if _, err := runHerdr("tab", "rename", workspaceTabs[0].TabID, "shell"); err != nil {
+		if _, err := runHerdr("tab", "rename", workspaceTabs[0].TabID, shellLabel); err != nil {
 			return fmt.Errorf("name Herdr shell tab: %w", err)
 		}
 		seen["shell"] = true
-		workspaceTabs[0].Label = "shell"
+		seen[shellLabel] = true
 	}
 	for _, tabName := range uniqueStrings(layout.Tabs) {
 		if seen[tabName] {
