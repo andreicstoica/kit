@@ -24,7 +24,7 @@ var doctorCmd = &cobra.Command{
 		"- git, gh (with auth), node + yarn, python (with venv)\n" +
 		"- redis, postgres (running on default ports)\n" +
 		"- Herdr (persistent terminal runtime)\n" +
-		"- Ghostty, an editor (Zed / Cursor / VS Code)\n" +
+		"- Ghostty, an editor (Hangar / Zed / Cursor / VS Code)\n" +
 		"- The Liftoff master repo and its node_modules\n\n" +
 		"Exits non-zero on any failure. Pair with `kit setup` to fix what's " +
 		"missing. Pass `--self-test` for runtime smoke checks on top of the " +

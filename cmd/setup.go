@@ -160,8 +160,12 @@ func persistSetupSettings(layout liftoff.Layout) error {
 			}
 		}
 		if c.Settings.Editor == "" {
-			if eds := liftoff.InstalledEditors(); len(eds) > 0 {
-				c.Settings.Editor = eds[0].Binary
+			for _, editor := range liftoff.InstalledEditors() {
+				if editor.Binary == liftoff.WorkspaceSentinel || editor.Binary == liftoff.SkipSentinel {
+					continue
+				}
+				c.Settings.Editor = editor.Binary
+				break
 			}
 		}
 		if c.Settings.LiftoffRepo == "" {

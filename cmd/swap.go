@@ -25,14 +25,14 @@ var swapCmd = &cobra.Command{
 		"```\n" +
 		"kit swap                   # kit picker → editor picker\n" +
 		"kit swap notebook          # editor picker\n" +
-		"kit swap -e zed            # kit picker → opens in zed\n" +
-		"kit swap notebook -e zed   # opens immediately\n" +
+		"kit swap -e hangar         # kit picker → opens in Hangar\n" +
+		"kit swap notebook -e hangar # opens immediately\n" +
 		"kit swap -w                # skip editor → Ghostty workspace (2 tabs)\n" +
 		"kit swap -w -d notebook    # Ghostty workspace, detailed (5 tabs)\n" +
 		"```\n\n" +
 		"## Flags\n\n" +
-		"`-e` / `--editor` accepts: `zed`, `cursor`, `code`, or any binary on PATH.\n" +
-		"Honors `$KIT_EDITOR` if no flag is given and only one editor is installed.\n\n" +
+		"`-e` / `--editor` accepts: `hangar`, `zed`, `cursor`, `code`, or any binary on PATH.\n" +
+		"Editor preference order is `$KIT_EDITOR`, config.toml `settings.editor`, then detected order.\n\n" +
 		"`-w` / `--workspace` skips the editor and launches the legacy Ghostty gtab " +
 		"workspace directly; `-d` / `--detailed` selects the 5-tab layout. " +
 		"(Ghostty is also offered in the editor picker when no flag is given.)\n\n" +
@@ -103,7 +103,7 @@ func worktreeFromCwd(layout liftoff.Layout) string {
 }
 
 func init() {
-	swapCmd.Flags().StringVarP(&swapEditorFlag, "editor", "e", "", "editor to open with (zed, cursor, code, or any PATH binary)")
+	swapCmd.Flags().StringVarP(&swapEditorFlag, "editor", "e", "", "editor to open with (hangar, zed, cursor, code, or any PATH binary)")
 	swapCmd.Flags().BoolVarP(&swapWorkspace, "workspace", "w", false, "skip editor; launch the Ghostty gtab workspace")
 	swapCmd.Flags().BoolVarP(&swapDetailed, "detailed", "d", false, "with --workspace: use the 5-tab detailed layout")
 	rootCmd.AddCommand(swapCmd)

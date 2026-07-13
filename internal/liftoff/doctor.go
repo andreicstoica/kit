@@ -437,15 +437,10 @@ func checkHerdr() CheckResult {
 
 func checkEditor() CheckResult {
 	r := CheckResult{Name: "editors"}
-	known := []struct{ App, Label string }{
-		{"Zed.app", "Zed"},
-		{"Cursor.app", "Cursor"},
-		{"Visual Studio Code.app", "VS Code"},
-	}
 	var found []string
-	for _, k := range known {
-		if appExists(k.App) {
-			found = append(found, k.Label)
+	for _, editor := range InstalledEditors() {
+		if editor.Binary != WorkspaceSentinel && editor.Binary != SkipSentinel {
+			found = append(found, editor.Name)
 		}
 	}
 	if len(found) > 0 {
@@ -454,7 +449,7 @@ func checkEditor() CheckResult {
 		return r
 	}
 	r.Status = CheckWarn
-	r.Detail = "no supported editor in /Applications"
+	r.Detail = "no supported editor in /Applications or on PATH"
 	r.FixHint = "brew install --cask zed"
 	r.FixCmd = []string{"zed"}
 	r.FixCask = true

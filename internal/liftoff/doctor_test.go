@@ -1,6 +1,9 @@
 package liftoff
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAnyFailed(t *testing.T) {
 	cases := []struct {
@@ -63,5 +66,23 @@ func TestRunChecksParallelOrder(t *testing.T) {
 	}
 	if got[0].Status != CheckOK || got[1].Status != CheckWarn || got[2].Status != CheckFail {
 		t.Fatalf("RunChecks lost result content: %+v", got)
+	}
+}
+
+func TestCheckEditorRecognizesConfiguredCLI(t *testing.T) {
+	setStateDir(t)
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Settings.Editor = "sh"
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KIT_EDITOR", "")
+
+	result := checkEditor()
+	if result.Status != CheckOK || !strings.Contains(result.Detail, "sh") {
+		t.Fatalf("configured CLI editor result = %+v", result)
 	}
 }

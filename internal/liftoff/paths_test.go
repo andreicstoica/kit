@@ -1,6 +1,7 @@
 package liftoff
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -42,5 +43,57 @@ func TestGtabFile(t *testing.T) {
 	l := DefaultLayout()
 	if got := l.GtabFile("foo"); got != "/g/foo.applescript" {
 		t.Errorf("GtabFile = %q", got)
+	}
+}
+
+func TestResolveWorktreePathPrefersPersistedMetadata(t *testing.T) {
+	setStateDir(t)
+	root := t.TempDir()
+	stored := filepath.Join(t.TempDir(), "custom-checkout")
+	if err := os.Mkdir(stored, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Worktrees["feature-a"] = WorktreeMeta{Path: stored, Adopted: true}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	layout := Layout{Root: root, Master: filepath.Join(root, "master")}
+	got, err := layout.ResolveWorktreePath("feature-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != stored {
+		t.Fatalf("ResolveWorktreePath = %q, want persisted %q", got, stored)
+	}
+}
+
+func TestResolveWorktreePathFallsBackWhenPersistedPathMissing(t *testing.T) {
+	setStateDir(t)
+	root := t.TempDir()
+	canonical := filepath.Join(root, "feature-a")
+	if err := os.Mkdir(canonical, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Worktrees["feature-a"] = WorktreeMeta{Path: filepath.Join(root, "missing")}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	layout := Layout{Root: root, Master: filepath.Join(root, "master")}
+	got, err := layout.ResolveWorktreePath("feature-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != canonical {
+		t.Fatalf("ResolveWorktreePath = %q, want canonical %q", got, canonical)
 	}
 }
