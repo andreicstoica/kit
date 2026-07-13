@@ -6,6 +6,33 @@ import (
 	"time"
 )
 
+func TestDecodeHerdrState(t *testing.T) {
+	direct := `{"workspaces":[{"workspace_id":"w1","label":"feature-a"}],"tabs":[],"panes":[]}`
+	enveloped := `{"id":"cli:api:snapshot","result":{"snapshot":{"workspaces":[{"workspace_id":"w1","label":"feature-a"}],"tabs":[],"panes":[]},"type":"session_snapshot"}}`
+
+	for name, input := range map[string]string{
+		"direct":    direct,
+		"enveloped": enveloped,
+	} {
+		t.Run(name, func(t *testing.T) {
+			state, err := decodeHerdrState([]byte(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(state.Workspaces) != 1 || state.Workspaces[0].WorkspaceID != "w1" {
+				t.Fatalf("decoded state = %+v", state)
+			}
+		})
+	}
+}
+
+func TestDecodeHerdrStateRejectsEnvelopeWithoutSnapshot(t *testing.T) {
+	_, err := decodeHerdrState([]byte(`{"id":"cli:api:snapshot","result":{"type":"session_snapshot"}}`))
+	if err == nil || !strings.Contains(err.Error(), "missing snapshot") {
+		t.Fatalf("error = %v, want missing snapshot", err)
+	}
+}
+
 func TestFindHerdrWorkspacePrefersSavedID(t *testing.T) {
 	cwd := "/tmp/kit/feature-a"
 	state := HerdrState{Workspaces: []HerdrWorkspace{
