@@ -24,6 +24,20 @@ const WorkspaceSentinel = "__workspace__"
 // (like post-design) that want a no-op escape hatch in the same picker.
 const SkipSentinel = "__skip__"
 
+// HerdrSentinel marks the "persistent Herdr space" target, so `kit open` can
+// offer it in the same picker as the editors instead of assuming it.
+const HerdrSentinel = "__herdr__"
+
+// HerdrCandidate is the picker entry for the persistent Herdr space.
+func HerdrCandidate() EditorCandidate {
+	return EditorCandidate{
+		Name:      "Herdr space",
+		Binary:    HerdrSentinel,
+		Desc:      "attach the worktree's persistent Herdr session (reachable from your phone)",
+		Installed: true,
+	}
+}
+
 // EditorCandidate describes one possible editor + its install state. On
 // macOS an editor may be installed as a `.app` bundle without a PATH binary,
 // so UseOpen records whether to launch via `open -a App` vs the CLI binary.
