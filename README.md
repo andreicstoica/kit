@@ -28,7 +28,7 @@ kit play <name>          # start services
 kit play <name> --open   # start services, then attach to Herdr
 kit open <name>          # pick 2/5 tabs on first open, then attach to Herdr
 kit close <name>         # explicitly delete Herdr terminal state
-kit focus <name>         # Herdr + optional Cursor/Ghostty client
+kit focus <name>         # Herdr + optional Hangar/editor/Ghostty client
 kit remote               # pick a worktree/space, then attach
 kit pause <name>         # stop services
 kit restart <name>       # stop then start (bounce a hung service)
@@ -104,7 +104,7 @@ it). `kit play` boots all five (minus mcp) in parallel.
 | `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
 | `gt` (graphite) | "Track in graphite" toggle, `kit sync`, gt stack in lineup |
 | `gh` (GitHub CLI) | `kit wash --merged` checks PR state |
-| `zed` / `cursor` / `code` | any one suffices for `kit swap`. Override via `KIT_EDITOR`. |
+| `hangar` / `zed` / `cursor` / `code` | any one suffices for `kit swap`. Hangar Dev and stable app bundles are detected without a CLI. Override via `KIT_EDITOR`. |
 | `hunk` | nicer side-by-side `kit diff` |
 | `ruff` | backend lint/format (replaced black/isort/flake8); kit doesn't run it, but backend dev + CI expect it |
 
@@ -476,8 +476,9 @@ the next `kit open` recreates the space.
 ### `kit focus [name]` — make a worktree active
 
 Focuses the Herdr workspace and attaches the current terminal. Add `--cursor`
-or `--editor <name>` to open an editor too; `--ghostty` starts a Herdr client
-inside Ghostty and `--no-attach` leaves the current terminal alone.
+or `--editor <name>` (for example, `--editor hangar`) to open an editor too;
+`--ghostty` starts a Herdr client inside Ghostty and `--no-attach` leaves the
+current terminal alone.
 
 ### `kit remote [name]` — reconnect interactively
 
@@ -487,8 +488,10 @@ and attaches the Herdr client.
 
 ### `kit swap [name]` (alias `gtab`) — open in IDE or legacy Ghostty
 
-Picker over installed editors (Zed, Cursor, VS Code) plus Ghostty.
-Auto-picks when exactly one editor is installed. `-e zed` skips the picker.
+Picker over installed editors (Hangar, Zed, Cursor, VS Code) plus Ghostty.
+Both `Hangar Dev.app` and stable `Hangar.app` map to one Hangar entry, with
+app-bundle launch preferred over the CLI. Auto-picks when exactly one editor
+is installed. `-e hangar` skips the picker.
 
 `-w` / `--workspace` skips the editor and launches the legacy Ghostty gtab
 workspace directly — 2 tabs (worktree root + a `logs` tab running

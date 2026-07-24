@@ -86,11 +86,20 @@ func (l Layout) LegacyWorktreePath(name string) string {
 }
 
 // ResolveWorktreePath returns the on-disk dir for a kit: layout.Master for
-// "master", the canonical WorktreePath, or the legacy fallback. Errors
-// when neither exists for a non-master name.
+// "master", a persisted worktree metadata path, the canonical WorktreePath,
+// or the legacy fallback. Errors when none exists for a non-master name.
 func (l Layout) ResolveWorktreePath(name string) (string, error) {
 	if name == "master" {
 		return l.Master, nil
+	}
+	// Adopted worktrees may live outside the canonical root or retain the old
+	// liftoff- prefix. Their persisted path is the strongest source of truth.
+	if c, err := LoadConfig(); err == nil {
+		if meta, ok := c.Worktrees[name]; ok && meta.Path != "" {
+			if _, err := os.Stat(meta.Path); err == nil {
+				return meta.Path, nil
+			}
+		}
 	}
 	path := l.WorktreePath(name)
 	if _, err := os.Stat(path); err == nil {

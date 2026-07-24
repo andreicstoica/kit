@@ -202,7 +202,7 @@ Flags worth knowing:
 - `kit play <name> --no-celery` — skip celery worker + beat
 - `kit pause <name> --only celery` — selective stop
 - `kit pause --all` — kill everything across every worktree
-- `KIT_EDITOR=cursor kit swap <name>` — force editor (also `kit swap <name> cursor`)
+- `KIT_EDITOR=hangar kit swap <name>` — prefer Hangar (also `kit swap <name> -e hangar`)
 
 ## Migration for legacy worktrees
 

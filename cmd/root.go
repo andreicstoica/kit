@@ -3,6 +3,7 @@ package cmd
 import (
 	"runtime/debug"
 
+	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/spf13/cobra"
 )
 
@@ -12,6 +13,7 @@ var version = "dev"
 
 func init() {
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		liftoff.UseCommandLineToolsIfXcodeUnlicensed()
 		if err := MaybeOfferSetup(cmd, args); err != nil {
 			return err
 		}

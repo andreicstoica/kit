@@ -130,8 +130,38 @@ func ReadHerdrState() (HerdrState, error) {
 	if err != nil {
 		return HerdrState{}, err
 	}
+	return decodeHerdrState([]byte(out))
+}
+
+// decodeHerdrState accepts both the direct snapshot returned by older Herdr
+// releases and the JSON-RPC-style result.snapshot envelope used by Herdr
+// 0.7+. Keeping both shapes here lets Kit upgrade independently from Herdr.
+func decodeHerdrState(data []byte) (HerdrState, error) {
+	payload := data
+	var envelope struct {
+		Result json.RawMessage `json:"result"`
+		Error  json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return HerdrState{}, fmt.Errorf("parse Herdr snapshot: %w", err)
+	}
+	if len(envelope.Error) > 0 && string(envelope.Error) != "null" {
+		return HerdrState{}, fmt.Errorf("Herdr snapshot error: %s", strings.TrimSpace(string(envelope.Error)))
+	}
+	if len(envelope.Result) > 0 && string(envelope.Result) != "null" {
+		var result struct {
+			Snapshot json.RawMessage `json:"snapshot"`
+		}
+		if err := json.Unmarshal(envelope.Result, &result); err != nil {
+			return HerdrState{}, fmt.Errorf("parse Herdr snapshot result: %w", err)
+		}
+		if len(result.Snapshot) == 0 || string(result.Snapshot) == "null" {
+			return HerdrState{}, fmt.Errorf("parse Herdr snapshot result: missing snapshot")
+		}
+		payload = result.Snapshot
+	}
 	var state HerdrState
-	if err := json.Unmarshal([]byte(out), &state); err != nil {
+	if err := json.Unmarshal(payload, &state); err != nil {
 		return HerdrState{}, fmt.Errorf("parse Herdr snapshot: %w", err)
 	}
 	return state, nil

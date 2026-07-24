@@ -18,7 +18,7 @@ var (
 var focusCmd = &cobra.Command{
 	Use:               "focus [name]",
 	Short:             "Make a worktree the active development environment",
-	Long:              "focus opens or reuses the worktree's Herdr space, optionally opens an editor or Ghostty client, and attaches the current terminal unless --no-attach is set. First-time spaces use the Simple (2 tabs) or Detailed (5 tabs) picker.",
+	Long:              "focus opens or reuses the worktree's Herdr space, optionally opens Hangar or another editor, optionally opens a Ghostty client, and attaches the current terminal unless --no-attach is set. For example, `kit focus my-worktree --editor hangar --ghostty --no-attach` opens the full local workspace. First-time spaces use the Simple (2 tabs) or Detailed (5 tabs) picker.",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -70,7 +70,7 @@ var focusCmd = &cobra.Command{
 }
 
 func init() {
-	focusCmd.Flags().StringVarP(&focusEditor, "editor", "e", "", "also open this editor")
+	focusCmd.Flags().StringVarP(&focusEditor, "editor", "e", "", "also open this editor (hangar, zed, cursor, code, or any PATH binary)")
 	focusCmd.Flags().BoolVar(&focusCursor, "cursor", false, "also open Cursor")
 	focusCmd.Flags().BoolVar(&focusGhostty, "ghostty", false, "open a Herdr client in Ghostty")
 	focusCmd.Flags().BoolVar(&focusNoAttach, "no-attach", false, "focus/setup only; do not attach this terminal")

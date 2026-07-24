@@ -28,18 +28,21 @@ const SkipSentinel = "__skip__"
 // macOS an editor may be installed as a `.app` bundle without a PATH binary,
 // so UseOpen records whether to launch via `open -a App` vs the CLI binary.
 type EditorCandidate struct {
-	Name      string
-	Binary    string // CLI binary name (preferred when on PATH unless AppOnly)
-	App       string // .app bundle name (e.g. "Zed.app") for `open -a`
-	Desc      string
-	Installed bool
-	UseOpen   bool // true when launch is via `open -a App` not `binary`
-	AppOnly   bool // always launch via the .app bundle; ignore any PATH binary
+	Name          string
+	Binary        string   // CLI binary name (preferred when on PATH unless PreferApp or AppOnly)
+	App           string   // primary .app bundle name (e.g. "Zed.app") for `open -a`
+	AlternateApps []string // fallback bundle names for the same picker entry
+	Desc          string
+	Installed     bool
+	UseOpen       bool // true when launch is via `open -a App` not `binary`
+	AppOnly       bool // always launch via the .app bundle; ignore any PATH binary
+	PreferApp     bool // prefer an installed bundle, but fall back to the PATH binary
 }
 
 // editorDefs is the canonical candidate list, ordered by preference.
 func editorDefs() []EditorCandidate {
 	return []EditorCandidate{
+		{Name: "Hangar", Binary: "hangar", App: "Hangar Dev.app", AlternateApps: []string{"Hangar.app"}, Desc: "open in Hangar", PreferApp: true},
 		{Name: "Zed", Binary: "zed", App: "Zed.app", Desc: "open in Zed"},
 		{Name: "Cursor", Binary: "cursor", App: "Cursor.app", Desc: "open in Cursor"},
 		{Name: "VS Code", Binary: "code", App: "Visual Studio Code.app", Desc: "open in VS Code"},
@@ -79,37 +82,39 @@ func EditorNames() []string {
 // InstalledEditors returns only candidates that are actually installed.
 // Known editors prioritize the .app bundle to avoid squatted PATH binaries
 // (e.g. `code` is often Cursor's shim, not VS Code). $KIT_EDITOR is promoted
-// to the front and resolved via PATH only.
+// to the front, followed by config.toml's settings.editor. A custom preferred
+// editor is resolved via PATH.
 //
 // When the Ghostty.app bundle is present, a synthetic "Ghostty workspace"
 // candidate (Binary == WorkspaceSentinel) is appended so a single picker can
 // offer both editors and the dev-workspace flow.
 func InstalledEditors() []EditorCandidate {
 	defs := editorDefs()
-	if v := os.Getenv("KIT_EDITOR"); v != "" {
-		defs = append([]EditorCandidate{
-			{Name: v, Binary: v, Desc: "from $KIT_EDITOR"},
-		}, defs...)
+	if preferred, source := preferredEditor(); preferred != "" {
+		defs = promoteEditor(defs, preferred, source)
 	}
 	out := make([]EditorCandidate, 0, len(defs))
+	seen := make(map[string]bool, len(defs))
 	for _, e := range defs {
 		c := e
-		if c.App != "" {
-			if appBundleExists(c.App) {
-				c.Installed = true
-				c.UseOpen = true
-				if !c.AppOnly {
-					if _, err := exec.LookPath(c.Binary); err == nil {
-						c.UseOpen = false
-					}
-				}
-				out = append(out, c)
-			}
+		installedApp := firstInstalledApp(c)
+		_, binaryErr := exec.LookPath(c.Binary)
+		binaryInstalled := c.Binary != "" && binaryErr == nil
+		if installedApp != "" {
+			c.App = installedApp
+			c.Installed = true
+			c.UseOpen = c.AppOnly || c.PreferApp || !binaryInstalled
+		} else if !c.AppOnly && binaryInstalled {
+			// A known editor's CLI is sufficient even when its application bundle
+			// is outside the standard /Applications locations.
+			c.Installed = true
+			c.UseOpen = false
+		} else {
 			continue
 		}
-		if _, err := exec.LookPath(c.Binary); err == nil {
-			c.Installed = true
+		if !seen[c.Binary] {
 			out = append(out, c)
+			seen[c.Binary] = true
 		}
 	}
 	// Zed is always offered, even if detection above missed it.
@@ -127,19 +132,26 @@ func InstalledEditors() []EditorCandidate {
 }
 
 // ResolveEditor returns a candidate for an explicit user-supplied editor
-// name. Tries PATH first, then a matching .app bundle alias. Returns nil when
-// the named editor isn't found.
+// name. It honors each known editor's bundle/CLI preference and falls back to
+// a matching PATH binary for custom names. Returns nil when not found.
 func ResolveEditor(name string) *EditorCandidate {
 	for _, def := range editorDefs() {
 		if def.Binary == name || strings.EqualFold(def.Name, name) {
 			c := def
+			if app := firstInstalledApp(c); app != "" && (c.AppOnly || c.PreferApp) {
+				c.App = app
+				c.Installed = true
+				c.UseOpen = true
+				return &c
+			}
 			if !c.AppOnly {
 				if _, err := exec.LookPath(c.Binary); err == nil {
 					c.Installed = true
 					return &c
 				}
 			}
-			if c.App != "" && appBundleExists(c.App) {
+			if app := firstInstalledApp(c); app != "" {
+				c.App = app
 				c.Installed = true
 				c.UseOpen = true
 				return &c
@@ -151,6 +163,48 @@ func ResolveEditor(name string) *EditorCandidate {
 		return &EditorCandidate{Name: name, Binary: name, Installed: true}
 	}
 	return nil
+}
+
+// preferredEditor returns the configured editor and where the preference came
+// from. Environment always wins over the durable config setting.
+func preferredEditor() (string, string) {
+	if value := os.Getenv("KIT_EDITOR"); value != "" {
+		return value, "from $KIT_EDITOR"
+	}
+	if c, err := LoadConfig(); err == nil && c.Settings.Editor != "" {
+		return c.Settings.Editor, "from config.toml"
+	}
+	return "", ""
+}
+
+// promoteEditor moves a known editor to the front without duplicating its
+// picker entry. Unknown configured editors are allowed when their CLI is on
+// PATH and are prepended as a generic candidate.
+func promoteEditor(defs []EditorCandidate, preferred, source string) []EditorCandidate {
+	for i, def := range defs {
+		if def.Binary != preferred && !strings.EqualFold(def.Name, preferred) {
+			continue
+		}
+		def.Desc = source
+		out := make([]EditorCandidate, 0, len(defs))
+		out = append(out, def)
+		out = append(out, defs[:i]...)
+		out = append(out, defs[i+1:]...)
+		return out
+	}
+	return append([]EditorCandidate{{Name: preferred, Binary: preferred, Desc: source}}, defs...)
+}
+
+// firstInstalledApp returns the first installed bundle for a candidate. The
+// primary name wins, allowing Hangar Dev and stable Hangar to share one entry.
+func firstInstalledApp(c EditorCandidate) string {
+	apps := append([]string{c.App}, c.AlternateApps...)
+	for _, app := range apps {
+		if app != "" && appBundleExists(app) {
+			return app
+		}
+	}
+	return ""
 }
 
 // LoneEditor returns the single installed editor when no picker is needed.
