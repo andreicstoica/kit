@@ -43,13 +43,26 @@ func editorDefs() []EditorCandidate {
 		{Name: "Zed", Binary: "zed", App: "Zed.app", Desc: "open in Zed"},
 		{Name: "Cursor", Binary: "cursor", App: "Cursor.app", Desc: "open in Cursor"},
 		{Name: "VS Code", Binary: "code", App: "Visual Studio Code.app", Desc: "open in VS Code"},
-		// Claude Code desktop's GUI is Claude.app, which registers public.folder
-		// as an Editor doc type — so `open -a Claude.app <path>` opens the
-		// worktree as a Claude Code session. AppOnly forces that bundle launch:
-		// the `claude` CLI starts a terminal session, not the GUI, so we never
-		// want the PATH-binary path. Binary stays the `-e` invocation token.
-		{Name: "Claude Code desktop", Binary: "claude-code-desktop", App: "Claude.app", Desc: "open in Claude Code desktop", AppOnly: true},
 	}
+}
+
+// ensureZedOffered guarantees Zed is always one of the offered editors, even
+// when app-bundle / PATH detection misses it — Zed is the default editor and
+// the user expects it in every worktree-open picker. A PATH hit launches via
+// the `zed` binary; otherwise we fall back to `open -a Zed.app`. No-op when a
+// Zed candidate is already present (so we never double it).
+func ensureZedOffered(out []EditorCandidate) []EditorCandidate {
+	for _, e := range out {
+		if e.Name == "Zed" {
+			return out
+		}
+	}
+	zed := EditorCandidate{Name: "Zed", Binary: "zed", App: "Zed.app", Desc: "open in Zed", Installed: true, UseOpen: true}
+	if _, err := exec.LookPath("zed"); err == nil {
+		zed.UseOpen = false
+	}
+	// Prepend — Zed is the preferred default, so it leads the list.
+	return append([]EditorCandidate{zed}, out...)
 }
 
 // EditorNames returns the display names of all known editor candidates, for
@@ -99,6 +112,8 @@ func InstalledEditors() []EditorCandidate {
 			out = append(out, c)
 		}
 	}
+	// Zed is always offered, even if detection above missed it.
+	out = ensureZedOffered(out)
 	if appBundleExists("Ghostty.app") {
 		out = append(out, EditorCandidate{
 			Name:      "Ghostty (pick layout next)",

@@ -66,6 +66,15 @@ var restartCmd = &cobra.Command{
 			if err := liftoff.StopService(name, svc); err != nil {
 				fmt.Println(tui.StyleErr.Render("    " + err.Error()))
 			}
+			// A `uvicorn --reload` / Vite worker re-execs out of its recorded
+			// pid's process group, so StopService skips the group-kill and
+			// only drops the pid file — leaving the port bound. RunPlay would
+			// then see the port still listening, report "already running", and
+			// silently skip the restart. Kill whatever still holds the port
+			// (mirrors the fallback in RunPause) so the fresh process binds.
+			if port := liftoff.ServicePort(svc, ports); port > 0 && liftoff.PortListening(port) {
+				_ = liftoff.KillListenersOnPort(port)
+			}
 		}
 
 		// Wipe the Vite dep-optimizer cache for any frontend being bounced —

@@ -3,6 +3,7 @@ package liftoff
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -99,7 +100,92 @@ func (l Layout) ResolveWorktreePath(name string) (string, error) {
 	if _, err := os.Stat(legacy); err == nil {
 		return legacy, nil
 	}
+	// Recovery for a "lost" worktree — one moved or renamed out from under
+	// kit's canonical/legacy layout that kit's config or git still tracks.
+	// These fallbacks run only after the path lookups above have failed, so
+	// the happy path is unchanged.
+	if cfg, err := LoadConfig(); err == nil {
+		if m, ok := cfg.Worktrees[name]; ok && m.Path != "" {
+			if _, err := os.Stat(m.Path); err == nil {
+				return m.Path, nil
+			}
+		}
+	}
+	if p := l.gitWorktreePath(name); p != "" {
+		return p, nil
+	}
 	return "", fmt.Errorf("worktree not found: %s", path)
+}
+
+// worktreeEntry is one record from `git worktree list --porcelain`.
+type worktreeEntry struct {
+	Path   string
+	Branch string // short branch name ("" for detached HEAD)
+}
+
+// parseWorktreePorcelain parses `git worktree list --porcelain` output into
+// entries. Records are separated by blank lines; each has a "worktree <path>"
+// line and, unless detached, a "branch refs/heads/<name>" line.
+func parseWorktreePorcelain(out string) []worktreeEntry {
+	var entries []worktreeEntry
+	var cur worktreeEntry
+	flush := func() {
+		if cur.Path != "" {
+			entries = append(entries, cur)
+		}
+		cur = worktreeEntry{}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			flush()
+			cur.Path = strings.TrimPrefix(line, "worktree ")
+		case strings.HasPrefix(line, "branch "):
+			cur.Branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
+		}
+	}
+	flush()
+	return entries
+}
+
+// gitWorktreePath asks git which checkout corresponds to `name`, to recover a
+// worktree moved or renamed out from under kit's canonical layout. Matches, in
+// order: a checkout whose directory basename equals name, one whose branch
+// equals name, then one whose branch equals the branch kit recorded for name.
+// Returns "" when git can't help (not a repo, git missing, or no live match).
+func (l Layout) gitWorktreePath(name string) string {
+	out, err := exec.Command("git", "-C", l.Master, "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		return ""
+	}
+	entries := parseWorktreePorcelain(string(out))
+	exists := func(p string) bool {
+		if p == "" {
+			return false
+		}
+		_, err := os.Stat(p)
+		return err == nil
+	}
+	for _, e := range entries {
+		if filepath.Base(e.Path) == name && exists(e.Path) {
+			return e.Path
+		}
+	}
+	for _, e := range entries {
+		if e.Branch == name && exists(e.Path) {
+			return e.Path
+		}
+	}
+	if cfg, err := LoadConfig(); err == nil {
+		if m, ok := cfg.Worktrees[name]; ok && m.Branch != "" {
+			for _, e := range entries {
+				if e.Branch == m.Branch && exists(e.Path) {
+					return e.Path
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // GtabFile returns the AppleScript path for a feature.
