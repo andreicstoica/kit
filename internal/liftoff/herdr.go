@@ -123,6 +123,15 @@ func ResolveHerdrLayout(name string) (HerdrLayout, error) {
 	return layout, nil
 }
 
+// herdrSnapshotEnvelope matches the JSON-RPC style response Herdr's CLI emits
+// (`{"id":…,"result":{"snapshot":{…}}}`). Older builds returned the snapshot
+// object at the top level, so both shapes are accepted.
+type herdrSnapshotEnvelope struct {
+	Result *struct {
+		Snapshot *HerdrState `json:"snapshot"`
+	} `json:"result"`
+}
+
 // ReadHerdrState reads the public runtime snapshot. It does not start Herdr;
 // callers that need a usable server should use OpenHerdr or EnsureHerdr.
 func ReadHerdrState() (HerdrState, error) {
@@ -130,6 +139,26 @@ func ReadHerdrState() (HerdrState, error) {
 	if err != nil {
 		return HerdrState{}, err
 	}
+	return parseHerdrSnapshot(out)
+}
+
+// parseHerdrSnapshot decodes either the enveloped or the legacy flat snapshot.
+//
+// An envelope whose payload we cannot reach is a hard error rather than an
+// empty state: because encoding/json ignores unknown fields, reading the flat
+// shape out of an enveloped response used to yield zero workspaces with no
+// error, which callers could only read as "this workspace doesn't exist" —
+// so a Herdr format change surfaced as a bogus "created it but it isn't in
+// the snapshot" failure instead of a parse problem.
+func parseHerdrSnapshot(out string) (HerdrState, error) {
+	var envelope herdrSnapshotEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err == nil && envelope.Result != nil {
+		if envelope.Result.Snapshot == nil {
+			return HerdrState{}, fmt.Errorf("parse Herdr snapshot: response had no result.snapshot payload")
+		}
+		return *envelope.Result.Snapshot, nil
+	}
+
 	var state HerdrState
 	if err := json.Unmarshal([]byte(out), &state); err != nil {
 		return HerdrState{}, fmt.Errorf("parse Herdr snapshot: %w", err)
