@@ -48,8 +48,10 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 		return nil, errors.New("no old workspaces found")
 	}
 	sel := map[int]bool{}
-	for i := range cands {
-		sel[i] = true // default-select all
+	for i, c := range cands {
+		// Default-select clean worktrees only; dirty ones hold uncommitted
+		// work that wash would destroy, so they require an explicit opt-in.
+		sel[i] = !c.Dirty
 	}
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -257,7 +259,11 @@ func (m *mergedModel) viewSelect() string {
 		if emoji != "" {
 			emoji += " "
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s%s  %s\n", cursor, box, emoji, c.Name, StyleDim.Render("("+c.Reason+")")))
+		line := fmt.Sprintf("%s%s %s%s  %s", cursor, box, emoji, c.Name, StyleDim.Render("("+c.Reason+")"))
+		if c.Dirty {
+			line += "  " + StyleWarn.Render("● dirty — uncommitted changes")
+		}
+		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("space: choose · a: all · n: none · enter: continue · esc: cancel"))
 	return b.String()
@@ -266,15 +272,24 @@ func (m *mergedModel) viewSelect() string {
 func (m *mergedModel) viewConfirm() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit wash --merged — confirm") + "\n\n")
-	count := 0
+	count, dirtyCount := 0, 0
 	for i, c := range m.candidates {
 		if !m.selected[i] {
 			continue
 		}
 		count++
-		b.WriteString("  " + StyleErr.Render("✗") + " " + c.Name + StyleDim.Render(" — "+c.Reason) + "\n")
+		line := "  " + StyleErr.Render("✗") + " " + c.Name + StyleDim.Render(" — "+c.Reason)
+		if c.Dirty {
+			dirtyCount++
+			line += "  " + StyleWarn.Render("● dirty")
+		}
+		b.WriteString(line + "\n")
 	}
-	b.WriteString(fmt.Sprintf("\nDelete %d old workspace(s)? Kit will stop them, delete their folders, and remove their branches.\n\n", count))
+	b.WriteString(fmt.Sprintf("\nDelete %d old workspace(s)? Kit will stop them, delete their folders, and remove their branches.\n", count))
+	if dirtyCount > 0 {
+		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d of them have uncommitted changes that will be permanently lost.", dirtyCount)) + "\n")
+	}
+	b.WriteString("\n")
 	b.WriteString(confirmHelp("Delete selected", "Cancel") + StyleHelp.Render(" · backspace: back"))
 	return b.String()
 }

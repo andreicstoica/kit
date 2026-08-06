@@ -12,6 +12,7 @@ type MergedCandidate struct {
 	Path   string
 	Branch string
 	Reason string // "merged to master" | "PR MERGED" | "PR CLOSED"
+	Dirty  bool   // uncommitted/untracked changes in the worktree — wash destroys them
 }
 
 // HasGH returns true if the GitHub CLI is on PATH.
@@ -36,15 +37,16 @@ func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 		}
 		name := w.Name()
 		// `git branch --merged` also lists branches that never diverged (tip is
-		// an ancestor of main), not just landed work — including a pushed branch
-		// sitting at the exact main tip with all its work still uncommitted.
+		// an ancestor of main), not just landed work — including a branch
+		// sitting at an old main tip with all its work still uncommitted.
 		// Require main to be strictly ahead (it absorbed commits this branch
-		// lacks) AND an upstream before trusting the local heuristic; real merges
-		// still get caught by the gh PR check below.
-		if merged[w.Branch] && mainAheadOf(l.Master, l.MainBranch, w.Branch) && branchPushed(l.Master, w.Branch) {
+		// lacks) AND the branch's own upstream before trusting the local
+		// heuristic; real merges still get caught by the gh PR check below.
+		if merged[w.Branch] && mainAheadOf(l.Master, l.MainBranch, w.Branch) && branchHasOwnUpstream(l.Master, w.Branch) {
 			out = append(out, MergedCandidate{
 				Name: name, Path: w.Path, Branch: w.Branch,
 				Reason: "merged to " + l.MainBranch,
+				Dirty:  IsDirty(w.Path),
 			})
 			continue
 		}
@@ -53,6 +55,7 @@ func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 				out = append(out, MergedCandidate{
 					Name: name, Path: w.Path, Branch: w.Branch,
 					Reason: "PR " + state,
+					Dirty:  IsDirty(w.Path),
 				})
 			}
 		}
@@ -88,11 +91,18 @@ func mainAheadOf(masterRepo, mainBranch, branch string) bool {
 	return strings.TrimSpace(out) != "0"
 }
 
-// branchPushed reports whether branch has an upstream (was pushed at least
-// once), gating the local merged-branch heuristic.
-func branchPushed(masterRepo, branch string) bool {
-	_, err := Run(masterRepo, "git", "rev-parse", "--verify", "--quiet", branch+"@{upstream}")
-	return err == nil
+// branchHasOwnUpstream reports whether branch tracks its own remote
+// counterpart (…/<branch>), i.e. it was pushed at least once. A borrowed
+// upstream like origin/master (how `git worktree add` off master often leaves
+// a branch before its first push) must not count: it made a never-pushed
+// branch parked at an old master tip look "merged" while all of its work was
+// still uncommitted in the tree.
+func branchHasOwnUpstream(masterRepo, branch string) bool {
+	out, err := Run(masterRepo, "git", "rev-parse", "--abbrev-ref", "--verify", "--quiet", branch+"@{upstream}")
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.TrimSpace(out), "/"+branch)
 }
 
 // prState returns "MERGED", "CLOSED", "OPEN", or "" via `gh pr view <branch>`.
