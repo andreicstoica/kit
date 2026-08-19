@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
+	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -34,38 +35,19 @@ var focusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		chosenLayout, err := resolveHerdrLayout(name, path, focusLayout)
-		if err != nil {
-			return err
-		}
-		workspace, err := liftoff.OpenHerdr(name, path, chosenLayout)
-		if err != nil {
-			return err
-		}
 
 		editorName := focusEditor
 		if focusCursor {
 			editorName = "cursor"
 		}
-		if editorName != "" {
-			editor := liftoff.ResolveEditor(editorName)
-			if editor == nil {
-				return fmt.Errorf("editor %q not on PATH or in /Applications", editorName)
-			}
-			if err := liftoff.LaunchEditor(*editor, path); err != nil {
-				return err
-			}
-		}
-		if focusGhostty {
-			if err := liftoff.LaunchHerdrInGhostty(); err != nil {
-				return err
-			}
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "focused %s in Herdr (%s)\n", name, workspace.WorkspaceID)
-		if focusNoAttach || focusGhostty {
-			return nil
-		}
-		return liftoff.AttachHerdr()
+		return tui.FocusHerdr(tui.FocusHerdrRequest{
+			Name:     name,
+			Path:     path,
+			Layout:   focusLayout,
+			Editor:   editorName,
+			Ghostty:  focusGhostty,
+			NoAttach: focusNoAttach,
+		})
 	},
 }
 

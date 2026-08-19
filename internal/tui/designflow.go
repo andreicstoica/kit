@@ -527,8 +527,8 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		return err
 	}
 
-	// Same opener as `kit swap`: pick an editor, the Ghostty workspace, or
-	// skip. Non-fatal — a failed/declined open still lets play run.
+	// Same opener as `kit swap`: pick an editor, Ghostty, Herdr, or skip.
+	// Non-fatal — a failed/declined open still lets play run.
 	if _, err := OpenWorktree(OpenRequest{
 		Layout:    layout,
 		Name:      name,

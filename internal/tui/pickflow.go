@@ -15,7 +15,7 @@ import (
 // picker behaves identically.
 
 // editorItem is a list entry for the editor picker. The candidate type lives
-// in the liftoff domain layer (internal/liftoff/workspace.go) so detection,
+// in the liftoff domain layer (internal/liftoff/open_targets.go) so detection,
 // launch, and UI all agree on one definition.
 type editorItem struct {
 	c          liftoff.EditorCandidate
@@ -32,11 +32,18 @@ func (e editorItem) Title() string {
 func (e editorItem) Description() string { return StyleDim.Render(e.c.Desc) }
 func (e editorItem) FilterValue() string { return e.c.Name }
 
-// PickEditor opens the shared picker showing only installed editors
-// (PATH binary OR app bundle).
-// Returns the chosen candidate, or nil if the user pressed esc, or an error
-// if no candidates are installed.
+// PickOpenTarget opens the shared picker for worktree-open destinations.
+func PickOpenTarget(candidates []liftoff.EditorCandidate) (*liftoff.EditorCandidate, error) {
+	return pickEditor(candidates, "kit open — pick where to open")
+}
+
+// PickEditor opens the shared picker showing only installed editors.
+// Prefer PickOpenTarget for the full worktree-open list.
 func PickEditor(editors []liftoff.EditorCandidate) (*liftoff.EditorCandidate, error) {
+	return pickEditor(editors, "kit open — pick an editor")
+}
+
+func pickEditor(editors []liftoff.EditorCandidate, title string) (*liftoff.EditorCandidate, error) {
 	var items []list.Item
 	for _, e := range editors {
 		if !e.Installed {
@@ -48,7 +55,7 @@ func PickEditor(editors []liftoff.EditorCandidate) (*liftoff.EditorCandidate, er
 		return nil, fmt.Errorf("no supported editor found (looked for %s on PATH or in /Applications)", strings.Join(liftoff.EditorNames(), ", "))
 	}
 	chosen, ok, err := RunListPicker(ListPickerConfig{
-		Title:  "kit swap — pick an editor",
+		Title:  title,
 		Items:  items,
 		Filter: false,
 	})

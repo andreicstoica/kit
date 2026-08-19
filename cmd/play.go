@@ -62,14 +62,7 @@ the service-selection screen.`,
 		if err != nil {
 			return err
 		}
-		chosenLayout, err := resolveHerdrLayout(name, path, "")
-		if err != nil {
-			return err
-		}
-		if _, err := liftoff.OpenHerdr(name, path, chosenLayout); err != nil {
-			return err
-		}
-		return liftoff.AttachHerdr()
+		return tui.OpenHerdrWorktree(name, path, "", tui.HerdrConnectAttach)
 	},
 }
 

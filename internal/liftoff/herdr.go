@@ -293,9 +293,10 @@ func OpenHerdr(name, path, layoutName string) (HerdrWorkspace, error) {
 			savedID = meta.HerdrID
 		}
 	}
+	label := HerdrShellTabLabel(name)
 	workspace := FindHerdrWorkspace(state, savedID, name, path)
 	if workspace == nil {
-		if _, err := runHerdr("workspace", "create", "--cwd", path, "--label", name, "--no-focus"); err != nil {
+		if _, err := runHerdr("workspace", "create", "--cwd", path, "--label", label, "--no-focus"); err != nil {
 			return HerdrWorkspace{}, fmt.Errorf("create Herdr workspace %q: %w", name, err)
 		}
 		state, err = ReadHerdrState()
@@ -305,6 +306,12 @@ func OpenHerdr(name, path, layoutName string) (HerdrWorkspace, error) {
 		workspace = FindHerdrWorkspace(state, "", name, path)
 		if workspace == nil {
 			return HerdrWorkspace{}, fmt.Errorf("Herdr created workspace %q but it was not present in the runtime snapshot", name)
+		}
+	} else if workspace.Label != label && herdrLabelMatches(workspace.Label, name) {
+		// Adopt the emoji prefix on spaces created before it existed. Guarded by
+		// herdrLabelMatches so a space the user renamed by hand is left alone.
+		if _, err := runHerdr("workspace", "rename", workspace.WorkspaceID, label); err == nil {
+			workspace.Label = label
 		}
 	}
 

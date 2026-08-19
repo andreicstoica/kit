@@ -9,34 +9,10 @@ import (
 	"sync"
 )
 
-// This file is the single source of truth for "open a worktree" — both the
-// editor candidates kit knows about and the launch mechanics. The UI layer
-// (internal/tui) presents the picker; the command layer (cmd) wires flags;
-// but the domain knowledge of *what* the editors are and *how* to launch
-// them lives here so every command opens a worktree identically.
-
-// WorkspaceSentinel is the synthetic EditorCandidate.Binary value marking the
-// "Ghostty dev workspace" target. Callers route it to OpenWorkspace instead
-// of LaunchEditor.
-const WorkspaceSentinel = "__workspace__"
-
-// SkipSentinel marks a "don't open anything" candidate, offered by flows
-// (like post-design) that want a no-op escape hatch in the same picker.
-const SkipSentinel = "__skip__"
-
-// HerdrSentinel marks the "persistent Herdr space" target, so `kit open` can
-// offer it in the same picker as the editors instead of assuming it.
-const HerdrSentinel = "__herdr__"
-
-// HerdrCandidate is the picker entry for the persistent Herdr space.
-func HerdrCandidate() EditorCandidate {
-	return EditorCandidate{
-		Name:      "Herdr space",
-		Binary:    HerdrSentinel,
-		Desc:      "attach the worktree's persistent Herdr session (reachable from your phone)",
-		Installed: true,
-	}
-}
+// This file holds editor detection and Ghostty workspace launch. Open-target
+// taxonomy and the unified picker list live in open_targets.go; Herdr session
+// mechanics live in herdr.go. internal/tui/open.go is the single dispatch
+// entry for every "open this worktree somewhere" flow.
 
 // EditorCandidate describes one possible editor + its install state. On
 // macOS an editor may be installed as a `.app` bundle without a PATH binary,
@@ -129,13 +105,7 @@ func InstalledEditors() []EditorCandidate {
 	// Zed is always offered, even if detection above missed it.
 	out = ensureZedOffered(out)
 	if appBundleExists("Ghostty.app") {
-		out = append(out, EditorCandidate{
-			Name:      "Ghostty (pick layout next)",
-			Binary:    WorkspaceSentinel,
-			App:       "Ghostty.app",
-			Desc:      "dev workspace — simple (2 tabs) or detailed (5 tabs)",
-			Installed: true,
-		})
+		out = append(out, WorkspaceCandidate())
 	}
 	return out
 }
@@ -163,30 +133,6 @@ func ResolveEditor(name string) *EditorCandidate {
 	}
 	if _, err := exec.LookPath(name); err == nil {
 		return &EditorCandidate{Name: name, Binary: name, Installed: true}
-	}
-	return nil
-}
-
-// LoneEditor returns the single installed editor when no picker is needed.
-// Returns nil when there are zero editors, two or more editors, or any number
-// plus the Ghostty target (Ghostty is a distinct intent, so the picker still
-// appears). The WorkspaceSentinel and SkipSentinel candidates are ignored.
-func LoneEditor(eds []EditorCandidate) *EditorCandidate {
-	var editors []EditorCandidate
-	hasGhostty := false
-	for _, e := range eds {
-		switch e.Binary {
-		case WorkspaceSentinel:
-			hasGhostty = true
-		case SkipSentinel:
-			// ignore
-		default:
-			editors = append(editors, e)
-		}
-	}
-	if len(editors) == 1 && !hasGhostty {
-		c := editors[0]
-		return &c
 	}
 	return nil
 }

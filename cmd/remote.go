@@ -47,12 +47,7 @@ var remoteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		workspace, err := liftoff.OpenHerdr(name, path, "")
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "attaching %s in Herdr (%s)\n", name, workspace.WorkspaceID)
-		return liftoff.AttachHerdr()
+		return tui.OpenHerdrWorktree(name, path, "", tui.HerdrConnectAttach)
 	},
 }
 
