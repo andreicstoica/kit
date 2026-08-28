@@ -530,10 +530,11 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	// Same opener as `kit swap`: pick an editor, Ghostty, Herdr, or skip.
 	// Non-fatal — a failed/declined open still lets play run.
 	if _, err := OpenWorktree(OpenRequest{
-		Layout:    layout,
-		Name:      name,
-		Path:      layout.WorktreePath(name),
-		OfferSkip: true,
+		Layout:       layout,
+		Name:         name,
+		Path:         layout.WorktreePath(name),
+		OfferSkip:    true,
+		HerdrConnect: HerdrConnectNone,
 	}); err != nil {
 		fmt.Println(StyleErr.Render("open failed: " + err.Error()))
 	}
