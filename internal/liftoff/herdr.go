@@ -399,26 +399,63 @@ func AttachHerdr() error {
 	return nil
 }
 
-// LaunchHerdrInGhostty opens a new Ghostty client whose first process is the
-// shared Herdr session. Ghostty is only a client here; workspace/tab state
-// remains in Herdr.
+// LaunchHerdrInGhostty opens a new Ghostty window that attaches to the shared
+// Herdr session. Ghostty is only a client here; workspace/tab state remains in
+// Herdr.
+//
+// The window is opened in the already-running Ghostty instance via AppleScript
+// rather than `open -n`. `open -n` forces a second Ghostty process, which
+// errors when one is already running (the usual case) and leaves a broken
+// window behind. Herdr is launched by absolute path so a fresh Ghostty window —
+// whose shell may not have Homebrew on PATH — can still find it, mirroring how
+// the gtab layout embeds the absolute kit path.
 func LaunchHerdrInGhostty() error {
-	args := []string{"-e", "herdr", "--session", HerdrSessionName()}
+	session := HerdrSessionName()
+	bin := "herdr"
+	if p, err := exec.LookPath("herdr"); err == nil {
+		bin = p
+	}
+	command := bin + " --session " + appleScriptQuote(session)
+	script := fmt.Sprintf(
+		`tell application "Ghostty"
+	activate
+	set cfg to new surface configuration
+	set command of cfg to %s
+	set wait after command of cfg to true
+	new window with configuration cfg
+end tell`,
+		appleScriptQuote(command),
+	)
 	if appBundleExists("Ghostty.app") {
-		cmd := exec.Command("open", "-na", "Ghostty.app", "--args")
-		cmd.Args = append(cmd.Args, args...)
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("open Herdr in Ghostty: %w", err)
+		osc := exec.Command("osascript", "-e", script)
+		osc.Stdout = os.Stdout
+		osc.Stderr = os.Stderr
+		oerr := osc.Run()
+		if oerr == nil {
+			return nil
 		}
-		return nil
+		// Fall back to opening a Ghostty window in the running instance so the
+		// user still lands somewhere usable.
+		if ferr := exec.Command("open", "-a", "Ghostty.app").Start(); ferr == nil {
+			return nil
+		}
+		return fmt.Errorf("open Herdr in Ghostty: %w", oerr)
 	}
-	if _, err := exec.LookPath("open"); err == nil {
-		return fmt.Errorf("Ghostty.app not found; install Ghostty or run `kit open` in the current terminal")
+	if _, err := exec.LookPath("ghostty"); err == nil {
+		cmd := exec.Command("ghostty", "-e", bin, "--session", session)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Start()
 	}
-	cmd := exec.Command("ghostty", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return fmt.Errorf("Ghostty.app not found; install Ghostty or run `kit open` in the current terminal")
+}
+
+// appleScriptQuote wraps s in double quotes for an AppleScript string literal,
+// escaping embedded backslashes and double quotes.
+func appleScriptQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
 }
 
 // FocusHerdrClient focuses a workspace in an already-running Herdr client.
