@@ -10,8 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// logRetention is how long stale run dirs are kept before passive cleanup.
-const logRetention = 30 * 24 * time.Hour
+const (
+	logRetention    = 30 * 24 * time.Hour
+	testDBRetention = 24 * time.Hour
+)
 
 var (
 	playOnly     []string
@@ -34,9 +36,9 @@ the service-selection screen.`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Passive log cleanup: drop run dirs whose newest file is >30 days old
-		// and which don't own a live PID. Cheap, fire-and-forget.
+		// Passive cleanup must not prevent a workspace from starting.
 		_, _ = liftoff.SweepOldRunDirs(logRetention)
+		_, _ = liftoff.SweepOldTestDBs(testDBRetention)
 
 		layout := liftoff.DefaultLayout()
 		name, err := resolveArgOrCwdSkipMasterCwd(layout, args)
