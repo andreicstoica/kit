@@ -42,6 +42,7 @@ var rootCmd = &cobra.Command{
 		"- `diff` — show the worktree's diff vs master (via hunk if installed)\n" +
 		"- `submit` — push the worktree's branch via `gt submit` (`--stack`, `--draft`)\n" +
 		"- `sync` — `gt sync` master + prune merged worktrees\n" +
+		"- `reconcile` — clean records left by worktrees removed outside kit\n" +
 		"- `adopt` (`register`) — register an existing worktree (allocate a slot)\n" +
 		"- `slots` — show port-slot allocations (`slots renumber` compacts gaps)\n" +
 		"- `doctor` (`physio`) — check your setup\n" +

@@ -306,6 +306,7 @@ func washStepTitles(p liftoff.WashPlan) []string {
 	}
 	return []string{
 		"stop running services",
+		"remove service run state",
 		"remove Herdr workspace",
 		"remove worktree " + p.WorktreePath,
 		"delete branch " + branch,
@@ -344,8 +345,7 @@ func (m *washModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if u.Line != "" {
 				m.stepLines[u.Index] = append(m.stepLines[u.Index], u.Line)
 			}
-			// Only worktree-remove (index 2) is fatal — matches RunWash.
-			if u.Status == liftoff.StepFailed && u.Index == 2 {
+			if u.Status == liftoff.StepFailed {
 				m.failed = true
 				m.failureErr = u.Err
 			}

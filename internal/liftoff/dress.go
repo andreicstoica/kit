@@ -193,6 +193,10 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 	go func() {
 		defer close(ch)
 		var slot int
+		worktreeAdded := false
+		dbCreated := false
+		gtabWritten := false
+		slotAllocated := false
 		steps := l.planSteps(p, &slot)
 		for i, s := range steps {
 			if s.skip {
@@ -208,7 +212,20 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 			elapsed := time.Since(start)
 			if err != nil {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
+				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, slotAllocated, func(line string) {
+					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+				})
 				return
+			}
+			switch i {
+			case 1:
+				worktreeAdded = true
+			case 3:
+				dbCreated = true
+			case 9:
+				gtabWritten = true
+			case 10:
+				slotAllocated = true
 			}
 			ch <- StepUpdate{
 				Index:         i,
@@ -220,4 +237,36 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		}
 	}()
 	return ch
+}
+
+func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten, slotAllocated bool, emit func(string)) {
+	cleanup := func(label string, fn func() error) {
+		if err := fn(); err != nil {
+			emit(fmt.Sprintf("cleanup %s failed: %v", label, err))
+			return
+		}
+		emit("cleaned " + label)
+	}
+
+	if gtabWritten {
+		cleanup("gtab workspace", func() error { return l.RemoveGtab(p.Name) })
+	}
+	if worktreeAdded {
+		cleanup("run directory", func() error { return RemoveRunDir(p.Name) })
+	}
+	if dbCreated {
+		cleanup("database "+DBName(p.Name), func() error { return DropDB(DBName(p.Name), nil) })
+	}
+	if worktreeAdded {
+		cleanup("worktree", func() error { return l.RemoveWorktree(p.Worktree, nil) })
+		cleanup("branch", func() error { return l.DeleteBranch(p.Name, nil) })
+	}
+	if slotAllocated {
+		cleanup("port slot", func() error {
+			return WithConfigLock(func(c *Config) error {
+				c.FreeSlot(p.Name)
+				return nil
+			})
+		})
+	}
 }

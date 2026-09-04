@@ -49,6 +49,7 @@ type WorktreeMeta struct {
 	HerdrLayout     string    `toml:"layout,omitempty"`
 	LastOpened      time.Time `toml:"last_opened,omitempty"`
 	PreferredAgents []string  `toml:"preferred_agents,omitempty"`
+	CleanupPending  bool      `toml:"cleanup_pending,omitempty"`
 }
 
 // HerdrLayout describes the tabs Kit materializes inside a Herdr workspace.
