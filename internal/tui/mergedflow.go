@@ -97,36 +97,13 @@ func (m *mergedModel) startRun() tea.Cmd {
 }
 
 func mergedWashOne(layout liftoff.Layout, c liftoff.MergedCandidate) error {
-	// Stop services first.
-	st, _ := liftoff.LoadState()
-	if st != nil {
-		if meta, ok := st.Worktrees[c.Name]; ok {
-			ports := liftoff.PortsForSlot(meta.Slot)
-			for _, svc := range liftoff.AllServices {
-				if liftoff.StatusOf(c.Name, svc, ports).Alive {
-					_ = liftoff.StopService(c.Name, svc)
-				}
-			}
-		}
-	}
-	// Remove the paired Herdr workspace before deleting its checkout path.
-	// This is best-effort: merged cleanup should still remove the Git worktree
-	// if a disconnected Herdr server cannot be reached.
-	if liftoff.HerdrAvailable() {
-		_ = liftoff.CloseHerdr(c.Name, c.Path)
-	}
-	// Remove worktree + branch.
-	if err := layout.RemoveWorktree(c.Path, nil); err != nil {
-		return err
-	}
-	_ = layout.DeleteBranch(c.Branch, nil)
-	// Free slot + clean gtab.
-	_ = liftoff.WithConfigLock(func(cfg *liftoff.Config) error {
-		cfg.FreeSlot(c.Name)
-		return nil
+	return layout.RunWashBlocking(liftoff.WashPlan{
+		Name:         c.Name,
+		Branch:       c.Branch,
+		WorktreePath: c.Path,
+		DropDB:       true,
+		RemoveGtab:   true,
 	})
-	_ = layout.RemoveGtab(c.Name)
-	return nil
 }
 
 func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -53,6 +54,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("gt not installed — run `kit setup` or `brew install withgraphite/tap/graphite`")
 	}
 	layout := liftoff.DefaultLayout()
+	_, _ = liftoff.SweepOldRunDirs(logRetention)
 	if !layout.MasterIsRepo() {
 		return fmt.Errorf("master repo not found at %s", layout.Master)
 	}
@@ -93,7 +95,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if len(cands) == 0 {
 		printMigrateSummary(layout, migrate)
 		fmt.Println(tui.StyleOK.Render("✓ no merged worktrees to wash."))
-		return retErr
+		return errors.Join(retErr, offerOrphanReconcile(layout, false))
 	}
 
 	fmt.Println()
@@ -116,6 +118,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return retErr
 	}
 	retErr = tui.RunMergedWashTUI(layout)
+	retErr = errors.Join(retErr, offerOrphanReconcile(layout, false))
 	printMigrateSummary(layout, migrate)
 	return retErr
 }

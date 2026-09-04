@@ -83,6 +83,32 @@ func TestSweepStalePID(t *testing.T) {
 	}
 }
 
+func TestRemoveRunDir_RemovesStoppedWorktreeState(t *testing.T) {
+	setRunDir(t)
+	if err := WritePID("foo", "app", 999998); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveRunDir("foo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(RunDirPath("foo")); !os.IsNotExist(err) {
+		t.Fatalf("run dir still exists: %v", err)
+	}
+}
+
+func TestRemoveRunDir_RefusesLiveService(t *testing.T) {
+	setRunDir(t)
+	if err := WritePID("foo", "app", os.Getpid()); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveRunDir("foo"); err == nil {
+		t.Fatal("RemoveRunDir accepted a live service")
+	}
+	if _, err := os.Stat(RunDirPath("foo")); err != nil {
+		t.Fatalf("live service state was removed: %v", err)
+	}
+}
+
 func TestParseEtime(t *testing.T) {
 	cases := []struct {
 		in   string
