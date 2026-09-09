@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/tree"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/tree"
 )
 
 // wtNode is one worktree row in the tree. Children are populated from the

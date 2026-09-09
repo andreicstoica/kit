@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/list"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/list"
 )
 
 // This file holds the concrete standalone pickers. Each builds list items

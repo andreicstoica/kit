@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 )
 
 // Shared short-menu helpers. Every short-menu select and yes/no confirm in kit
@@ -73,7 +73,7 @@ func newSelectModel[T comparable](title, description string, opts []SelectOption
 func (m *selectModel[T]) Init() tea.Cmd { return nil }
 
 func (m *selectModel[T]) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "ctrl+c", "esc":
 			m.cancel = true
@@ -101,7 +101,7 @@ func (m *selectModel[T]) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *selectModel[T]) View() string {
+func (m *selectModel[T]) View() tea.View {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render(m.title) + "\n")
 	if m.description != "" {
@@ -122,7 +122,7 @@ func (m *selectModel[T]) View() string {
 		b.WriteString(cursor + prefix + o.Label + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("↑/↓ move · 1-9 pick · enter select · esc cancel") + "\n")
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 // ConfirmConfig configures a yes/no prompt. Affirmative/Negative default to
@@ -168,11 +168,11 @@ func buildConfirmForm(cfg ConfirmConfig, val *bool) *huh.Form {
 		WithShowErrors(true)
 }
 
-func isConfirmYes(k tea.KeyMsg) bool {
-	return k.Type == tea.KeyEnter || strings.EqualFold(k.String(), "y")
+func isConfirmYes(k tea.KeyPressMsg) bool {
+	return k.Code == tea.KeyEnter || strings.EqualFold(k.String(), "y")
 }
 
-func isConfirmNo(k tea.KeyMsg) bool {
+func isConfirmNo(k tea.KeyPressMsg) bool {
 	return strings.EqualFold(k.String(), "n")
 }
 

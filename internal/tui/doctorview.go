@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // RenderDoctor renders a static report of doctor check results.

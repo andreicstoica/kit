@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // logKeys are extra keys for the log viewer (on top of DefaultKeymap).
@@ -145,7 +145,7 @@ func (m *logModel) Init() tea.Cmd {
 	for _, p := range m.files {
 		go tailFileToChan(p, m.incoming, m.done)
 	}
-	return pumpLines(m.incoming)
+	return tea.Batch(pumpLines(m.incoming), tea.RequestBackgroundColor)
 }
 
 // trySend attempts to send msg on ch but bails out if done closes first.
@@ -216,14 +216,17 @@ func tailFileToChan(path string, ch chan<- logLineMsg, done <-chan struct{}) {
 
 func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), &m.help)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.help.Width = msg.Width
-		m.viewport.Width = msg.Width - 2
-		m.viewport.Height = msg.Height - 6 // header + borders + path line + footer
-		m.filterInput.Width = msg.Width - 12
-	case tea.KeyMsg:
+		m.help.SetWidth(msg.Width)
+		m.viewport.SetWidth(msg.Width - 2)
+		m.viewport.SetHeight(msg.Height - 6) // header + borders + path line + footer
+		m.filterInput.SetWidth(msg.Width - 12)
+	case tea.KeyPressMsg:
 		// Tag-picker overlay owns input when open.
 		if m.tagMode {
 			switch msg.String() {
@@ -238,7 +241,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.tagCursor < len(m.tagOrder)-1 {
 					m.tagCursor++
 				}
-			case " ", "tab":
+			case "space", "tab":
 				if m.tagCursor < len(m.tagOrder) {
 					t := m.tagOrder[m.tagCursor]
 					m.tagOn[t] = !m.tagOn[t]
@@ -265,7 +268,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Filter-editing mode owns most key input.
 		if m.filterMode {
-			switch msg.Type {
+			switch msg.Code {
 			case tea.KeyEsc:
 				m.filterMode = false
 				m.filterInput.Blur()
@@ -293,7 +296,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		switch {
-		case key.Matches(msg, m.keys.Quit), msg.Type == tea.KeyCtrlC:
+		case key.Matches(msg, m.keys.Quit), msg.String() == "ctrl+c":
 			close(m.done) // signal tail goroutines to exit
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Follow):
@@ -385,7 +388,7 @@ func stylizeLine(tag, line string) string {
 	return style.Render(label) + " " + line
 }
 
-func (m *logModel) View() string {
+func (m *logModel) View() tea.View {
 	header := StyleTitle.Render("kit log — " + m.worktree)
 	follow := StyleDim.Render("auto-scroll: off")
 	if m.follow {
@@ -410,7 +413,9 @@ func (m *logModel) View() string {
 		footer = m.help.View(m.keys)
 	}
 	pathLine := StyleDim.Render("logs: " + m.dir)
-	return header + "\n" + m.viewport.View() + "\n" + pathLine + "\n" + footer
+	v := NewAltView(header + "\n" + m.viewport.View() + "\n" + pathLine + "\n" + footer)
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 func (m *logModel) hiddenTagCount() int {
@@ -462,7 +467,7 @@ func RunLogTUI(worktree string) error {
 		return errors.New("no logs in " + dir)
 	}
 
-	vp := viewport.New(80, 20)
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	vp.Style = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colorDim)
 
 	ti := textinput.New()
@@ -494,6 +499,6 @@ func RunLogTUI(worktree string) error {
 		}
 	}
 
-	_, runErr := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	_, runErr := tea.NewProgram(m).Run()
 	return runErr
 }

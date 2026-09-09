@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 )
 
 // listPicker is the single, shared single-select list model behind every
@@ -27,7 +27,7 @@ func (m *listPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.list.SetSize(msg.Width, msg.Height-2)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// While filtering, keystrokes belong to the filter input — don't
 		// hijack digits as quick-pick or esc as cancel-the-program.
 		if m.list.FilterState() == list.Filtering {
@@ -58,7 +58,7 @@ func (m *listPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *listPicker) View() string { return m.list.View() }
+func (m *listPicker) View() tea.View { return NewAltView(m.list.View()) }
 
 // ListPickerConfig configures a single-select list picker.
 type ListPickerConfig struct {
@@ -76,7 +76,7 @@ func RunListPicker(cfg ListPickerConfig) (chosen list.Item, ok bool, err error) 
 	l := list.New(cfg.Items, NewListDelegate(), 0, 0)
 	StyleList(&l, cfg.Title, cfg.Filter)
 	m := &listPicker{list: l}
-	final, runErr := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	final, runErr := tea.NewProgram(m).Run()
 	if runErr != nil {
 		return nil, false, runErr
 	}

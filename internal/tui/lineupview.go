@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
 )
 
 // Column styles

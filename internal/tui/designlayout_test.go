@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func mkDesignModel(width int) *designModel {
@@ -21,8 +21,8 @@ func mkDesignModel(width int) *designModel {
 	for i := range st {
 		st[i] = liftoff.StepDone
 	}
-	pb := progress.New(progress.WithDefaultGradient(), progress.WithoutPercentage())
-	pb.Width = 30
+	pb := progress.New(progress.WithDefaultBlend(), progress.WithoutPercentage())
+	pb.SetWidth(30)
 	return &designModel{
 		answers:       &designAnswers{name: "user-prof-intro-preferences"},
 		worktree:      "/Users/acs/liftoff/user-prof-intro-preferences",
@@ -45,7 +45,7 @@ func TestOrbNotClipped(t *testing.T) {
 	for _, w := range []int{120, 140, 100, 70} {
 		m := mkDesignModel(w)
 		body := m.View()
-		got := lipgloss.Width(body)
+		got := lipgloss.Width(body.Content)
 		if got > w {
 			t.Errorf("width=%d: rendered body width %d exceeds terminal (orb would clip)", w, got)
 		} else {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // These tests render the first frame of the shared forms without a TTY, by
@@ -23,17 +23,17 @@ func TestRunSelectFirstFrameShowsAllOptions(t *testing.T) {
 	view := m.View()
 
 	for _, o := range opts {
-		if !strings.Contains(view, o.Label) {
-			t.Errorf("first frame missing option %q\n%s", o.Label, view)
+		if !strings.Contains(view.Content, o.Label) {
+			t.Errorf("first frame missing option %q\n%s", o.Label, view.Content)
 		}
 	}
 	for _, prefix := range []string{"1 ", "2 "} {
-		if !strings.Contains(view, prefix) {
-			t.Errorf("first frame missing quick-pick number %q\n%s", prefix, view)
+		if !strings.Contains(view.Content, prefix) {
+			t.Errorf("first frame missing quick-pick number %q\n%s", prefix, view.Content)
 		}
 	}
-	if !strings.Contains(view, "> ") {
-		t.Errorf("first frame missing selection cursor\n%s", view)
+	if !strings.Contains(view.Content, "> ") {
+		t.Errorf("first frame missing selection cursor\n%s", view.Content)
 	}
 }
 
@@ -44,7 +44,7 @@ func TestRunSelectDigitQuickPick(t *testing.T) {
 		{Label: "Third", Value: "c"},
 	}
 	m := newSelectModel("pick one", "", opts, "a")
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: '2', Text: "2"})
 	if cmd == nil {
 		t.Fatal("expected quit cmd after digit quick-pick")
 	}

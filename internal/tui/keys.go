@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 )
 
 // KeyMap is the shared keybinding registry for kit TUIs.
@@ -85,10 +85,10 @@ var DefaultKeymap = KeyMap{
 
 // HandleCommonKey processes the universal ?-help and ctrl+c keys.
 // Returns (handled, quit). Mutates help.ShowAll on `?`.
-// Each flow's Update should call this before its own KeyMsg switch.
-func HandleCommonKey(msg tea.KeyMsg, h *help.Model) (handled, quit bool) {
+// Each flow's Update should call this before its own KeyPressMsg switch.
+func HandleCommonKey(msg tea.KeyPressMsg, h *help.Model) (handled, quit bool) {
 	switch {
-	case msg.Type == tea.KeyCtrlC:
+	case msg.String() == "ctrl+c":
 		return true, true
 	case msg.String() == "?":
 		h.ShowAll = !h.ShowAll
@@ -99,10 +99,17 @@ func HandleCommonKey(msg tea.KeyMsg, h *help.Model) (handled, quit bool) {
 
 // NewHelp returns a configured help.Model for kit TUIs.
 func NewHelp() help.Model {
-	h := help.New()
-	h.ShowAll = false
-	h.ShortSeparator = " · "
-	h.FullSeparator = "   "
+	return RestyleHelp(help.Model{
+		ShowAll:        false,
+		ShortSeparator: " · ",
+		FullSeparator:  "   ",
+	})
+}
+
+// RestyleHelp (re)applies kit's help styling for the current theme.
+// Call after SetDarkBackground so BackgroundColorMsg restyles live help.
+func RestyleHelp(h help.Model) help.Model {
+	h.Styles = help.DefaultStyles(IsDark())
 	h.Styles.ShortKey = h.Styles.ShortKey.Foreground(colorAccent).Bold(true)
 	h.Styles.ShortDesc = h.Styles.ShortDesc.Foreground(colorMuted)
 	h.Styles.FullKey = h.Styles.FullKey.Foreground(colorAccent).Bold(true)

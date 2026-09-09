@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"charm.land/huh/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 

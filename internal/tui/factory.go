@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // factory is an assembly line: a package rides the conveyor, gets stamped by

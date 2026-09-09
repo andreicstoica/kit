@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // washItem is a list entry representing one removable worktree.
@@ -167,16 +167,20 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 	return m, nil
 }
 
-func (m *washModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m *washModel) Init() tea.Cmd { return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor) }
 
 func (m *washModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), &m.help, &m.list)
+		m.spinner.Style = lipgloss.NewStyle().Foreground(colorAccent)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.help.Width = msg.Width
+		m.help.SetWidth(msg.Width)
 		m.list.SetSize(msg.Width, msg.Height-3)
-	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
 			m.stage = washStageAborted
 			return m, tea.Quit
 		}
@@ -192,8 +196,8 @@ func (m *washModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case washStageRunning:
 		return m.updateRunning(msg)
 	case washStageDone, washStageAborted:
-		if k, ok := msg.(tea.KeyMsg); ok {
-			if k.Type == tea.KeyEnter || k.Type == tea.KeyEsc || k.String() == "q" {
+		if k, ok := msg.(tea.KeyPressMsg); ok {
+			if k.Code == tea.KeyEnter || k.Code == tea.KeyEsc || k.String() == "q" {
 				return m, tea.Quit
 			}
 		}
@@ -202,7 +206,7 @@ func (m *washModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		if m.list.FilterState() != list.Filtering {
 			switch k.String() {
 			case "enter":
@@ -249,7 +253,7 @@ func (m *washModel) needsDoubleConfirm() bool {
 }
 
 func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "up", "k":
 			if m.confirmCursor > 0 {
@@ -259,7 +263,7 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.confirmCursor < m.visibleToggleCount()-1 {
 				m.confirmCursor++
 			}
-		case " ", "tab":
+		case "space", "tab":
 			switch m.toggleAtCursor() {
 			case "db":
 				m.dropDB = !m.dropDB
@@ -355,7 +359,7 @@ func (m *washModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *washModel) View() string {
+func (m *washModel) View() tea.View {
 	var body string
 	switch m.stage {
 	case washStageSelect:
@@ -367,9 +371,9 @@ func (m *washModel) View() string {
 	case washStageDone:
 		body = m.viewDone()
 	case washStageAborted:
-		return StyleWarn.Render("cancelled.\n")
+		return NewAltView(StyleWarn.Render("cancelled.\n"))
 	}
-	return body + "\n" + m.help.View(m.keys)
+	return NewAltView(body + "\n" + m.help.View(m.keys))
 }
 
 // visibleToggles returns the toggle ids ("db", "gtab") that should
@@ -488,7 +492,7 @@ func RunWashTUIFor(layout liftoff.Layout, preselected string) error {
 	if err != nil {
 		return err
 	}
-	final, runErr := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	final, runErr := tea.NewProgram(m).Run()
 	if runErr != nil {
 		return runErr
 	}

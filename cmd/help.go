@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/glamour"
+	"charm.land/glamour/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -55,7 +55,7 @@ func newMarkdownRenderer() *glamour.TermRenderer {
 		wrap = 100
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithEnvironmentConfig(),
 		glamour.WithWordWrap(wrap),
 	)
 	if err != nil {

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type mergedStage int
@@ -68,7 +68,7 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 	}, nil
 }
 
-func (m *mergedModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m *mergedModel) Init() tea.Cmd { return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor) }
 
 type mergedRunMsg struct {
 	name string
@@ -108,11 +108,15 @@ func mergedWashOne(layout liftoff.Layout, c liftoff.MergedCandidate) error {
 
 func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), &m.help)
+		m.spinner.Style = lipgloss.NewStyle().Foreground(colorAccent)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.help.Width = msg.Width
-	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+		m.help.SetWidth(msg.Width)
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
 			m.stage = mergedStageAborted
 			return m, tea.Quit
 		}
@@ -138,8 +142,8 @@ func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mergedStageConfirm:
 		return m.updateConfirm(msg)
 	case mergedStageDone, mergedStageAborted:
-		if k, ok := msg.(tea.KeyMsg); ok {
-			if k.Type == tea.KeyEnter || k.Type == tea.KeyEsc || k.String() == "q" {
+		if k, ok := msg.(tea.KeyPressMsg); ok {
+			if k.Code == tea.KeyEnter || k.Code == tea.KeyEsc || k.String() == "q" {
 				return m, tea.Quit
 			}
 		}
@@ -148,7 +152,7 @@ func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *mergedModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "up", "k":
 			if m.cursor > 0 {
@@ -158,7 +162,7 @@ func (m *mergedModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.candidates)-1 {
 				m.cursor++
 			}
-		case " ", "tab":
+		case "space", "tab":
 			m.selected[m.cursor] = !m.selected[m.cursor]
 		case "a":
 			for i := range m.candidates {
@@ -188,7 +192,7 @@ func (m *mergedModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *mergedModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "y", "Y", "enter":
 			m.stage = mergedStageRun
@@ -203,7 +207,7 @@ func (m *mergedModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *mergedModel) View() string {
+func (m *mergedModel) View() tea.View {
 	var body string
 	switch m.stage {
 	case mergedStageSelect:
@@ -215,9 +219,9 @@ func (m *mergedModel) View() string {
 	case mergedStageDone:
 		body = m.viewDone()
 	case mergedStageAborted:
-		return StyleWarn.Render("cancelled.\n")
+		return NewAltView(StyleWarn.Render("cancelled.\n"))
 	}
-	return body + "\n" + m.help.View(m.keys)
+	return NewAltView(body + "\n" + m.help.View(m.keys))
 }
 
 func (m *mergedModel) viewSelect() string {
@@ -291,6 +295,6 @@ func RunMergedWashTUI(layout liftoff.Layout) error {
 	if err != nil {
 		return err
 	}
-	_, runErr := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	_, runErr := tea.NewProgram(m).Run()
 	return runErr
 }

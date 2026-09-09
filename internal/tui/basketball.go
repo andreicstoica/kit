@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // basketball is a jump shot: ball arcs to the top-right hoop, then swishes or
