@@ -31,6 +31,7 @@ var doctorCmd = &cobra.Command{
 		"static toolchain audit (master git ping, config round-trip, port " +
 		"bindability).",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tui.DetectTerminalBackground()
 		layout := liftoff.DefaultLayout()
 		results := liftoff.RunChecks(liftoff.DefaultChecks(layout))
 		fmt.Print(tui.RenderDoctor(results))

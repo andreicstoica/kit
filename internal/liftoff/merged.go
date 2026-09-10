@@ -29,19 +29,31 @@ func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 		return nil, err
 	}
 	merged := mergedBranches(l.Master, l.MainBranch)
-	useGH := HasGH()
+
+	// Collect non-master branches that need a PR state check.
+	var needGH []int // indices into wts
+	for i, w := range wts {
+		if w.IsMaster(l) || w.Bare {
+			continue
+		}
+		if merged[w.Branch] && mainAheadOf(l.Master, l.MainBranch, w.Branch) && branchHasOwnUpstream(l.Master, w.Branch) {
+			continue // already known merged via local git
+		}
+		needGH = append(needGH, i)
+	}
+
+	// Batch-query PR states in one gh call instead of one per branch.
+	prStates := map[string]string{} // branch → state
+	if HasGH() && len(needGH) > 0 {
+		prStates = batchPRStates(l.Master, wts, needGH)
+	}
+
 	var out []MergedCandidate
 	for _, w := range wts {
 		if w.IsMaster(l) || w.Bare {
 			continue
 		}
 		name := w.Name()
-		// `git branch --merged` also lists branches that never diverged (tip is
-		// an ancestor of main), not just landed work — including a branch
-		// sitting at an old main tip with all its work still uncommitted.
-		// Require main to be strictly ahead (it absorbed commits this branch
-		// lacks) AND the branch's own upstream before trusting the local
-		// heuristic; real merges still get caught by the gh PR check below.
 		if merged[w.Branch] && mainAheadOf(l.Master, l.MainBranch, w.Branch) && branchHasOwnUpstream(l.Master, w.Branch) {
 			out = append(out, MergedCandidate{
 				Name: name, Path: w.Path, Branch: w.Branch,
@@ -50,14 +62,12 @@ func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 			})
 			continue
 		}
-		if useGH {
-			if state := prState(l.Master, w.Branch); state == "MERGED" || state == "CLOSED" {
-				out = append(out, MergedCandidate{
-					Name: name, Path: w.Path, Branch: w.Branch,
-					Reason: "PR " + state,
-					Dirty:  IsDirty(w.Path),
-				})
-			}
+		if state := prStates[w.Branch]; state == "MERGED" || state == "CLOSED" {
+			out = append(out, MergedCandidate{
+				Name: name, Path: w.Path, Branch: w.Branch,
+				Reason: "PR " + state,
+				Dirty:  IsDirty(w.Path),
+			})
 		}
 	}
 	return out, nil
@@ -105,19 +115,36 @@ func branchHasOwnUpstream(masterRepo, branch string) bool {
 	return strings.HasSuffix(strings.TrimSpace(out), "/"+branch)
 }
 
-// prState returns "MERGED", "CLOSED", "OPEN", or "" via `gh pr view <branch>`.
-func prState(masterRepo, branch string) string {
-	cmd := exec.Command("gh", "pr", "view", branch, "--json", "state")
+// batchPRStates queries gh for all PR states in one call, returning a map of
+// branch→state for branches that have an open, merged, or closed PR.
+func batchPRStates(masterRepo string, wts []Worktree, indices []int) map[string]string {
+	if len(indices) == 0 {
+		return nil
+	}
+	// Use a single gh call: list all PRs, filter client-side.
+	cmd := exec.Command("gh", "pr", "list", "--state", "all", "--json", "headRefName,state", "--limit", "200")
 	cmd.Dir = masterRepo
 	out, err := cmd.Output()
 	if err != nil {
-		return ""
+		return nil
 	}
-	var resp struct {
-		State string `json:"state"`
+	type prEntry struct {
+		HeadRefName string `json:"headRefName"`
+		State       string `json:"state"`
 	}
-	if err := json.Unmarshal(out, &resp); err != nil {
-		return ""
+	var all []prEntry
+	if err := json.Unmarshal(out, &all); err != nil {
+		return nil
 	}
-	return resp.State
+	wanted := make(map[string]bool, len(indices))
+	for _, i := range indices {
+		wanted[wts[i].Branch] = true
+	}
+	result := make(map[string]string)
+	for _, pr := range all {
+		if wanted[pr.HeadRefName] {
+			result[pr.HeadRefName] = pr.State
+		}
+	}
+	return result
 }

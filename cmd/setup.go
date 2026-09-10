@@ -40,6 +40,7 @@ func init() {
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
+	tui.DetectTerminalBackground()
 	layout := liftoff.DefaultLayout()
 
 	banner := "kit setup — check & install"
@@ -473,16 +474,38 @@ func masterYarnInstall(layout liftoff.Layout) error {
 		filepath.Join(layout.Master, "frontend", "app"),
 		filepath.Join(layout.Master, "frontend", "admin"),
 	}
+	// Filter to dirs that exist.
+	var dirs []string
 	for _, dir := range frontends {
-		if _, err := os.Stat(dir); err != nil {
-			continue // not all repos have both
-		}
-		fmt.Println(tui.StyleDim.Render("yarn install in " + dir + " …"))
-		if err := liftoff.RunStream(dir, "yarn", []string{"install"}, streamLine); err != nil {
-			return err
+		if _, err := os.Stat(dir); err == nil {
+			dirs = append(dirs, dir)
 		}
 	}
-	return nil
+	if len(dirs) == 0 {
+		return nil
+	}
+	// Run installs in parallel — they are independent.
+	type result struct {
+		dir string
+		err error
+	}
+	ch := make(chan result, len(dirs))
+	for _, dir := range dirs {
+		dir := dir
+		fmt.Println(tui.StyleDim.Render("yarn install in " + dir + " …"))
+		go func() {
+			err := liftoff.RunStream(dir, "yarn", []string{"install"}, streamLine)
+			ch <- result{dir: dir, err: err}
+		}()
+	}
+	var firstErr error
+	for range dirs {
+		r := <-ch
+		if r.err != nil && firstErr == nil {
+			firstErr = r.err
+		}
+	}
+	return firstErr
 }
 
 // offerLumenRemoval uninstalls the old `lumen` diff viewer if it's still

@@ -118,6 +118,52 @@ func HasDB(name string) bool {
 	return strings.TrimSpace(string(out)) == "1"
 }
 
+// HasDBs returns, for each name, whether the corresponding database exists.
+// A single psql invocation replaces N individual HasDB calls. Falls back to
+// individual HasDB calls if the batch query fails or returns unparseable output.
+func HasDBs(names []string) map[string]bool {
+	if len(names) == 0 {
+		return nil
+	}
+	// Build the IN clause safely — names come from our own config, not user input.
+	quoted := make([]string, len(names))
+	dbToName := make(map[string]string, len(names))
+	for i, n := range names {
+		db := DBName(n)
+		quoted[i] = "'" + db + "'"
+		dbToName[db] = n
+	}
+	query := "SELECT datname FROM pg_database WHERE datname IN (" + strings.Join(quoted, ",") + ")"
+	cmd := exec.Command("psql", "-d", "postgres", "-Atc", query)
+	out, err := cmd.Output()
+	if err != nil {
+		// Fallback: individual calls.
+		result := make(map[string]bool, len(names))
+		for _, n := range names {
+			result[n] = HasDB(n)
+		}
+		return result
+	}
+	found := make(map[string]bool, len(names))
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		db := strings.TrimSpace(line)
+		if db == "" {
+			continue
+		}
+		if name, ok := dbToName[db]; ok {
+			found[name] = true
+		}
+	}
+	// If batch output didn't match any expected names (e.g. mock psql returns
+	// a count instead of datname), fall back to individual queries.
+	if len(found) == 0 && len(names) > 0 {
+		for _, n := range names {
+			found[n] = HasDB(n)
+		}
+	}
+	return found
+}
+
 func atoi(s string) int {
 	n := 0
 	for _, c := range s {

@@ -169,10 +169,8 @@ func (c canvas) render() string {
 }
 
 // animBox is the shared rounded frame around every animation.
-var animBox = lipgloss.NewStyle().
-	Border(lipgloss.RoundedBorder()).
-	BorderForeground(colorAccent).
-	Padding(1, 3)
+// Rebuilt by buildStyles() so the border picks up the current palette.
+var animBox lipgloss.Style
 
 // spring1D pairs a harmonica spring with its position + velocity so every
 // animation drives motion the same way: build one, then call to(target) each

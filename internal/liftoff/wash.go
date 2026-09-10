@@ -3,6 +3,7 @@ package liftoff
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -49,21 +50,39 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 						}
 					}
 					ports := PortsForSlot(slot)
-					stopped := 0
-					var firstErr error
+					// Collect alive services first, then stop them in parallel.
+					type svcResult struct {
+						svc Service
+						err error
+					}
+					var alive []Service
 					for _, svc := range AllServices {
-						s := StatusOf(p.Name, svc, ports)
-						if s.Alive {
-							if err := StopService(p.Name, svc); err != nil && firstErr == nil {
-								firstErr = err
-							}
-							stopped++
-							emit("stopped " + svc.Label())
+						if StatusOf(p.Name, svc, ports).Alive {
+							alive = append(alive, svc)
 						}
 					}
-					if stopped == 0 {
+					if len(alive) == 0 {
 						emit("nothing running")
+						return nil
 					}
+					var mu sync.Mutex
+					var firstErr error
+					var wg sync.WaitGroup
+					for _, svc := range alive {
+						svc := svc
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+							err := StopService(p.Name, svc)
+							mu.Lock()
+							defer mu.Unlock()
+							if err != nil && firstErr == nil {
+								firstErr = err
+							}
+							emit("stopped " + svc.Label())
+						}()
+					}
+					wg.Wait()
 					return firstErr
 				},
 			},

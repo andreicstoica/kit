@@ -53,8 +53,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if !liftoff.HasGraphite() {
 		return fmt.Errorf("gt not installed — run `kit setup` or `brew install withgraphite/tap/graphite`")
 	}
+	go func() { _, _ = liftoff.SweepOldRunDirs(logRetention) }()
 	layout := liftoff.DefaultLayout()
-	_, _ = liftoff.SweepOldRunDirs(logRetention)
 	if !layout.MasterIsRepo() {
 		return fmt.Errorf("master repo not found at %s", layout.Master)
 	}

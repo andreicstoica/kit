@@ -10,11 +10,13 @@ import (
 	"github.com/andreicstoica/kit/internal/liftoff"
 )
 
-// Column styles
+// Column styles — built by buildStyles() so the foreground colors reflect
+// the current dark/light palette. Declared here without initialization so
+// package-level init does not bake nil colors.
 var (
-	colHeader = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Padding(0, 1)
+	colHeader lipgloss.Style
 	colCell   = lipgloss.NewStyle().Padding(0, 1)
-	colDim    = lipgloss.NewStyle().Foreground(colorDim).Padding(0, 1)
+	colDim    lipgloss.Style
 )
 
 // RenderLineup prints a static (non-interactive) table of active worktrees.

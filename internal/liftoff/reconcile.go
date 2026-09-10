@@ -68,24 +68,42 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 	}
 
 	hasPostgres := HasPostgres()
-	out := make([]OrphanCandidate, 0)
+
+	// Collect orphan names first, then batch-query DB existence.
+	var orphanNames []string
+	type orphanMeta struct {
+		meta           WorktreeMeta
+		name           string
+		cleanupPending bool
+	}
+	var orphans []orphanMeta
 	for name, meta := range cfg.Worktrees {
 		if name == "master" || liveNames[name] ||
 			(meta.Branch != "" && liveBranches[meta.Branch]) ||
 			(meta.Path != "" && livePaths[filepath.Clean(meta.Path)]) {
 			continue
 		}
-		_, runErr := os.Stat(RunDirPath(name))
+		orphanNames = append(orphanNames, name)
+		orphans = append(orphans, orphanMeta{meta: meta, name: name, cleanupPending: meta.CleanupPending})
+	}
+	var dbMap map[string]bool
+	if hasPostgres && len(orphanNames) > 0 {
+		dbMap = HasDBs(orphanNames)
+	}
+
+	out := make([]OrphanCandidate, 0, len(orphans))
+	for _, o := range orphans {
+		_, runErr := os.Stat(RunDirPath(o.name))
 		out = append(out, OrphanCandidate{
-			Name:           name,
-			Path:           meta.Path,
-			Branch:         meta.Branch,
-			Slot:           meta.Slot,
-			CleanupPending: meta.CleanupPending,
-			HasDB:          hasPostgres && HasDB(name),
-			HasGtab:        l.HasGtab(name),
+			Name:           o.name,
+			Path:           o.meta.Path,
+			Branch:         o.meta.Branch,
+			Slot:           o.meta.Slot,
+			CleanupPending: o.cleanupPending,
+			HasDB:          dbMap[o.name],
+			HasGtab:        l.HasGtab(o.name),
 			HasRunDir:      runErr == nil,
-			HasHerdr:       meta.HerdrID != "",
+			HasHerdr:       o.meta.HerdrID != "",
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

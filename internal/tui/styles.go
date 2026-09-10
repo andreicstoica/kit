@@ -65,7 +65,8 @@ func IsDark() bool { return darkBackground }
 // resolve their own dark/light state per render (huh themes) use this
 // instead of the package-level ColorAccent.
 func AccentFor(isDark bool) color.Color {
-	return lipgloss.LightDark(isDark)(lipgloss.Color("#0F8A4E"), lipgloss.Color("#5DD39E"))
+	buildStyles()
+	return ColorAccent
 }
 
 // SetDarkBackground switches the palette and rebuilds the shared styles.
@@ -108,6 +109,16 @@ func buildStyles() {
 
 	// TitleStyle aliases StyleTitle — keep it pointed at the rebuilt value.
 	TitleStyle = StyleTitle
+
+	// Lineup table column styles — depend on palette colors.
+	colHeader = lipgloss.NewStyle().Bold(true).Foreground(ColorAccent).Padding(0, 1)
+	colDim = lipgloss.NewStyle().Foreground(ColorDim).Padding(0, 1)
+
+	// Animation box border — accent-colored frame around side-panel anims.
+	animBox = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorAccent).
+		Padding(1, 3)
 }
 
 func init() { buildStyles() }

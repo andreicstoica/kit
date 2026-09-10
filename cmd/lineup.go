@@ -20,6 +20,7 @@ var lineupCmd = &cobra.Command{
 		"stack, setup signals (db ownership + node_modules wiring), and " +
 		"running services.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tui.DetectTerminalBackground()
 		layout := liftoff.DefaultLayout()
 		if !layout.MasterIsRepo() {
 			return fmt.Errorf("master repo not found at %s (set KIT_ROOT/KIT_MASTER_DIR)", layout.Master)
