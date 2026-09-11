@@ -73,6 +73,11 @@ func newSelectModel[T comparable](title, description string, opts []SelectOption
 func (m *selectModel[T]) Init() tea.Cmd { return nil }
 
 func (m *selectModel[T]) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), nil)
+		return m, nil
+	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "ctrl+c", "esc":

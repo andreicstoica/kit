@@ -27,6 +27,8 @@ func (m *listPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.list.SetSize(msg.Width, msg.Height-2)
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), nil, &m.list)
 	case tea.KeyPressMsg:
 		// While filtering, keystrokes belong to the filter input — don't
 		// hijack digits as quick-pick or esc as cancel-the-program.
