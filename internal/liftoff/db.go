@@ -74,13 +74,9 @@ func CreateDB(name string, onLine LineFn) error {
 	return RunStream("", "createdb", []string{name}, onLine)
 }
 
-// DropDB runs `dropdb <name>`. Returns nil if DB does not exist.
+// DropDB removes a database if it exists.
 func DropDB(name string, onLine LineFn) error {
-	err := RunStream("", "dropdb", []string{name}, onLine)
-	if err != nil && strings.Contains(err.Error(), "does not exist") {
-		return nil
-	}
-	return err
+	return RunStream("", "dropdb", []string{"--if-exists", name}, onLine)
 }
 
 // SweepOldTestDBs drops disconnected test databases whose data has not changed

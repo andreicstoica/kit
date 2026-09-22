@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+func TestDropDBMissingDatabase(t *testing.T) {
+	bin := t.TempDir()
+	writeExecutable(t, filepath.Join(bin, "dropdb"), `#!/bin/sh
+if [ "$1" = "--if-exists" ] && [ "$2" = "liftoff_missing" ]; then
+    exit 0
+fi
+echo 'dropdb: error: database "liftoff_missing" does not exist' >&2
+exit 1
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := DropDB("liftoff_missing", nil); err != nil {
+		t.Fatalf("DropDB missing database: %v", err)
+	}
+}
+
 func TestSweepOldTestDBs(t *testing.T) {
 	bin := t.TempDir()
 	t.Setenv("KIT_STATE_DIR", t.TempDir())
@@ -27,7 +43,7 @@ other_test_db	%d
 EOF
 `, old, old, old, recent, old, old, old)
 	writeExecutable(t, filepath.Join(bin, "psql"), psql)
-	writeExecutable(t, filepath.Join(bin, "dropdb"), "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$CAPTURE\"\n")
+	writeExecutable(t, filepath.Join(bin, "dropdb"), "#!/bin/sh\ntest \"$1\" = \"--if-exists\" || exit 1\nprintf '%s\\n' \"$2\" >> \"$CAPTURE\"\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CAPTURE", capture)
 	config, err := LoadConfig()
