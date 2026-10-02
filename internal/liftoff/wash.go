@@ -3,6 +3,7 @@ package liftoff
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -13,6 +14,8 @@ type WashPlan struct {
 	WorktreePath string // resolved (could be clean ~/liftoff/<name> or legacy ~/liftoff/liftoff-<name>)
 	DropDB       bool
 	RemoveGtab   bool
+	ExpectedHead string
+	RequireClean bool
 }
 
 // branchForDelete returns the actual branch to remove. Falls back to Name
@@ -38,6 +41,19 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			{
 				title: "stop running services",
 				run: func(emit func(string)) error {
+					if p.ExpectedHead != "" {
+						head, err := Run(p.WorktreePath, "git", "rev-parse", "HEAD")
+						if err != nil {
+							return err
+						}
+						branch, err := Run(p.WorktreePath, "git", "symbolic-ref", "--short", "HEAD")
+						if err != nil {
+							return err
+						}
+						if head != p.ExpectedHead || branch != branchForDelete(p) || (p.RequireClean && IsDirty(p.WorktreePath)) {
+							return errors.New("worktree changed since selection; scan again before cleanup")
+						}
+					}
 					if err := markCleanupPending(p); err != nil {
 						return err
 					}
@@ -49,21 +65,39 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 						}
 					}
 					ports := PortsForSlot(slot)
-					stopped := 0
-					var firstErr error
+					// Collect alive services first, then stop them in parallel.
+					type svcResult struct {
+						svc Service
+						err error
+					}
+					var alive []Service
 					for _, svc := range AllServices {
-						s := StatusOf(p.Name, svc, ports)
-						if s.Alive {
-							if err := StopService(p.Name, svc); err != nil && firstErr == nil {
-								firstErr = err
-							}
-							stopped++
-							emit("stopped " + svc.Label())
+						if StatusOf(p.Name, svc, ports).Alive {
+							alive = append(alive, svc)
 						}
 					}
-					if stopped == 0 {
+					if len(alive) == 0 {
 						emit("nothing running")
+						return nil
 					}
+					var mu sync.Mutex
+					var firstErr error
+					var wg sync.WaitGroup
+					for _, svc := range alive {
+						svc := svc
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+							err := StopService(p.Name, svc)
+							mu.Lock()
+							defer mu.Unlock()
+							if err != nil && firstErr == nil {
+								firstErr = err
+							}
+							emit("stopped " + svc.Label())
+						}()
+					}
+					wg.Wait()
 					return firstErr
 				},
 			},
@@ -165,10 +199,7 @@ func (l Layout) RunWashBlocking(p WashPlan) error {
 
 func markCleanupPending(p WashPlan) error {
 	return WithConfigLock(func(c *Config) error {
-		meta, ok := c.Worktrees[p.Name]
-		if !ok {
-			return nil
-		}
+		meta := c.Worktrees[p.Name]
 		meta.CleanupPending = true
 		if meta.Branch == "" {
 			meta.Branch = p.Branch

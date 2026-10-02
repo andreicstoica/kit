@@ -2,6 +2,8 @@ package liftoff
 
 import (
 	"bufio"
+	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,8 @@ type Worktree struct {
 	Head     string // commit SHA at HEAD
 	Detached bool
 	Bare     bool
+	Locked   bool
+	Missing  bool
 }
 
 // Name returns the canonical kit name for this worktree.
@@ -48,6 +52,8 @@ func (l Layout) ListWorktrees() ([]Worktree, error) {
 	var cur Worktree
 	flush := func() {
 		if cur.Path != "" {
+			_, err := os.Stat(cur.Path)
+			cur.Missing = errors.Is(err, os.ErrNotExist)
 			out = append(out, cur)
 		}
 		cur = Worktree{}
@@ -68,9 +74,16 @@ func (l Layout) ListWorktrees() ([]Worktree, error) {
 			cur.Detached = true
 		case line == "bare":
 			cur.Bare = true
+		case line == "locked" || strings.HasPrefix(line, "locked "):
+			cur.Locked = true
 		}
 	}
 	flush()
+	if err := s.Err(); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, err
+	}
 	if err := cmd.Wait(); err != nil {
 		return nil, err
 	}
@@ -82,7 +95,7 @@ func IsDirty(worktreePath string) bool {
 	cmd := exec.Command("git", "-C", worktreePath, "status", "--porcelain")
 	out, err := cmd.Output()
 	if err != nil {
-		return false
+		return true
 	}
 	return len(strings.TrimSpace(string(out))) > 0
 }
@@ -116,6 +129,52 @@ func HasDB(name string) bool {
 		return false
 	}
 	return strings.TrimSpace(string(out)) == "1"
+}
+
+// HasDBs returns, for each name, whether the corresponding database exists.
+// A single psql invocation replaces N individual HasDB calls. Falls back to
+// individual HasDB calls if the batch query fails or returns unparseable output.
+func HasDBs(names []string) map[string]bool {
+	if len(names) == 0 {
+		return nil
+	}
+	// Build the IN clause safely — names come from our own config, not user input.
+	quoted := make([]string, len(names))
+	dbToName := make(map[string]string, len(names))
+	for i, n := range names {
+		db := DBName(n)
+		quoted[i] = "'" + db + "'"
+		dbToName[db] = n
+	}
+	query := "SELECT datname FROM pg_database WHERE datname IN (" + strings.Join(quoted, ",") + ")"
+	cmd := exec.Command("psql", "-d", "postgres", "-Atc", query)
+	out, err := cmd.Output()
+	if err != nil {
+		// Fallback: individual calls.
+		result := make(map[string]bool, len(names))
+		for _, n := range names {
+			result[n] = HasDB(n)
+		}
+		return result
+	}
+	found := make(map[string]bool, len(names))
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		db := strings.TrimSpace(line)
+		if db == "" {
+			continue
+		}
+		if name, ok := dbToName[db]; ok {
+			found[name] = true
+		}
+	}
+	// If batch output didn't match any expected names (e.g. mock psql returns
+	// a count instead of datname), fall back to individual queries.
+	if len(found) == 0 && len(names) > 0 {
+		for _, n := range names {
+			found[n] = HasDB(n)
+		}
+	}
+	return found
 }
 
 func atoi(s string) int {

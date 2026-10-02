@@ -3,9 +3,9 @@ package tui
 import (
 	"testing"
 
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // These tests drive the shared listPicker's Update loop directly with key
@@ -28,14 +28,15 @@ func newTestPicker(filter bool, names ...string) *listPicker {
 	return m
 }
 
-func mkKey(s string) tea.KeyMsg {
+func mkKey(s string) tea.KeyPressMsg {
 	switch s {
 	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEsc}
+		return tea.KeyPressMsg{Code: tea.KeyEsc}
 	default:
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+		r := []rune(s)[0]
+		return tea.KeyPressMsg{Code: r, Text: s}
 	}
 }
 

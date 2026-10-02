@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
@@ -61,20 +62,27 @@ var restartCmd = &cobra.Command{
 			return fmt.Errorf("nothing running for %s — use `kit play %s`", name, name)
 		}
 
-		for _, svc := range svcs {
-			fmt.Printf("  stopping %s…\n", svc.Label())
-			if err := liftoff.StopService(name, svc); err != nil {
-				fmt.Println(tui.StyleErr.Render("    " + err.Error()))
+		// Stop all services in parallel — each stop is independent.
+		{
+			var mu sync.Mutex
+			var wg sync.WaitGroup
+			for _, svc := range svcs {
+				svc := svc
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					fmt.Printf("  stopping %s…\n", svc.Label())
+					if err := liftoff.StopService(name, svc); err != nil {
+						mu.Lock()
+						fmt.Println(tui.StyleErr.Render("    " + err.Error()))
+						mu.Unlock()
+					}
+					if port := liftoff.ServicePort(svc, ports); port > 0 && liftoff.PortListening(port) {
+						_ = liftoff.KillListenersOnPort(port)
+					}
+				}()
 			}
-			// A `uvicorn --reload` / Vite worker re-execs out of its recorded
-			// pid's process group, so StopService skips the group-kill and
-			// only drops the pid file — leaving the port bound. RunPlay would
-			// then see the port still listening, report "already running", and
-			// silently skip the restart. Kill whatever still holds the port
-			// (mirrors the fallback in RunPause) so the fresh process binds.
-			if port := liftoff.ServicePort(svc, ports); port > 0 && liftoff.PortListening(port) {
-				_ = liftoff.KillListenersOnPort(port)
-			}
+			wg.Wait()
 		}
 
 		// Wipe the Vite dep-optimizer cache for any frontend being bounced —

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type mergedStage int
@@ -29,11 +29,12 @@ type mergedModel struct {
 	selected   map[int]bool
 	cursor     int
 
-	results map[string]string // name -> status string
-	spinner spinner.Model
-	help    help.Model
-	keys    KeyMap
-	failed  bool
+	results    map[string]string // name -> status string
+	spinner    spinner.Model
+	help       help.Model
+	keys       KeyMap
+	failed     bool
+	failureErr error
 
 	width, height int
 }
@@ -49,9 +50,9 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 	}
 	sel := map[int]bool{}
 	for i, c := range cands {
-		// Default-select clean worktrees only; dirty ones hold uncommitted
-		// work that wash would destroy, so they require an explicit opt-in.
-		sel[i] = !c.Dirty
+		// Closed PRs can still hold unmerged commits; both they and dirty
+		// checkouts require an explicit selection before permanent deletion.
+		sel[i] = !c.Dirty && c.Reason != "PR CLOSED"
 	}
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -68,19 +69,17 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 	}, nil
 }
 
-func (m *mergedModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m *mergedModel) Init() tea.Cmd { return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor) }
 
 type mergedRunMsg struct {
-	name string
-	err  error
-	done bool
+	results map[string]string
+	err     error
 }
 
 func (m *mergedModel) startRun() tea.Cmd {
 	return func() tea.Msg {
-		// One iteration per call — chain by repeatedly returning a message
-		// that triggers the next. Simpler: do them all here and emit once.
-		// (Merged-wash is expected to be small; sequential blocking is fine.)
+		results := map[string]string{}
+		var errs []error
 		for i, c := range m.candidates {
 			if !m.selected[i] {
 				continue
@@ -89,10 +88,11 @@ func (m *mergedModel) startRun() tea.Cmd {
 			status := "removed"
 			if err != nil {
 				status = "failed: " + err.Error()
+				errs = append(errs, fmt.Errorf("%s: %w", c.Name, err))
 			}
-			m.results[c.Name] = status
+			results[c.Name] = status
 		}
-		return mergedRunMsg{done: true}
+		return mergedRunMsg{results: results, err: errors.Join(errs...)}
 	}
 }
 
@@ -103,16 +103,22 @@ func mergedWashOne(layout liftoff.Layout, c liftoff.MergedCandidate) error {
 		WorktreePath: c.Path,
 		DropDB:       true,
 		RemoveGtab:   true,
+		ExpectedHead: c.Head,
+		RequireClean: !c.Dirty,
 	})
 }
 
 func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), &m.help)
+		m.spinner.Style = lipgloss.NewStyle().Foreground(colorAccent)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.help.Width = msg.Width
-	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+		m.help.SetWidth(msg.Width)
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
 			m.stage = mergedStageAborted
 			return m, tea.Quit
 		}
@@ -120,10 +126,11 @@ func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.ShowAll = !m.help.ShowAll
 		}
 	case mergedRunMsg:
-		if msg.done {
-			m.stage = mergedStageDone
-			return m, nil
-		}
+		m.results = msg.results
+		m.failed = msg.err != nil
+		m.failureErr = msg.err
+		m.stage = mergedStageDone
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -138,8 +145,8 @@ func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mergedStageConfirm:
 		return m.updateConfirm(msg)
 	case mergedStageDone, mergedStageAborted:
-		if k, ok := msg.(tea.KeyMsg); ok {
-			if k.Type == tea.KeyEnter || k.Type == tea.KeyEsc || k.String() == "q" {
+		if k, ok := msg.(tea.KeyPressMsg); ok {
+			if k.Code == tea.KeyEnter || k.Code == tea.KeyEsc || k.String() == "q" {
 				return m, tea.Quit
 			}
 		}
@@ -148,7 +155,7 @@ func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *mergedModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "up", "k":
 			if m.cursor > 0 {
@@ -158,7 +165,7 @@ func (m *mergedModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.candidates)-1 {
 				m.cursor++
 			}
-		case " ", "tab":
+		case "space", "tab":
 			m.selected[m.cursor] = !m.selected[m.cursor]
 		case "a":
 			for i := range m.candidates {
@@ -188,7 +195,7 @@ func (m *mergedModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *mergedModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "y", "Y", "enter":
 			m.stage = mergedStageRun
@@ -203,7 +210,7 @@ func (m *mergedModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *mergedModel) View() string {
+func (m *mergedModel) View() tea.View {
 	var body string
 	switch m.stage {
 	case mergedStageSelect:
@@ -215,9 +222,9 @@ func (m *mergedModel) View() string {
 	case mergedStageDone:
 		body = m.viewDone()
 	case mergedStageAborted:
-		return StyleWarn.Render("cancelled.\n")
+		return NewAltView(StyleWarn.Render("cancelled.\n"))
 	}
-	return body + "\n" + m.help.View(m.keys)
+	return NewAltView(body + "\n" + m.help.View(m.keys))
 }
 
 func (m *mergedModel) viewSelect() string {
@@ -240,6 +247,9 @@ func (m *mergedModel) viewSelect() string {
 		if c.Dirty {
 			line += "  " + StyleWarn.Render("● dirty — uncommitted changes")
 		}
+		if c.Reason == "PR CLOSED" {
+			line += "  " + StyleWarn.Render("closed without merge")
+		}
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("space: choose · a: all · n: none · enter: continue · esc: cancel"))
@@ -260,6 +270,9 @@ func (m *mergedModel) viewConfirm() string {
 			dirtyCount++
 			line += "  " + StyleWarn.Render("● dirty")
 		}
+		if c.Reason == "PR CLOSED" {
+			line += "  " + StyleWarn.Render("unmerged commits may be lost")
+		}
 		b.WriteString(line + "\n")
 	}
 	b.WriteString(fmt.Sprintf("\nDelete %d old workspace(s)? Kit will stop them, delete their folders, and remove their branches.\n", count))
@@ -273,7 +286,11 @@ func (m *mergedModel) viewConfirm() string {
 
 func (m *mergedModel) viewDone() string {
 	var b strings.Builder
-	b.WriteString(StyleOK.Render("✓ kit wash --merged complete") + "\n\n")
+	if m.failed {
+		b.WriteString(StyleErr.Render("✗ kit wash --merged failed") + "\n\n")
+	} else {
+		b.WriteString(StyleOK.Render("✓ kit wash --merged complete") + "\n\n")
+	}
 	for name, status := range m.results {
 		marker := StyleOK.Render(Glyph("done"))
 		if strings.HasPrefix(status, "failed") {
@@ -291,6 +308,12 @@ func RunMergedWashTUI(layout liftoff.Layout) error {
 	if err != nil {
 		return err
 	}
-	_, runErr := tea.NewProgram(m, tea.WithAltScreen()).Run()
-	return runErr
+	final, runErr := tea.NewProgram(m).Run()
+	if runErr != nil {
+		return runErr
+	}
+	if mm, ok := final.(*mergedModel); ok && mm.failed {
+		return mm.failureErr
+	}
+	return nil
 }

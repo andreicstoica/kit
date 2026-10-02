@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // race is a two-lane sprint to a checkered finish. Runners have random speeds

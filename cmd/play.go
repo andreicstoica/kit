@@ -36,9 +36,11 @@ the service-selection screen.`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Passive cleanup must not prevent a workspace from starting.
-		_, _ = liftoff.SweepOldRunDirs(logRetention)
-		_, _ = liftoff.SweepOldTestDBs(testDBRetention)
+		// Passive cleanup in background — must not block workspace startup.
+		go func() {
+			_, _ = liftoff.SweepOldRunDirs(logRetention)
+			_, _ = liftoff.SweepOldTestDBs(testDBRetention)
+		}()
 
 		layout := liftoff.DefaultLayout()
 		name, err := resolveArgOrCwdSkipMasterCwd(layout, args)

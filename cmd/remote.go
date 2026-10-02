@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/list"
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/spf13/cobra"
 )
 

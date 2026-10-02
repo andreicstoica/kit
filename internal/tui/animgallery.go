@@ -4,8 +4,8 @@ import (
 	"math/rand"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // animGalleryNames labels each tile, in animConstructors order.
@@ -32,7 +32,7 @@ func (g animGallery) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		g.w = msg.Width
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return g, tea.Quit
@@ -48,7 +48,7 @@ func (g animGallery) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return g, nil
 }
 
-func (g animGallery) View() string {
+func (g animGallery) View() tea.View {
 	tiles := make([]string, len(g.anims))
 	for i, a := range g.anims {
 		label := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(animGalleryNames[i])
@@ -67,11 +67,11 @@ func (g animGallery) View() string {
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, tiles[i:end]...))
 	}
 	rows = append(rows, StyleDim.Render("press q to quit"))
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return NewAltView(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
 // RunAnimGallery previews every animation at once. Quits on q / esc / ctrl-c.
 func RunAnimGallery() error {
-	_, err := tea.NewProgram(newAnimGallery(), tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(newAnimGallery()).Run()
 	return err
 }

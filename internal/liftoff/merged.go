@@ -1,7 +1,6 @@
 package liftoff
 
 import (
-	"encoding/json"
 	"os/exec"
 	"strings"
 )
@@ -11,6 +10,7 @@ type MergedCandidate struct {
 	Name   string
 	Path   string
 	Branch string
+	Head   string
 	Reason string // "merged to master" | "PR MERGED" | "PR CLOSED"
 	Dirty  bool   // uncommitted/untracked changes in the worktree — wash destroys them
 }
@@ -29,35 +29,45 @@ func (l Layout) FindMergedWorktrees() ([]MergedCandidate, error) {
 		return nil, err
 	}
 	merged := mergedBranches(l.Master, l.MainBranch)
-	useGH := HasGH()
+
+	var branches []string
+	for _, w := range wts {
+		if !w.IsMaster(l) && !w.Bare && !w.Detached && !w.Missing && !w.Locked && w.Branch != l.MainBranch {
+			branches = append(branches, w.Branch)
+		}
+	}
+	prStates := map[string]PRStatus{}
+	if HasGH() {
+		prStates, err = l.RemotePRStatuses(branches)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var out []MergedCandidate
 	for _, w := range wts {
-		if w.IsMaster(l) || w.Bare {
+		if w.IsMaster(l) || w.Bare || w.Detached || w.Missing || w.Locked || w.Branch == l.MainBranch {
+			continue
+		}
+		pr := prStates[w.Branch]
+		if pr.State == "OPEN" {
 			continue
 		}
 		name := w.Name()
-		// `git branch --merged` also lists branches that never diverged (tip is
-		// an ancestor of main), not just landed work — including a branch
-		// sitting at an old main tip with all its work still uncommitted.
-		// Require main to be strictly ahead (it absorbed commits this branch
-		// lacks) AND the branch's own upstream before trusting the local
-		// heuristic; real merges still get caught by the gh PR check below.
 		if merged[w.Branch] && mainAheadOf(l.Master, l.MainBranch, w.Branch) && branchHasOwnUpstream(l.Master, w.Branch) {
 			out = append(out, MergedCandidate{
-				Name: name, Path: w.Path, Branch: w.Branch,
+				Name: name, Path: w.Path, Branch: w.Branch, Head: w.Head,
 				Reason: "merged to " + l.MainBranch,
 				Dirty:  IsDirty(w.Path),
 			})
 			continue
 		}
-		if useGH {
-			if state := prState(l.Master, w.Branch); state == "MERGED" || state == "CLOSED" {
-				out = append(out, MergedCandidate{
-					Name: name, Path: w.Path, Branch: w.Branch,
-					Reason: "PR " + state,
-					Dirty:  IsDirty(w.Path),
-				})
-			}
+		if (pr.State == "MERGED" || pr.State == "CLOSED") && pr.HeadOID != "" && pr.HeadOID == w.Head {
+			out = append(out, MergedCandidate{
+				Name: name, Path: w.Path, Branch: w.Branch, Head: w.Head,
+				Reason: "PR " + pr.State,
+				Dirty:  IsDirty(w.Path),
+			})
 		}
 	}
 	return out, nil
@@ -103,21 +113,4 @@ func branchHasOwnUpstream(masterRepo, branch string) bool {
 		return false
 	}
 	return strings.HasSuffix(strings.TrimSpace(out), "/"+branch)
-}
-
-// prState returns "MERGED", "CLOSED", "OPEN", or "" via `gh pr view <branch>`.
-func prState(masterRepo, branch string) string {
-	cmd := exec.Command("gh", "pr", "view", branch, "--json", "state")
-	cmd.Dir = masterRepo
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	var resp struct {
-		State string `json:"state"`
-	}
-	if err := json.Unmarshal(out, &resp); err != nil {
-		return ""
-	}
-	return resp.State
 }

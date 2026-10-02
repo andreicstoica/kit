@@ -5,16 +5,18 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
 )
 
-// Column styles
+// Column styles — built by buildStyles() so the foreground colors reflect
+// the current dark/light palette. Declared here without initialization so
+// package-level init does not bake nil colors.
 var (
-	colHeader = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Padding(0, 1)
+	colHeader lipgloss.Style
 	colCell   = lipgloss.NewStyle().Padding(0, 1)
-	colDim    = lipgloss.NewStyle().Foreground(colorDim).Padding(0, 1)
+	colDim    lipgloss.Style
 )
 
 // RenderLineup prints a static (non-interactive) table of active worktrees.
@@ -58,7 +60,9 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			name = "master"
 		}
 		stRaw := "clean"
-		if liftoff.IsDirty(w.Path) {
+		if w.Missing {
+			stRaw = "missing"
+		} else if liftoff.IsDirty(w.Path) {
 			stRaw = "dirty"
 		}
 		if !isMaster {
@@ -132,7 +136,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			hasHerdr:   herdrStatus != "—",
 			branch:     branchDisp,
 			status:     stRaw,
-			statusOK:   !strings.Contains(stRaw, "dirty"),
+			statusOK:   strings.HasPrefix(stRaw, "clean"),
 			sortKey:    sortKey,
 		})
 	}

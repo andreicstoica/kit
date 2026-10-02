@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // penaltyPhase tracks where the penalty-kick animation is in its loop.

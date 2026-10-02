@@ -201,21 +201,21 @@ func KillGroup(pid int) error {
 		pgid = pid
 	}
 	_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	// Polite wait.
+	// Polite wait — poll at 20ms for fast shutdown, up to 3s.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if !IsAlive(pid) {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	// Escalate.
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 25; i++ {
 		if !IsAlive(pid) {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(40 * time.Millisecond)
 	}
 	return fmt.Errorf("pid %d still alive after SIGKILL", pid)
 }

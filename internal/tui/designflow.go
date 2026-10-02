@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/stopwatch"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/stopwatch"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // designAnswers is the form payload from huh.
@@ -202,23 +202,28 @@ func (m *designModel) Init() tea.Cmd {
 		m.stopwatch.Init(),
 		m.anim.Init(),
 		designNext(m.updates),
+		tea.RequestBackgroundColor,
 	)
 }
 
 func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), &m.help)
+		m.spinner.Style = lipgloss.NewStyle().Foreground(colorAccent)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.help.Width = msg.Width
-		m.progress.Width = max(20, msg.Width-50)
-	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+		m.help.SetWidth(msg.Width)
+		m.progress.SetWidth(max(20, msg.Width-50))
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
 		if msg.String() == "?" {
 			m.help.ShowAll = !m.help.ShowAll
 		}
-		if m.done && (msg.Type == tea.KeyEnter || msg.Type == tea.KeyEsc || msg.String() == "q") {
+		if m.done && (msg.Code == tea.KeyEnter || msg.Code == tea.KeyEsc || msg.String() == "q") {
 			return m, tea.Quit
 		}
 	case spinner.TickMsg:
@@ -280,15 +285,13 @@ func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(designNext(m.updates), pcmd)
 	case progress.FrameMsg:
 		var cmd tea.Cmd
-		var pm tea.Model
-		pm, cmd = m.progress.Update(msg)
-		m.progress = pm.(progress.Model)
+		m.progress, cmd = m.progress.Update(msg)
 		return m, cmd
 	}
 	return m, nil
 }
 
-func (m *designModel) View() string {
+func (m *designModel) View() tea.View {
 	var left strings.Builder
 	emoji := liftoff.EmojiFor(m.answers.name)
 	titlePrefix := "kit design — "
@@ -372,7 +375,7 @@ func (m *designModel) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, orbView)
 	}
 	footer := "\n" + m.help.View(m.keys)
-	return body + footer
+	return NewAltView(body + footer)
 }
 
 func truncate(s string, w int) string {
@@ -436,10 +439,10 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
 
-	pb := progress.New(progress.WithDefaultGradient(), progress.WithoutPercentage())
-	pb.Width = 30
+	pb := progress.New(progress.WithDefaultBlend(), progress.WithoutPercentage())
+	pb.SetWidth(30)
 
-	sw := stopwatch.NewWithInterval(time.Second)
+	sw := stopwatch.New(stopwatch.WithInterval(time.Second))
 
 	m := &designModel{
 		layout:    layout,
@@ -453,7 +456,7 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 		help:      NewHelp(),
 	}
 
-	final, runErr := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	final, runErr := tea.NewProgram(m).Run()
 	if runErr != nil {
 		return runErr
 	}

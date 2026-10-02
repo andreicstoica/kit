@@ -2,6 +2,7 @@ package liftoff
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -151,14 +152,53 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		{
 			title: "allocate port slot",
 			run: func(emit func(string)) error {
-				var slot int
-				err := WithConfigLock(func(c *Config) error {
-					s, err := c.AllocateSlot(p.Name, PortsBindable)
-					if err != nil {
-						return err
+				// Pre-probe candidate slots outside the flock to minimize lock
+				// hold time. The probe is best-effort; re-check inside the lock.
+				cfg, err := LoadConfig()
+				if err != nil {
+					return err
+				}
+				used := map[int]bool{0: true}
+				for _, m := range cfg.Worktrees {
+					if m.Slot > 0 {
+						used[m.Slot] = true
 					}
+				}
+				freeSlot := 0
+				for slot := 1; slot <= 99; slot++ {
+					if used[slot] {
+						continue
+					}
+					if PortsBindable(slot) {
+						freeSlot = slot
+						break
+					}
+				}
+				if freeSlot == 0 {
+					return fmt.Errorf("no free slot ≤ 99 (you have a lot of worktrees!)")
+				}
+				// Lock only for the write, using the pre-probed slot.
+				var slot int
+				err = WithConfigLock(func(c *Config) error {
+					// Re-check: another kit process may have grabbed it.
+					if existing, ok := c.Worktrees[p.Name]; ok && existing.Slot > 0 {
+						slot = existing.Slot
+						return nil
+					}
+					for _, m := range c.Worktrees {
+						if m.Slot == freeSlot {
+							// Slot taken between probe and lock — fall back to full scan.
+							s, err := c.AllocateSlot(p.Name, PortsBindable)
+							if err != nil {
+								return err
+							}
+							slot = s
+							return nil
+						}
+					}
+					c.Worktrees[p.Name] = WorktreeMeta{Slot: freeSlot}
 					c.TouchLastUsed(p.Name)
-					slot = s
+					slot = freeSlot
 					return nil
 				})
 				if err != nil {
@@ -198,7 +238,10 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		gtabWritten := false
 		slotAllocated := false
 		steps := l.planSteps(p, &slot)
-		for i, s := range steps {
+
+		// Run sequential steps 0-5 (fetch, worktree, env, DB create, DB clone, DB env).
+		for i := 0; i <= 5 && i < len(steps); i++ {
+			s := steps[i]
 			if s.skip {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 				continue
@@ -222,18 +265,89 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				worktreeAdded = true
 			case 3:
 				dbCreated = true
-			case 9:
+			}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed, AllocatedSlot: slot}
+		}
+
+		// Fan out independent steps 6-9 in parallel (backend install, frontend
+		// symlink, graphite track, write gtab). These have no dependency on each
+		// other after the worktree and DB exist.
+		parallelStart := 6
+		parallelEnd := 9
+		if parallelEnd >= len(steps) {
+			parallelEnd = len(steps) - 1
+		}
+		type pResult struct {
+			index   int
+			err     error
+			elapsed time.Duration
+		}
+		var wg sync.WaitGroup
+		results := make([]pResult, parallelEnd-parallelStart+1)
+		for i := parallelStart; i <= parallelEnd; i++ {
+			s := steps[i]
+			idx := i - parallelStart
+			if s.skip {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
+				results[idx] = pResult{index: i}
+				continue
+			}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
+			wg.Add(1)
+			go func(i int, s step, idx int) {
+				defer wg.Done()
+				start := time.Now()
+				emit := func(line string) {
+					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+				}
+				err := s.run(emit)
+				results[idx] = pResult{index: i, err: err, elapsed: time.Since(start)}
+			}(i, s, idx)
+		}
+		wg.Wait()
+
+		// Emit results for parallel steps. First failure aborts.
+		for _, r := range results {
+			s := steps[r.index]
+			if r.err != nil {
+				ch <- StepUpdate{Index: r.index, Title: s.title, Status: StepFailed, Err: r.err, Elapsed: r.elapsed}
+				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, slotAllocated, func(line string) {
+					ch <- StepUpdate{Index: r.index, Title: s.title, Status: StepRunning, Line: line}
+				})
+				return
+			}
+			if r.index == 9 {
 				gtabWritten = true
-			case 10:
+			}
+			ch <- StepUpdate{Index: r.index, Title: s.title, Status: StepDone, Elapsed: r.elapsed, AllocatedSlot: slot}
+		}
+
+		// Run remaining sequential steps (10+: allocate port slot).
+		for i := parallelEnd + 1; i < len(steps); i++ {
+			s := steps[i]
+			if s.skip {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
+				continue
+			}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
+			start := time.Now()
+			emit := func(line string) {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+			}
+			err := s.run(emit)
+			elapsed := time.Since(start)
+			if err != nil {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
+				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, slotAllocated, func(line string) {
+					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+				})
+				return
+			}
+			if i == 10 {
+				gtabWritten = true
 				slotAllocated = true
 			}
-			ch <- StepUpdate{
-				Index:         i,
-				Title:         s.title,
-				Status:        StepDone,
-				Elapsed:       elapsed,
-				AllocatedSlot: slot,
-			}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed, AllocatedSlot: slot}
 		}
 	}()
 	return ch

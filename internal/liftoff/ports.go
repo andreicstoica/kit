@@ -68,7 +68,7 @@ func portBindable(port int) bool {
 // loopback stack. Used for service health detection (opposite of bindable).
 func PortListening(port int) bool {
 	for _, h := range loopbackHosts {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h, port), 200*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h, port), 50*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
 			return true

@@ -1,9 +1,11 @@
 package liftoff
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"os/exec"
+	"path/filepath"
 )
 
 // FetchMain runs `git fetch origin` from the master repo. Avoids the
@@ -29,6 +31,24 @@ func (l Layout) AddWorktree(name, path string, onLine LineFn) error {
 
 // RemoveWorktree removes the worktree at path (force).
 func (l Layout) RemoveWorktree(path string, onLine LineFn) error {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		wts, err := l.ListWorktrees()
+		if err != nil {
+			return err
+		}
+		registered := false
+		for _, wt := range wts {
+			if filepath.Clean(wt.Path) == filepath.Clean(path) {
+				registered = true
+				break
+			}
+		}
+		if !registered {
+			return nil
+		}
+	} else if err != nil {
+		return err
+	}
 	args := []string{"-C", l.Master, "worktree", "remove", path, "--force"}
 	return RunStream("", "git", args, onLine)
 }
@@ -36,12 +56,16 @@ func (l Layout) RemoveWorktree(path string, onLine LineFn) error {
 // DeleteBranch force-deletes the local branch in the master repo.
 // Non-fatal: returns nil if branch is gone.
 func (l Layout) DeleteBranch(branch string, onLine LineFn) error {
-	args := []string{"-C", l.Master, "branch", "-D", branch}
-	err := RunStream("", "git", args, onLine)
-	if err != nil && strings.Contains(err.Error(), "not found") {
-		return nil
+	cmd := exec.Command("git", "-C", l.Master, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil
+		}
+		return fmt.Errorf("check branch %q: %w", branch, err)
 	}
-	return err
+	args := []string{"-C", l.Master, "branch", "-D", branch}
+	return RunStream("", "git", args, onLine)
 }
 
 // MasterIsRepo returns true if the master path exists and looks like a git repo.

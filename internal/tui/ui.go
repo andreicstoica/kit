@@ -1,8 +1,10 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/huh"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 )
 
 // kit UI design language
@@ -55,15 +57,48 @@ func StyleList(l *list.Model, title string, filtering bool) {
 	l.SetFilteringEnabled(filtering)
 }
 
+// NewAltView wraps content in a fullscreen alternate-screen view. Flows
+// whose program previously passed tea.WithAltScreen set this on every
+// View return instead (Bubble Tea v2 moved screen mode into the view).
+func NewAltView(content string) tea.View {
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
+}
+
+// RestyleList reapplies kit's list chrome for the current theme.
+func RestyleList(l *list.Model) {
+	l.Styles.Title = TitleStyle
+	l.SetDelegate(NewListDelegate())
+}
+
+// ApplyTheme switches the global theme from a background-color message and
+// restyles the given help model and lists. Flow Updates call this on
+// tea.BackgroundColorMsg so light terminals restyle without a restart.
+func ApplyTheme(isDark bool, h *help.Model, lists ...*list.Model) {
+	SetDarkBackground(isDark)
+	if h != nil {
+		*h = RestyleHelp(*h)
+	}
+	for _, l := range lists {
+		if l != nil {
+			RestyleList(l)
+		}
+	}
+}
+
 // KitHuhTheme is the shared huh theme for kit's selects and confirms. It
 // starts from ThemeCharm (so adaptive light/dark colors are honored) and
 // retints the focused accents to kit's brand green for a consistent look
 // with the list pickers.
-func KitHuhTheme() *huh.Theme {
-	t := huh.ThemeCharm()
-	t.Focused.Title = t.Focused.Title.Foreground(ColorAccent).Bold(true)
-	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(ColorAccent)
-	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(ColorAccent)
-	t.Focused.FocusedButton = t.Focused.FocusedButton.Background(ColorAccent)
-	return t
+func KitHuhTheme() huh.Theme {
+	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		t := huh.ThemeCharm(isDark)
+		accent := AccentFor(isDark)
+		t.Focused.Title = t.Focused.Title.Foreground(accent).Bold(true)
+		t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(accent)
+		t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(accent)
+		t.Focused.FocusedButton = t.Focused.FocusedButton.Background(accent)
+		return t
+	})
 }

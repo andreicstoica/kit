@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/stopwatch"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/stopwatch"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type playStage int
@@ -159,7 +159,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
 	m.spinner = sp
-	m.stopwatch = stopwatch.NewWithInterval(time.Second)
+	m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Second))
 	m.help = NewHelp()
 	m.keys = DefaultKeymap
 
@@ -367,16 +367,16 @@ func playNext(ch <-chan liftoff.PlayUpdate) tea.Cmd {
 
 func (m *playModel) Init() tea.Cmd {
 	if m.skipToggle {
-		return tea.Batch(m.spinner.Tick, m.transitionAfterToggle())
+		return tea.Batch(m.spinner.Tick, m.transitionAfterToggle(), tea.RequestBackgroundColor)
 	}
-	return m.spinner.Tick
+	return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor)
 }
 
 func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.help.Width = msg.Width
+		m.help.SetWidth(msg.Width)
 		if m.picker.Items() != nil {
 			m.picker.SetSize(msg.Width, msg.Height-3)
 		}
@@ -384,8 +384,12 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.stopwatch, cmd = m.stopwatch.Update(msg)
 		return m, cmd
-	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+	case tea.BackgroundColorMsg:
+		ApplyTheme(msg.IsDark(), &m.help)
+		m.spinner.Style = lipgloss.NewStyle().Foreground(colorAccent)
+		return m, nil
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
 			m.stage = playStageAborted
 			return m, tea.Quit
 		}
@@ -434,8 +438,8 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case playStageRun:
 		return m.updateRun(msg)
 	case playStageDone, playStageAborted:
-		if k, ok := msg.(tea.KeyMsg); ok {
-			if k.Type == tea.KeyEnter || k.Type == tea.KeyEsc || k.String() == "q" {
+		if k, ok := msg.(tea.KeyPressMsg); ok {
+			if k.Code == tea.KeyEnter || k.Code == tea.KeyEsc || k.String() == "q" {
 				return m, tea.Quit
 			}
 		}
@@ -444,7 +448,7 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		if m.picker.FilterState() != list.Filtering {
 			switch k.String() {
 			case "enter":
@@ -475,7 +479,7 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *playModel) updateToggle(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "up", "k":
 			if m.toggleCursor > 0 {
@@ -485,7 +489,7 @@ func (m *playModel) updateToggle(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.toggleCursor < len(m.toggleSvcs)-1 {
 				m.toggleCursor++
 			}
-		case " ", "tab":
+		case "space", "tab":
 			s := m.toggleSvcs[m.toggleCursor]
 			m.toggleOn[s] = !m.toggleOn[s]
 			// Celery toggle controls beat too — they're paired.
@@ -507,7 +511,7 @@ func (m *playModel) updateToggle(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *playModel) updateAdopt(msg tea.Msg) (tea.Model, tea.Cmd) {
-	k, ok := msg.(tea.KeyMsg)
+	k, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
 	}
@@ -557,7 +561,7 @@ func (m *playModel) updateAdopting(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *playModel) updateCelery(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch {
 		case isConfirmYes(k):
 			m.celeryAccept = true
@@ -618,7 +622,7 @@ func (m *playModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *playModel) View() string {
+func (m *playModel) View() tea.View {
 	var body string
 	switch m.stage {
 	case playStagePicker:
@@ -636,10 +640,10 @@ func (m *playModel) View() string {
 	case playStageDone:
 		body = m.viewDone()
 	case playStageAborted:
-		return StyleWarn.Render("cancelled.\n")
+		return NewAltView(StyleWarn.Render("cancelled.\n"))
 	}
 	footer := "\n" + m.help.View(m.keys)
-	return body + footer
+	return NewAltView(body + footer)
 }
 
 func (m *playModel) viewToggle() string {
@@ -775,7 +779,7 @@ func RunPlayTUI(layout liftoff.Layout, cfg PlayConfig) error {
 	if err != nil {
 		return err
 	}
-	final, runErr := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	final, runErr := tea.NewProgram(m).Run()
 	if runErr != nil {
 		return runErr
 	}

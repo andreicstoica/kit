@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // rocket is a launch: 3·2·1 countdown, then the rocket climbs off-screen

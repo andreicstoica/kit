@@ -103,7 +103,7 @@ it). `kit play` boots all five (minus mcp) in parallel.
 | Herdr | `kit open` / `kit focus` — persistent worktree spaces, tabs, panes, and agents |
 | `pg_dump` / `psql` | "Clone local DB" toggle in `kit design` |
 | `gt` (graphite) | "Track in graphite" toggle, `kit sync`, gt stack in lineup |
-| `gh` (GitHub CLI) | `kit wash --merged` checks PR state |
+| `gh` (GitHub CLI) | `kit wash --merged` checks PR state; `kit lineup --remote` shows it |
 | `zed` / `cursor` / `code` | any one suffices for `kit swap`. Override via `KIT_EDITOR`. |
 | `hunk` | nicer side-by-side `kit diff` |
 | `ruff` | backend lint/format (replaced black/isort/flake8); kit doesn't run it, but backend dev + CI expect it |
@@ -375,11 +375,16 @@ Wizard: name → clone DB? → symlink node_modules? → graphite track? Backend
 deps + gtab + slot allocation always run. Trailing prompt picks the Ghostty
 layout (simple / detailed / skip) and offers to start servers.
 
-### `kit lineup [--tree]` (alias `ls`) — list kits
+### `kit lineup [--tree] [--remote]` (alias `ls`) — list kits
 
 Table: `NAME · SLOT · RUNNING · HERDR · BRANCH · STATUS`. HERDR shows the
 persistent space or active agent states. Branch emoji prefix.
 Master at slot 0 with 🧊.
+
+`--remote` adds fresh GitHub PR status and URLs for worktree branches,
+including saved Kit records whose folders are missing. It shows `OPEN`,
+`MERGED`, `CLOSED`, or `NONE` (lookup succeeded, no PR). Lookup failures show
+`UNKNOWN` and return a nonzero exit code. Requires `gh` with authentication.
 
 `--tree` renders the same set hierarchically: master root, worktrees as
 children, each expanded into its gt stack, a `setup` sub-node (db ownership
@@ -448,6 +453,10 @@ saved service state, private database, Herdr workspace, gtab file, and port
 slot. It keeps the local branch so unmerged work is not lost. Use `kit
 reconcile --yes` for a non-interactive cleanup.
 
+This also detects deleted folders that Git still lists and removes their
+stale Git records. Moved checkouts and locked worktrees are retained. Failed
+cleanup keeps the Kit record for retry.
+
 ### `kit adopt [name]` (alias `register`) — register a worktree
 
 Allocates slot + writes metadata for an existing on-disk worktree.
@@ -462,6 +471,13 @@ to remove only Herdr terminal state while keeping the Git worktree.
 `kit wash --merged` is the bulk mode: scans for worktrees whose branch is
 merged into master or whose PR is MERGED/CLOSED, then multi-select → washes
 each.
+
+PR lookup checks all pages for each branch. Open PRs protect a branch from
+bulk cleanup. A merged or closed PR qualifies only when its head commit
+matches the worktree; newer local commits are retained. Lookup failures stop
+the scan. Without `gh`, only local Git merge evidence is used. Dirty worktrees
+and closed PRs are not selected by default. Changes to a selected branch or
+clean checkout stop the wash. Failed bulk cleanup returns a nonzero exit code.
 
 ### `kit open [name]` — attach to a persistent Herdr space
 

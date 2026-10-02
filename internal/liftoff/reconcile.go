@@ -21,11 +21,15 @@ type OrphanCandidate struct {
 	HasGtab        bool
 	HasRunDir      bool
 	HasHerdr       bool
+	GitPath        string
 }
 
 // Resources returns the durable resources that reconciliation can remove.
 func (o OrphanCandidate) Resources() []string {
 	resources := []string{"config"}
+	if o.GitPath != "" {
+		resources = append(resources, "Git record")
+	}
 	if o.HasDB {
 		resources = append(resources, "db")
 	}
@@ -56,9 +60,21 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 	liveNames := map[string]bool{}
 	liveBranches := map[string]bool{}
 	livePaths := map[string]bool{}
+	var missing []Worktree
 	for _, wt := range wts {
 		if wt.IsMaster(l) || wt.Bare {
 			continue
+		}
+		if _, err := os.Stat(wt.Path); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("check worktree %s: %w", wt.Path, err)
+			}
+			// Locked checkouts can be on an unmounted disk. Git retains them
+			// deliberately, so their Kit resources must also be retained.
+			if !wt.Locked {
+				missing = append(missing, wt)
+				continue
+			}
 		}
 		liveNames[wt.Name()] = true
 		if wt.Branch != "" {
@@ -68,24 +84,59 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 	}
 
 	hasPostgres := HasPostgres()
-	out := make([]OrphanCandidate, 0)
+
+	// Collect orphan names first, then batch-query DB existence.
+	var orphanNames []string
+	type orphanMeta struct {
+		meta           WorktreeMeta
+		name           string
+		cleanupPending bool
+		gitPath        string
+	}
+	var orphans []orphanMeta
 	for name, meta := range cfg.Worktrees {
 		if name == "master" || liveNames[name] ||
 			(meta.Branch != "" && liveBranches[meta.Branch]) ||
 			(meta.Path != "" && livePaths[filepath.Clean(meta.Path)]) {
 			continue
 		}
-		_, runErr := os.Stat(RunDirPath(name))
+		gitPath := ""
+		for _, wt := range missing {
+			if wt.Name() == name || (meta.Branch != "" && wt.Branch == meta.Branch) ||
+				(meta.Path != "" && filepath.Clean(meta.Path) == filepath.Clean(wt.Path)) {
+				gitPath = wt.Path
+				break
+			}
+		}
+		if meta.Path != "" {
+			if _, err := os.Stat(meta.Path); err == nil {
+				continue
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("check saved worktree %s: %w", meta.Path, err)
+			}
+		}
+		orphanNames = append(orphanNames, name)
+		orphans = append(orphans, orphanMeta{meta: meta, name: name, cleanupPending: meta.CleanupPending, gitPath: gitPath})
+	}
+	var dbMap map[string]bool
+	if hasPostgres && len(orphanNames) > 0 {
+		dbMap = HasDBs(orphanNames)
+	}
+
+	out := make([]OrphanCandidate, 0, len(orphans))
+	for _, o := range orphans {
+		_, runErr := os.Stat(RunDirPath(o.name))
 		out = append(out, OrphanCandidate{
-			Name:           name,
-			Path:           meta.Path,
-			Branch:         meta.Branch,
-			Slot:           meta.Slot,
-			CleanupPending: meta.CleanupPending,
-			HasDB:          hasPostgres && HasDB(name),
-			HasGtab:        l.HasGtab(name),
+			Name:           o.name,
+			Path:           o.meta.Path,
+			Branch:         o.meta.Branch,
+			Slot:           o.meta.Slot,
+			CleanupPending: o.cleanupPending,
+			HasDB:          dbMap[o.name],
+			HasGtab:        l.HasGtab(o.name),
 			HasRunDir:      runErr == nil,
-			HasHerdr:       meta.HerdrID != "",
+			HasHerdr:       o.meta.HerdrID != "",
+			GitPath:        o.gitPath,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -110,6 +161,14 @@ func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error 
 	}
 	if !found {
 		return fmt.Errorf("worktree %q exists or config record was already removed", candidate.Name)
+	}
+	if candidate.GitPath != "" {
+		if _, err := os.Stat(candidate.GitPath); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("worktree %q is no longer missing", candidate.Name)
+		}
+		if err := l.RemoveWorktree(candidate.GitPath, onLine); err != nil {
+			return fmt.Errorf("remove missing Git worktree record: %w", err)
+		}
 	}
 
 	cfg, err := LoadConfig()

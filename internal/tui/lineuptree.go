@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/tree"
 	"github.com/andreicstoica/kit/internal/liftoff"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/tree"
 )
 
 // wtNode is one worktree row in the tree. Children are populated from the
@@ -21,6 +21,7 @@ type wtNode struct {
 	running      int
 	total        int
 	dirty        bool
+	missing      bool
 	ahead        int
 	behind       int
 	legacy       bool
@@ -102,6 +103,7 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 				running: running,
 				total:   total,
 				dirty:   liftoff.IsDirty(in.w.Path),
+				missing: in.w.Missing,
 				ahead:   ahead,
 				behind:  behind,
 				legacy:  in.w.HasLegacyPrefix(),
@@ -242,13 +244,15 @@ func wtTreeLabel(n *wtNode, stackSize int) string {
 	parts := []string{lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(header)}
 
 	status := "clean"
-	if n.dirty {
+	if n.missing {
+		status = "missing"
+	} else if n.dirty {
 		status = "dirty"
 	}
 	if n.ahead > 0 || n.behind > 0 {
 		status = fmt.Sprintf("%s ↑%d↓%d", status, n.ahead, n.behind)
 	}
-	if n.dirty {
+	if n.dirty || n.missing {
 		parts = append(parts, StyleWarn.Render(status))
 	} else {
 		parts = append(parts, StyleOK.Render(status))
