@@ -1,6 +1,53 @@
 package liftoff
 
-import "testing"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func mockPRLookup(t *testing.T, branch, oid, entries string) {
+	t.Helper()
+	bin := t.TempDir()
+	writeExecutable(t, filepath.Join(bin, "gh"), fmt.Sprintf(`#!/bin/sh
+if [ "$1" = repo ]; then
+  printf '{"nameWithOwner":"test/repo"}'
+elif [ "$1" = api ]; then
+  case "$*" in
+    *'head=test:%s'*) printf '%%s' '%s' ;;
+    *) echo 'missing branch head filter' >&2; exit 1 ;;
+  esac
+else
+  printf '[{"headRefName":"%s","state":"OPEN","headRefOid":"%s"},{"headRefName":"%s","state":"CLOSED","headRefOid":"%s"}]'
+fi
+`, branch, entries, branch, oid, branch, oid))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestFindMergedWorktrees_PreservesBranchWithOpenPR(t *testing.T) {
+	l := newMasterRepo(t)
+	path := addWorktree(t, l, "reuse")
+	commitAndPush(t, path, "reuse", "work.txt")
+	runGit(t, l.Master, "merge", "--no-ff", "reuse", "--no-edit")
+	head := runGit(t, path, "rev-parse", "HEAD")
+	mockPRLookup(t, "reuse", head, fmt.Sprintf(`[[{"number":2,"state":"open","head":{"ref":"reuse","sha":"%s","repo":{"full_name":"test/repo"}}},{"number":1,"state":"closed","head":{"ref":"reuse","sha":"%s","repo":{"full_name":"test/repo"}}}]]`, head, head))
+	got, err := l.FindMergedWorktrees()
+	if err != nil || len(got) != 0 {
+		t.Fatalf("cleanup candidates = %+v, %v; open PR must protect branch", got, err)
+	}
+}
+
+func TestFindMergedWorktrees_ReportsPRLookupFailure(t *testing.T) {
+	l := newMasterRepo(t)
+	addWorktree(t, l, "work")
+	bin := t.TempDir()
+	writeExecutable(t, filepath.Join(bin, "gh"), "#!/bin/sh\necho 'authentication failed' >&2\nexit 1\n")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if _, err := l.FindMergedWorktrees(); err == nil {
+		t.Fatal("PR lookup failure was reported as an empty successful scan")
+	}
+}
 
 // commitAndPush commits in the worktree and pushes with -u so the branch gets
 // an upstream.
@@ -75,6 +122,7 @@ func TestMergedBranches(t *testing.T) {
 // ancestor of master). A branch that was actually merged AND pushed still is.
 func TestFindMergedWorktrees_SkipsUnpushed(t *testing.T) {
 	l := newMasterRepo(t)
+	mockNoPRs(t)
 
 	// landed: merged into master and pushed → should be flagged.
 	landed := addWorktree(t, l, "landed")
@@ -142,6 +190,7 @@ func TestFindMergedWorktrees_SkipsUnpushed(t *testing.T) {
 // the picker can warn and default-deselect it.
 func TestFindMergedWorktrees_MarksDirty(t *testing.T) {
 	l := newMasterRepo(t)
+	mockNoPRs(t)
 
 	landed := addWorktree(t, l, "landed")
 	commitAndPush(t, landed, "landed", "l.txt")

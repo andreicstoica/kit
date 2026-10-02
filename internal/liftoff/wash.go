@@ -14,6 +14,8 @@ type WashPlan struct {
 	WorktreePath string // resolved (could be clean ~/liftoff/<name> or legacy ~/liftoff/liftoff-<name>)
 	DropDB       bool
 	RemoveGtab   bool
+	ExpectedHead string
+	RequireClean bool
 }
 
 // branchForDelete returns the actual branch to remove. Falls back to Name
@@ -39,6 +41,19 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			{
 				title: "stop running services",
 				run: func(emit func(string)) error {
+					if p.ExpectedHead != "" {
+						head, err := Run(p.WorktreePath, "git", "rev-parse", "HEAD")
+						if err != nil {
+							return err
+						}
+						branch, err := Run(p.WorktreePath, "git", "symbolic-ref", "--short", "HEAD")
+						if err != nil {
+							return err
+						}
+						if head != p.ExpectedHead || branch != branchForDelete(p) || (p.RequireClean && IsDirty(p.WorktreePath)) {
+							return errors.New("worktree changed since selection; scan again before cleanup")
+						}
+					}
 					if err := markCleanupPending(p); err != nil {
 						return err
 					}
@@ -184,10 +199,7 @@ func (l Layout) RunWashBlocking(p WashPlan) error {
 
 func markCleanupPending(p WashPlan) error {
 	return WithConfigLock(func(c *Config) error {
-		meta, ok := c.Worktrees[p.Name]
-		if !ok {
-			return nil
-		}
+		meta := c.Worktrees[p.Name]
 		meta.CleanupPending = true
 		if meta.Branch == "" {
 			meta.Branch = p.Branch

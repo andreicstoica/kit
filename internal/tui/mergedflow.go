@@ -29,11 +29,12 @@ type mergedModel struct {
 	selected   map[int]bool
 	cursor     int
 
-	results map[string]string // name -> status string
-	spinner spinner.Model
-	help    help.Model
-	keys    KeyMap
-	failed  bool
+	results    map[string]string // name -> status string
+	spinner    spinner.Model
+	help       help.Model
+	keys       KeyMap
+	failed     bool
+	failureErr error
 
 	width, height int
 }
@@ -49,9 +50,9 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 	}
 	sel := map[int]bool{}
 	for i, c := range cands {
-		// Default-select clean worktrees only; dirty ones hold uncommitted
-		// work that wash would destroy, so they require an explicit opt-in.
-		sel[i] = !c.Dirty
+		// Closed PRs can still hold unmerged commits; both they and dirty
+		// checkouts require an explicit selection before permanent deletion.
+		sel[i] = !c.Dirty && c.Reason != "PR CLOSED"
 	}
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -71,16 +72,14 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 func (m *mergedModel) Init() tea.Cmd { return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor) }
 
 type mergedRunMsg struct {
-	name string
-	err  error
-	done bool
+	results map[string]string
+	err     error
 }
 
 func (m *mergedModel) startRun() tea.Cmd {
 	return func() tea.Msg {
-		// One iteration per call — chain by repeatedly returning a message
-		// that triggers the next. Simpler: do them all here and emit once.
-		// (Merged-wash is expected to be small; sequential blocking is fine.)
+		results := map[string]string{}
+		var errs []error
 		for i, c := range m.candidates {
 			if !m.selected[i] {
 				continue
@@ -89,10 +88,11 @@ func (m *mergedModel) startRun() tea.Cmd {
 			status := "removed"
 			if err != nil {
 				status = "failed: " + err.Error()
+				errs = append(errs, fmt.Errorf("%s: %w", c.Name, err))
 			}
-			m.results[c.Name] = status
+			results[c.Name] = status
 		}
-		return mergedRunMsg{done: true}
+		return mergedRunMsg{results: results, err: errors.Join(errs...)}
 	}
 }
 
@@ -103,6 +103,8 @@ func mergedWashOne(layout liftoff.Layout, c liftoff.MergedCandidate) error {
 		WorktreePath: c.Path,
 		DropDB:       true,
 		RemoveGtab:   true,
+		ExpectedHead: c.Head,
+		RequireClean: !c.Dirty,
 	})
 }
 
@@ -124,10 +126,11 @@ func (m *mergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.ShowAll = !m.help.ShowAll
 		}
 	case mergedRunMsg:
-		if msg.done {
-			m.stage = mergedStageDone
-			return m, nil
-		}
+		m.results = msg.results
+		m.failed = msg.err != nil
+		m.failureErr = msg.err
+		m.stage = mergedStageDone
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -244,6 +247,9 @@ func (m *mergedModel) viewSelect() string {
 		if c.Dirty {
 			line += "  " + StyleWarn.Render("● dirty — uncommitted changes")
 		}
+		if c.Reason == "PR CLOSED" {
+			line += "  " + StyleWarn.Render("closed without merge")
+		}
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n" + StyleHelp.Render("space: choose · a: all · n: none · enter: continue · esc: cancel"))
@@ -264,6 +270,9 @@ func (m *mergedModel) viewConfirm() string {
 			dirtyCount++
 			line += "  " + StyleWarn.Render("● dirty")
 		}
+		if c.Reason == "PR CLOSED" {
+			line += "  " + StyleWarn.Render("unmerged commits may be lost")
+		}
 		b.WriteString(line + "\n")
 	}
 	b.WriteString(fmt.Sprintf("\nDelete %d old workspace(s)? Kit will stop them, delete their folders, and remove their branches.\n", count))
@@ -277,7 +286,11 @@ func (m *mergedModel) viewConfirm() string {
 
 func (m *mergedModel) viewDone() string {
 	var b strings.Builder
-	b.WriteString(StyleOK.Render("✓ kit wash --merged complete") + "\n\n")
+	if m.failed {
+		b.WriteString(StyleErr.Render("✗ kit wash --merged failed") + "\n\n")
+	} else {
+		b.WriteString(StyleOK.Render("✓ kit wash --merged complete") + "\n\n")
+	}
 	for name, status := range m.results {
 		marker := StyleOK.Render(Glyph("done"))
 		if strings.HasPrefix(status, "failed") {
@@ -295,6 +308,12 @@ func RunMergedWashTUI(layout liftoff.Layout) error {
 	if err != nil {
 		return err
 	}
-	_, runErr := tea.NewProgram(m).Run()
-	return runErr
+	final, runErr := tea.NewProgram(m).Run()
+	if runErr != nil {
+		return runErr
+	}
+	if mm, ok := final.(*mergedModel); ok && mm.failed {
+		return mm.failureErr
+	}
+	return nil
 }

@@ -71,3 +71,9 @@ func TestListWorktrees(t *testing.T) {
 		t.Error("feature worktree HEAD sha not parsed")
 	}
 }
+
+func TestIsDirty_UnknownStatusIsNotClean(t *testing.T) {
+	if !IsDirty(t.TempDir()) {
+		t.Fatal("Git status failure must not mark a checkout as clean")
+	}
+}

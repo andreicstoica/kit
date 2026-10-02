@@ -60,7 +60,9 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			name = "master"
 		}
 		stRaw := "clean"
-		if liftoff.IsDirty(w.Path) {
+		if w.Missing {
+			stRaw = "missing"
+		} else if liftoff.IsDirty(w.Path) {
 			stRaw = "dirty"
 		}
 		if !isMaster {
@@ -134,7 +136,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			hasHerdr:   herdrStatus != "—",
 			branch:     branchDisp,
 			status:     stRaw,
-			statusOK:   !strings.Contains(stRaw, "dirty"),
+			statusOK:   strings.HasPrefix(stRaw, "clean"),
 			sortKey:    sortKey,
 		})
 	}

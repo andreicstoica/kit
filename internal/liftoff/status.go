@@ -2,6 +2,8 @@ package liftoff
 
 import (
 	"bufio"
+	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,8 @@ type Worktree struct {
 	Head     string // commit SHA at HEAD
 	Detached bool
 	Bare     bool
+	Locked   bool
+	Missing  bool
 }
 
 // Name returns the canonical kit name for this worktree.
@@ -48,6 +52,8 @@ func (l Layout) ListWorktrees() ([]Worktree, error) {
 	var cur Worktree
 	flush := func() {
 		if cur.Path != "" {
+			_, err := os.Stat(cur.Path)
+			cur.Missing = errors.Is(err, os.ErrNotExist)
 			out = append(out, cur)
 		}
 		cur = Worktree{}
@@ -68,9 +74,16 @@ func (l Layout) ListWorktrees() ([]Worktree, error) {
 			cur.Detached = true
 		case line == "bare":
 			cur.Bare = true
+		case line == "locked" || strings.HasPrefix(line, "locked "):
+			cur.Locked = true
 		}
 	}
 	flush()
+	if err := s.Err(); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, err
+	}
 	if err := cmd.Wait(); err != nil {
 		return nil, err
 	}
@@ -82,7 +95,7 @@ func IsDirty(worktreePath string) bool {
 	cmd := exec.Command("git", "-C", worktreePath, "status", "--porcelain")
 	out, err := cmd.Output()
 	if err != nil {
-		return false
+		return true
 	}
 	return len(strings.TrimSpace(string(out))) > 0
 }
