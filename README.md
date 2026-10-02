@@ -438,7 +438,15 @@ liftoff DB is at Alembic head and runs `alembic upgrade head` from master
 `SQLALCHEMY_DATABASE_NAME=liftoff`). Feature worktree DBs are not migrated
 automatically. Ends with a one-line migration status (upgraded, already at head,
 or skipped). Then kit prompts to `kit wash --merged` whatever stayed merged.
+It also offers to reconcile Kit records left by worktrees removed outside Kit.
 Requires `gt`. Use `--no-migrate` to skip the Alembic step.
+
+### `kit reconcile` — repair removed worktrees
+
+Finds Kit records with no matching Git worktree and offers to remove their
+saved service state, private database, Herdr workspace, gtab file, and port
+slot. It keeps the local branch so unmerged work is not lost. Use `kit
+reconcile --yes` for a non-interactive cleanup.
 
 ### `kit adopt [name]` (alias `register`) — register a worktree
 

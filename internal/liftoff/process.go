@@ -266,6 +266,25 @@ func SweepStalePID(worktree, service string) {
 	}
 }
 
+// RemoveRunDir removes a worktree's service state after confirming that no
+// recorded service process is alive. It is safe to call when the directory
+// does not exist.
+func RemoveRunDir(worktree string) error {
+	base := filepath.Clean(RunDirPath(""))
+	dir := filepath.Clean(RunDirPath(worktree))
+	rel, err := filepath.Rel(base, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to remove run directory outside %s", base)
+	}
+	if hasLivePID(dir) {
+		return fmt.Errorf("services still running for %s", worktree)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove run directory %s: %w", dir, err)
+	}
+	return nil
+}
+
 // SweepOldRunDirs removes ~/.config/kit/run/<name>/ subdirs whose most-recent
 // file mtime is older than maxAge AND which have no live PID. Safe to call
 // passively — returns the count of dirs removed and a list of errors that

@@ -108,10 +108,27 @@ var updateCmd = &cobra.Command{
 // baseVersion strips a git-describe / -dirty suffix, returning just the tag
 // portion (v0.1.4-3-gabc → v0.1.4, v0.1.4-dirty → v0.1.4).
 func baseVersion(v string) string {
-	if i := strings.Index(v, "-"); i >= 0 {
-		return v[:i]
+	v = strings.TrimSpace(v)
+	if strings.HasSuffix(v, "-dirty") {
+		v = strings.TrimSuffix(v, "-dirty")
+	}
+	parts := strings.Split(v, "-")
+	if len(parts) >= 3 && strings.HasPrefix(parts[len(parts)-1], "g") && isDigits(parts[len(parts)-2]) {
+		return strings.Join(parts[:len(parts)-2], "-")
 	}
 	return v
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func init() {

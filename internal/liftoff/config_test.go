@@ -185,10 +185,11 @@ func TestConfig_Schema2_NewFieldsRoundTrip(t *testing.T) {
 	setStateDir(t)
 	c, _ := LoadConfig()
 	c.Worktrees["beta"] = WorktreeMeta{
-		Slot:    3,
-		Branch:  "acs/beta-cleanup",
-		Path:    "/Users/acs/liftoff/beta",
-		Adopted: true,
+		Slot:           3,
+		Branch:         "acs/beta-cleanup",
+		Path:           "/Users/acs/liftoff/beta",
+		Adopted:        true,
+		CleanupPending: true,
 	}
 	if err := c.Save(); err != nil {
 		t.Fatal(err)
@@ -198,7 +199,7 @@ func TestConfig_Schema2_NewFieldsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := c2.Worktrees["beta"]
-	if m.Branch != "acs/beta-cleanup" || m.Path == "" || !m.Adopted {
+	if m.Branch != "acs/beta-cleanup" || m.Path == "" || !m.Adopted || !m.CleanupPending {
 		t.Fatalf("schema-2 fields not preserved: %+v", m)
 	}
 	if c2.Schema != 2 {

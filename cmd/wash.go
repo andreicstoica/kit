@@ -26,6 +26,7 @@ multi-select which to wash.`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		_, _ = liftoff.SweepOldRunDirs(logRetention)
 		_, _ = liftoff.SweepOldTestDBs(testDBRetention)
 		layout := liftoff.DefaultLayout()
 		if washMerged {
