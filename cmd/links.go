@@ -118,6 +118,9 @@ func runLinks(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println(tbl.Render())
+	if line := celeryBrokerLine(name, ports); line != "" {
+		fmt.Println(tui.StyleDim.Render(line))
+	}
 	fmt.Println(tui.StyleDim.Render("logs: " + liftoff.RunDirPath(name)))
 	fmt.Println(tui.StyleDim.Render("tip: " + strings.Join([]string{
 		"kit play " + name,
@@ -129,4 +132,20 @@ func runLinks(cmd *cobra.Command, args []string) error {
 
 func urlFor(port int, suffix string) string {
 	return fmt.Sprintf("http://localhost:%d%s", port, suffix)
+}
+
+// celeryBrokerLine names the broker the worktree's running backend services
+// were launched with, or "" when none is running.
+func celeryBrokerLine(name string, ports liftoff.Ports) string {
+	for _, svc := range []liftoff.Service{liftoff.SvcCelery, liftoff.SvcAPI, liftoff.SvcAdminBE, liftoff.SvcMCP} {
+		if !liftoff.IsServiceAlive(name, svc, ports) {
+			continue
+		}
+		broker := liftoff.RecordedBroker(name, svc)
+		if broker == "" {
+			return "celery broker: not isolated by kit"
+		}
+		return "celery broker: vhost " + broker[strings.LastIndex(broker, "/")+1:]
+	}
+	return ""
 }

@@ -69,6 +69,15 @@ func IsServiceAlive(name string, svc Service, ports Ports) bool {
 	return StatusOf(name, svc, ports).Alive
 }
 
+// serviceUp is IsServiceAlive without folding beat into celery: for celery it
+// reports the worker alone.
+func serviceUp(name string, svc Service, ports Ports) bool {
+	if svc == SvcCelery {
+		return StatusOf(name, SvcCelery, ports).Alive
+	}
+	return IsServiceAlive(name, svc, ports)
+}
+
 // RunningCount returns (alive, total) over DisplayServices.
 func RunningCount(name string, ports Ports) (int, int) {
 	alive := 0
@@ -123,8 +132,23 @@ func shellWrap(cmd string) []string {
 	return []string{"bash", "-lc", full}
 }
 
-// SpecFor returns the LaunchSpec for a (worktree, service, ports) triple.
-func SpecFor(worktree, worktreePath string, svc Service, p Ports) LaunchSpec {
+// SpecFor returns the LaunchSpec for a service with the worktree's Celery
+// broker applied: backend services get the broker env, and an isolated worker
+// consumes every queue.
+func SpecFor(worktree, worktreePath string, svc Service, p Ports, b CeleryBroker) LaunchSpec {
+	spec := baseSpec(worktree, worktreePath, svc, p)
+	if svc.IsBackend() {
+		spec.Env = append(spec.Env, b.Env()...)
+	}
+	if svc == SvcCelery && b.Isolated() {
+		// Only on a kit vhost: on the shared default vhost these queues hold
+		// every worktree's tasks, and this worker would run them with its code.
+		spec.Argv = shellWrap("celery -A common.celery worker --loglevel=INFO -Q " + CeleryQueues(worktreePath))
+	}
+	return spec
+}
+
+func baseSpec(worktree, worktreePath string, svc Service, p Ports) LaunchSpec {
 	port := ServicePort(svc, p)
 	switch svc {
 	case SvcApp:
@@ -236,6 +260,7 @@ func StartService(spec LaunchSpec) (int, error) {
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
 	cmd.Env = append(os.Environ(), spec.Env...)
+	cmd.Env = append(cmd.Env, serviceTag(spec.Worktree, spec.Service))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("start %s: %w", spec.Service, err)
@@ -248,30 +273,6 @@ func StartService(spec LaunchSpec) (int, error) {
 	// Detach child from this Go process — we don't want to reap it.
 	go func() { _ = cmd.Wait() }()
 	return pid, nil
-}
-
-// StopService kills the running service and removes its pid file. No-op if the
-// pid is missing or gone. Guards against a recycled pid (reboots restart pids
-// low): skips the kill when the live process predates the recorded launch or
-// isn't its own group leader, since group-killing it would hit innocents.
-func StopService(worktree string, svc Service) error {
-	pid := ReadPID(worktree, string(svc))
-	if pid == 0 {
-		return nil
-	}
-	if !IsAlive(pid) {
-		return RemovePID(worktree, string(svc))
-	}
-	started, _ := ReadStarted(worktree, string(svc))
-	pgid, pgErr := syscall.Getpgid(pid)
-	if looksStale(pid, started) || pgErr != nil || pgid != pid {
-		fmt.Fprintf(os.Stderr, "kit: stale pid %d for %s/%s — skipping kill\n", pid, worktree, svc)
-		return RemovePID(worktree, string(svc))
-	}
-	if err := KillGroup(pid); err != nil {
-		return err
-	}
-	return RemovePID(worktree, string(svc))
 }
 
 // ServiceStatus describes a service's current state.

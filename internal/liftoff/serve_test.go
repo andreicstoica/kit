@@ -7,7 +7,7 @@ import (
 
 func TestSpecFor_App(t *testing.T) {
 	p := PortsForSlot(1)
-	spec := SpecFor("voice-agent", "/wt", SvcApp, p)
+	spec := SpecFor("voice-agent", "/wt", SvcApp, p, CeleryBroker{})
 	if spec.Cwd != "/wt/frontend/app" {
 		t.Errorf("Cwd = %q", spec.Cwd)
 	}
@@ -34,7 +34,7 @@ func TestSpecFor_App(t *testing.T) {
 
 func TestSpecFor_Admin(t *testing.T) {
 	p := PortsForSlot(2)
-	spec := SpecFor("notebook", "/wt", SvcAdmin, p)
+	spec := SpecFor("notebook", "/wt", SvcAdmin, p, CeleryBroker{})
 	if spec.Cwd != "/wt/frontend/admin" {
 		t.Errorf("Cwd = %q", spec.Cwd)
 	}
@@ -56,7 +56,7 @@ func TestSpecFor_Admin(t *testing.T) {
 }
 
 func TestSpecFor_API_ShellWrap(t *testing.T) {
-	spec := SpecFor("voice-agent", "/wt", SvcAPI, PortsForSlot(1))
+	spec := SpecFor("voice-agent", "/wt", SvcAPI, PortsForSlot(1), CeleryBroker{})
 	if spec.Cwd != "/wt/backend" {
 		t.Errorf("Cwd = %q", spec.Cwd)
 	}
@@ -78,14 +78,14 @@ func TestSpecFor_API_ShellWrap(t *testing.T) {
 }
 
 func TestSpecFor_Celery(t *testing.T) {
-	spec := SpecFor("voice-agent", "/wt", SvcCelery, PortsForSlot(1))
+	spec := SpecFor("voice-agent", "/wt", SvcCelery, PortsForSlot(1), CeleryBroker{})
 	if !strings.Contains(spec.Argv[2], "celery -A common.celery worker") {
 		t.Errorf("celery cmd = %s", spec.Argv[2])
 	}
 }
 
 func TestSpecFor_Beat_ScheduleOutsideRepo(t *testing.T) {
-	spec := SpecFor("voice-agent", "/wt", SvcBeat, PortsForSlot(1))
+	spec := SpecFor("voice-agent", "/wt", SvcBeat, PortsForSlot(1), CeleryBroker{})
 	cmd := spec.Argv[2]
 	if !strings.Contains(cmd, "celery -A common.celery beat") {
 		t.Errorf("beat cmd = %s", cmd)

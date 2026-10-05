@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -90,6 +91,7 @@ type playModel struct {
 	runURLs     map[liftoff.Service]string
 	runPIDs     map[liftoff.Service]int
 	runOrder    []liftoff.Service
+	runNotes    []liftoff.PlayUpdate // updates with no Service, e.g. the celery broker
 	failed      bool
 	failureSvc  liftoff.Service
 	failureErr  error
@@ -115,40 +117,46 @@ type PlayConfig struct {
 	NoCelery bool
 }
 
+// initialToggles is the service selection before the toggle screen: the
+// defaults, minus celery with NoCelery, or exactly cfg.Only.
+func initialToggles(cfg PlayConfig) map[liftoff.Service]bool {
+	on := map[liftoff.Service]bool{}
+	for _, s := range liftoff.DefaultServices {
+		on[s] = true
+	}
+	if cfg.NoCelery {
+		on[liftoff.SvcCelery] = false
+		on[liftoff.SvcBeat] = false
+	}
+	if len(cfg.Only) > 0 {
+		for _, s := range liftoff.AllServices {
+			on[s] = false
+		}
+		for _, s := range cfg.Only {
+			on[s] = true
+		}
+	}
+	// Celery + beat are always paired (mirrors the toggle UI). An explicit
+	// --only celery must carry beat too, or the worker runs without its scheduler.
+	if on[liftoff.SvcCelery] {
+		on[liftoff.SvcBeat] = true
+	}
+	return on
+}
+
 // NewPlayModel constructs the initial play model. If cfg.Name is non-empty,
 // the picker stage is skipped.
 func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	m := &playModel{
 		layout:          layout,
 		stage:           playStagePicker,
-		toggleOn:        map[liftoff.Service]bool{},
 		runStatuses:     map[liftoff.Service]liftoff.StepStatus{},
 		runMessages:     map[liftoff.Service]string{},
 		runURLs:         map[liftoff.Service]string{},
 		runPIDs:         map[liftoff.Service]int{},
 		preselectedName: cfg.Name,
 	}
-	for _, s := range liftoff.DefaultServices {
-		m.toggleOn[s] = true
-	}
-	if cfg.NoCelery {
-		m.toggleOn[liftoff.SvcCelery] = false
-		m.toggleOn[liftoff.SvcBeat] = false
-	}
-	if len(cfg.Only) > 0 {
-		// Override defaults with the explicit set.
-		for _, s := range liftoff.AllServices {
-			m.toggleOn[s] = false
-		}
-		for _, s := range cfg.Only {
-			m.toggleOn[s] = true
-		}
-	}
-	// Celery + beat are always paired (mirrors the toggle UI). An explicit
-	// --only celery must carry beat too, or the worker runs without its scheduler.
-	if m.toggleOn[liftoff.SvcCelery] {
-		m.toggleOn[liftoff.SvcBeat] = true
-	}
+	m.toggleOn = initialToggles(cfg)
 	// UI toggle shows display services only — beat is collapsed into celery
 	// (toggling celery flips both internally, see updateToggle).
 	m.toggleSvcs = liftoff.DisplayServices
@@ -604,6 +612,10 @@ func (m *playModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		u := msg.upd
+		if u.Service == "" {
+			m.runNotes = append(m.runNotes, u)
+			return m, playNext(m.runUpdates)
+		}
 		m.runStatuses[u.Service] = u.Status
 		if u.URL != "" {
 			m.runURLs[u.Service] = u.URL
@@ -740,6 +752,19 @@ func (m *playModel) viewRun() string {
 			b.WriteString(StyleErr.Render("       "+msg) + "\n")
 		}
 	}
+	b.WriteString(renderPlayNotes(m.runNotes))
+	return b.String()
+}
+
+func renderPlayNotes(notes []liftoff.PlayUpdate) string {
+	var b strings.Builder
+	for _, n := range notes {
+		if n.Status == liftoff.StepSkipped {
+			b.WriteString(StyleWarn.Render("  ! "+n.Title) + "\n")
+		} else {
+			b.WriteString(StyleDim.Render("  "+n.Title) + "\n")
+		}
+	}
 	return b.String()
 }
 
@@ -763,6 +788,9 @@ func (m *playModel) viewDone() string {
 			}
 			b.WriteString(line + "\n")
 		}
+		if len(m.runNotes) > 0 {
+			b.WriteString("\n" + renderPlayNotes(m.runNotes))
+		}
 		runDir, _ := liftoff.RunDir(m.chosen.name)
 		b.WriteString("\n" + StyleDim.Render("logs: "+runDir) + "\n")
 	}
@@ -782,6 +810,14 @@ func RunPlayTUI(layout liftoff.Layout, cfg PlayConfig) error {
 	final, runErr := tea.NewProgram(m).Run()
 	if runErr != nil {
 		return runErr
+	}
+	// The alt screen clears on exit; keep warnings where the user can see them.
+	if pm, ok := final.(*playModel); ok {
+		for _, n := range pm.runNotes {
+			if n.Status == liftoff.StepSkipped {
+				fmt.Fprintln(os.Stderr, StyleWarn.Render("! "+n.Title))
+			}
+		}
 	}
 	if pm, ok := final.(*playModel); ok && pm.failed {
 		// Include the log dir in the error so it survives the altscreen

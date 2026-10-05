@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"errors"
+
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
@@ -20,12 +22,17 @@ var pauseCmd = &cobra.Command{
   kit pause            picker → confirm → kill
   kit pause <name>     skip picker
   kit pause <name> --only celery   stop only specific services
-  kit pause --all      stop every running service across every worktree`,
+  kit pause --all      stop every running service across every worktree
+
+Without a terminal, kit pause <name> stops the services with no confirm step.`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
 		if pauseAll {
+			if !interactive() {
+				return errors.New("kit pause --all needs a terminal to confirm")
+			}
 			accept, err := tui.RunConfirm(tui.ConfirmConfig{
 				Title:       "Stop every running service across every worktree?",
 				Description: "Destructive — kit-managed dev servers everywhere will be killed.",
@@ -49,7 +56,11 @@ var pauseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return tui.RunPauseTUI(layout, tui.PauseConfig{Name: name, Only: only})
+		cfg := tui.PauseConfig{Name: name, Only: only}
+		if !interactive() {
+			return tui.RunPauseHeadless(layout, cfg, cmd.OutOrStdout())
+		}
+		return tui.RunPauseTUI(layout, cfg)
 	},
 }
 
