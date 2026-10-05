@@ -108,6 +108,11 @@ func slotFor(name string) int {
 }
 
 func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
+	return runningServices(name, m.onlyServices)
+}
+
+// runningServices returns name's live services, narrowed to only when given.
+func runningServices(name string, only []liftoff.Service) []liftoff.Service {
 	ports := liftoff.PortsForSlot(slotFor(name))
 	var out []liftoff.Service
 	for _, svc := range liftoff.AllServices {
@@ -115,9 +120,9 @@ func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
 			out = append(out, svc)
 		}
 	}
-	if len(m.onlyServices) > 0 {
+	if len(only) > 0 {
 		filter := map[liftoff.Service]bool{}
-		for _, s := range m.onlyServices {
+		for _, s := range only {
 			filter[s] = true
 		}
 		// celery + beat are paired — stopping one must stop the other.

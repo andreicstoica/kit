@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
@@ -66,6 +67,7 @@ var restartCmd = &cobra.Command{
 		{
 			var mu sync.Mutex
 			var wg sync.WaitGroup
+			var stuck []string
 			for _, svc := range svcs {
 				svc := svc
 				wg.Add(1)
@@ -74,8 +76,10 @@ var restartCmd = &cobra.Command{
 					fmt.Printf("  stopping %s…\n", svc.Label())
 					if err := liftoff.StopService(name, svc); err != nil {
 						mu.Lock()
-						fmt.Println(tui.StyleErr.Render("    " + err.Error()))
+						fmt.Println(tui.StyleErr.Render("  ✗ " + err.Error()))
+						stuck = append(stuck, svc.Label())
 						mu.Unlock()
+						return
 					}
 					if port := liftoff.ServicePort(svc, ports); port > 0 && liftoff.PortListening(port) {
 						_ = liftoff.KillListenersOnPort(port)
@@ -83,6 +87,12 @@ var restartCmd = &cobra.Command{
 				}()
 			}
 			wg.Wait()
+			// Starting next to a survivor would leave two copies running, and
+			// the new one would be skipped as "already running".
+			if len(stuck) > 0 {
+				return fmt.Errorf("old %s still running, so no service was started; check `ps` and stop it by hand",
+					strings.Join(stuck, ", "))
+			}
 		}
 
 		// Wipe the Vite dep-optimizer cache for any frontend being bounced —
@@ -107,23 +117,11 @@ var restartCmd = &cobra.Command{
 			Ports:        ports,
 			Services:     svcs,
 		}
-		for upd := range layout.RunPlay(plan) {
-			switch upd.Status {
-			case liftoff.StepDone:
-				line := "  ✓ " + upd.Title
-				if upd.URL != "" {
-					line += "  " + upd.URL
-				}
-				fmt.Println(tui.StyleOK.Render(line))
-			case liftoff.StepFailed:
-				msg := upd.Title
-				if upd.Err != nil {
-					msg += ": " + upd.Err.Error()
-				}
-				fmt.Println(tui.StyleErr.Render("  ✗ " + msg))
-			}
-		}
+		failed := tui.PrintPlayUpdates(cmd.OutOrStdout(), layout.RunPlay(plan))
 		fmt.Println(tui.StyleDim.Render("logs: " + liftoff.RunDirPath(name)))
+		if failed {
+			return fmt.Errorf("kit restart %s: a service failed to start", name)
+		}
 		return nil
 	},
 }

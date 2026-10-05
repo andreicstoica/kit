@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const (
@@ -32,7 +35,11 @@ var playCmd = &cobra.Command{
 Each workspace gets its own local ports so multiple features can run at once.
 
 If no <name> is given, you'll get a Bubble Tea picker. Use --only to skip
-the service-selection screen.`,
+the service-selection screen.
+
+Without a terminal (agents, scripts), play needs a <name>, starts the
+default or --only services, and prints plain progress lines. It never stops
+another workspace's background worker; it skips celery instead.`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,11 +61,14 @@ the service-selection screen.`,
 		if err != nil {
 			return err
 		}
-		err = tui.RunPlayTUI(layout, tui.PlayConfig{
-			Name:     name,
-			Only:     only,
-			NoCelery: playNoCelery,
-		})
+		cfg := tui.PlayConfig{Name: name, Only: only, NoCelery: playNoCelery}
+		if !interactive() {
+			if playOpen {
+				return errors.New("--open needs a terminal")
+			}
+			return tui.RunPlayHeadless(layout, cfg, cmd.OutOrStdout())
+		}
+		err = tui.RunPlayTUI(layout, cfg)
 		if err != nil || !playOpen || name == "" {
 			return err
 		}
@@ -80,6 +90,12 @@ func init() {
 	playCmd.Flags().BoolVar(&playOpen, "attach", false,
 		"alias for --open")
 	rootCmd.AddCommand(playCmd)
+}
+
+// interactive reports whether a Bubble Tea UI can run. Agents and scripts
+// call kit with piped stdio, often with no controlling terminal at all.
+func interactive() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // parseServiceList resolves user input ("app,admin,api") to []Service.

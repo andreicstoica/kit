@@ -106,6 +106,7 @@ it). `kit play` boots all five (minus mcp) in parallel.
 | `gh` (GitHub CLI) | `kit wash --merged` checks PR state; `kit lineup --remote` shows it |
 | `zed` / `cursor` / `code` | any one suffices for `kit swap`. Override via `KIT_EDITOR`. |
 | `hunk` | nicer side-by-side `kit diff` |
+| `rabbitmqctl` (Homebrew RabbitMQ) | a private Celery vhost per worktree (see [Celery](#celery)); without it, worktrees share the default vhost |
 | `ruff` | backend lint/format (replaced black/isort/flake8); kit doesn't run it, but backend dev + CI expect it |
 
 ## Install
@@ -243,10 +244,18 @@ kit pause voice-agent --only celery
 kit pause --all          # confirms before killing everything
 ```
 
+Without a terminal (agents, scripts, piped output), `kit play <name>` and
+`kit pause <name>` skip the UI and print one line per service. A name is
+required. Headless `play` never stops another worktree's worker: it skips
+celery and tells you what to pause first. `kit pause --all` still needs a
+terminal to confirm.
+
 `kit restart [name]` (alias `bounce`) stops then starts in one go — useful when
 a service hangs (e.g. Vite wedges). Headless and scriptable: with no `--only` it
 restarts exactly what's currently running, prints each service's status, and
-ends with the log dir path.
+ends with the log dir path. It stops each service's whole process tree first
+(see [Celery](#celery)); if any old process survives SIGKILL, it starts
+nothing and exits non-zero.
 
 Before re-spawning a frontend it clears that app's Vite cache
 (`node_modules/.vite`), so a stale dep-optimizer cache can't survive the bounce
@@ -278,13 +287,48 @@ worktree env files stay textually identical to master.
 
 ## Celery
 
-Liftoff hardcodes Redis DB `0` and the default celery queue, so two
-worktrees can't both safely run celery against the same broker. `kit play`
-treats celery as a single global service: if another worktree owns the
-celery PID, it asks to kill-and-replace (default Yes).
+Kit runs one celery worker (plus beat) at a time across all worktrees. If
+another worktree owns it, `kit play` asks to kill and replace it (default
+Yes).
 
-True per-worktree celery is a ~12-line Liftoff backend PR — see
-`internal/liftoff/serve.go` comments.
+**Private vhost per worktree.** All worktrees share one local RabbitMQ.
+Before it starts a backend service, kit creates the vhost `kit-<name>`
+(`rabbitmqctl add_vhost` + `set_permissions` for `guest`; both idempotent)
+and launches the API, admin API, MCP, worker and beat with:
+
+```
+CELERY_BROKER_URL=pyamqp://guest@localhost:5672/kit-<name>
+CELERY_TASK_ALWAYS_EAGER=false
+```
+
+Env vars beat `backend/.env` in Liftoff's settings, so the worktree's files
+stay untouched. Eager mode is off because `scripts/dev/pull-env.py` writes
+`CELERY_TASK_ALWAYS_EAGER=true`, and eager tasks enqueued from async request
+handlers are skipped, not run.
+
+**All queues.** On its own vhost the worker consumes `dev.<dir>` (Liftoff's
+dev default queue) plus every queue prod pins tasks to: `celery`,
+`linkedin_import_only`, `interactive`, `signals_llm`, `signals_regen`. The
+list is `CeleryPinnedQueues` in `internal/liftoff/broker.go`; add to it when
+Liftoff pins a task to a new queue.
+
+**When kit leaves the broker alone.** Kit replaces only an unset broker,
+`memory://` (the `pull-env.py` placeholder) or the default local vhost. A
+`CELERY_BROKER_URL` in your shell or `backend/.env` that points anywhere else
+wins, and kit reads only that one key from `.env`. If `rabbitmqctl` is missing
+or fails, kit warns and falls back to the shared default vhost. There the
+worker consumes `dev.<dir>` only, since the pinned queues hold every
+worktree's tasks.
+
+**Switching brokers.** Services started before the switch keep the old
+broker. `kit play` warns when a running backend service is on a different
+broker than the one it just chose; run `kit restart <name>` to move them
+all. `kit links` shows the worker's vhost.
+
+**Stopping.** Every process kit spawns carries `KIT_SERVICE=<name>/<svc>` in
+its environment. `kit pause` and `kit restart` stop the recorded pid's group,
+every descendant (prefork children included) and every tagged process, with
+SIGTERM, then SIGKILL after 3s.
 
 ## Adoption
 
@@ -393,19 +437,20 @@ children, each expanded into its gt stack, a `setup` sub-node (db ownership
 ### `kit play [name]` (alias `start`) — run servers
 
 Wizard or direct (with `--only`). Parallel starts with port-aware env
-injection.
+injection and a per-worktree Celery vhost. Plain output without a terminal.
 
 ### `kit pause [name]` (alias `stop`) — stop servers
 
 Picker → confirm → kill (parallel). `--all` stops everything everywhere
-(confirms first).
+(confirms first). Without a terminal, `kit pause <name>` stops with no confirm.
 
 ### `kit restart [name]` (alias `bounce`) — stop then start
 
 Headless. No `--only` restarts whatever's running; `--only <svcs>` bounces a
 subset. Clears each restarted frontend's Vite cache (`node_modules/.vite`)
 first so stale-dep HMR breakage doesn't survive the bounce; `--keep-cache`
-skips that. Prints status per service and the log dir on exit.
+skips that. Prints status per service and the log dir on exit. Exits non-zero
+if an old process survives or a service fails to start.
 
 ### `kit log [name]` (alias `logs`) — tail logs
 
@@ -522,7 +567,8 @@ AppleScript is rewritten on every run, so swapping layouts is free.
 
 ### `kit links` (aliases `ports`, `urls`) — print URLs
 
-Prints the worktree's slot URLs with live/stopped indicators. Paste-friendly.
+Prints the worktree's slot URLs with live/stopped indicators and the celery
+worker's broker vhost. Paste-friendly.
 
 ### `kit doctor` (alias `physio`) — diagnose
 
@@ -542,7 +588,11 @@ file is older than 30 days and which own no live PID.
 
 ## Roadmap
 
-- Liftoff backend PR for per-worktree Redis DB + celery queue isolation
+- One celery worker per worktree. Blocked on Liftoff: worktrees share Redis
+  DB 0, and lock and dedup keys use row ids that repeat across cloned DBs.
+  Each beat would also run every scheduled job again. Needs a per-worktree
+  Redis DB or key prefix, and a dev switch for beat jobs (or Docker per
+  worktree).
 - Shell hook so `cd` into a worktree updates `last_used`
 - Restack-needed flag in the table view (already in `kit lineup --tree`)
 

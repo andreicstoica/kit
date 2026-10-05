@@ -2,6 +2,7 @@ package liftoff
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -68,6 +69,24 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 			}
 		}
 
+		// Updates with no Service are notes about the run as a whole.
+		broker := CeleryBroker{}
+		if needsBroker(p.Services) {
+			var note string
+			var warn bool
+			broker, note, warn = PrepareCeleryBroker(p.Worktree, p.WorktreePath)
+			status := StepDone
+			if warn {
+				status = StepSkipped
+			}
+			ch <- PlayUpdate{Status: status, Title: note}
+			if stale := ServicesOnOtherBroker(p.Worktree, p.Ports, broker); len(stale) > 0 {
+				ch <- PlayUpdate{Status: StepSkipped, Title: fmt.Sprintf(
+					"%s still on another celery broker; run `kit restart %s`",
+					serviceLabels(stale), p.Worktree)}
+			}
+		}
+
 		// Fan out one goroutine per service. Emit StepRunning immediately
 		// (so the UI shows a spinner) then StartService + readiness wait.
 		var wg sync.WaitGroup
@@ -82,7 +101,9 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 				// Idempotent: skip services already up so `kit play` on a
 				// running worktree doesn't spawn a duplicate that fails to bind
 				// the port. Use `kit restart` to force a fresh process.
-				if IsServiceAlive(p.Worktree, svc, p.Ports) {
+				// serviceUp, not IsServiceAlive: beat starting in a sibling
+				// goroutine must not read as "worker already running".
+				if serviceUp(p.Worktree, svc, p.Ports) {
 					url := ""
 					if port > 0 {
 						url = fmt.Sprintf("http://localhost:%d", port)
@@ -102,7 +123,7 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 				ch <- PlayUpdate{Service: svc, Status: StepRunning, Title: title, Port: port}
 				start := time.Now()
 
-				spec := SpecFor(p.Worktree, p.WorktreePath, svc, p.Ports)
+				spec := SpecFor(p.Worktree, p.WorktreePath, svc, p.Ports, broker)
 				pid, err := StartService(spec)
 				if err != nil {
 					ch <- PlayUpdate{
@@ -209,4 +230,21 @@ func orderedServices(selected []Service) []Service {
 		}
 	}
 	return out
+}
+
+func needsBroker(svcs []Service) bool {
+	for _, s := range svcs {
+		if s.IsBackend() {
+			return true
+		}
+	}
+	return false
+}
+
+func serviceLabels(svcs []Service) string {
+	labels := make([]string, len(svcs))
+	for i, s := range svcs {
+		labels[i] = s.Label()
+	}
+	return strings.Join(labels, ", ")
 }
