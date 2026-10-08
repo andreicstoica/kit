@@ -125,8 +125,8 @@ still wait for broker setup. Shutdown still checks full process-tree ownership
 and uses the same TERM/KILL grace periods, but exit polling queries only the
 target PIDs rather than repeatedly scanning all system processes.
 
-After Rex-backed design, Kit finishes any selected service-start flow and opens
-the new simple workspace with the Claude pane focused. Existing sessions are not
+After Rex-backed design, Kit opens the new simple workspace with the Claude pane
+focused and does not ask to start services. Run `kit play` in the new shell pane. Existing sessions are not
 rebuilt. Native app selection requires Remote Control in Rex Server settings;
 failure leaves the created workspace intact and reports how to select it.
 

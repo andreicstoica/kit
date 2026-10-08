@@ -512,8 +512,19 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
 	fmt.Println()
 
-	// Ask before opening the workspace — that can spawn a window/editor that
-	// steals focus, leaving the user hunting back here to answer.
+	backend, err := liftoff.WorkspaceBackend()
+	if err != nil {
+		return err
+	}
+	if backend == liftoff.BackendRex {
+		// Open the new session with Claude focused and leave starting services
+		// to `kit play` in its shell, so this wizard can close right away.
+		return OpenRexWorktree(name, layout.WorktreePath(name), "simple", true)
+	}
+
+	// Legacy backends keep the start prompt. Ask before opening the workspace:
+	// that can spawn a window/editor that steals focus, leaving the user
+	// hunting back here to answer.
 	wantPlay, err := RunConfirm(ConfirmConfig{
 		Title:       "Start the app now?",
 		Description: "Starts the website, admin, API, and background worker for this workspace. You can also do this later with `kit play`.",
@@ -526,21 +537,6 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 			return nil
 		}
 		return err
-	}
-
-	backend, err := liftoff.WorkspaceBackend()
-	if err != nil {
-		return err
-	}
-	if backend == liftoff.BackendRex {
-		// Finish interaction in the wizard before switching sessions. New Rex
-		// workspaces default to the simple shell/Claude layout with Claude focused.
-		if wantPlay {
-			if err := RunPlayTUI(layout, PlayConfig{Name: name}); err != nil {
-				fmt.Println(StyleErr.Render("play failed: " + err.Error()))
-			}
-		}
-		return OpenRexWorktree(name, layout.WorktreePath(name), "simple", true)
 	}
 
 	// Legacy backends retain the explicit editor/terminal/skip picker.
