@@ -265,7 +265,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		// joins this goroutine before rollback so dbCreated is settled.
 		prefixDone := make(chan struct{})
 		prefixOK := false
-		var abort, dbFailed atomic.Bool
+		var abort atomic.Bool
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -293,7 +293,6 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				}
 				elapsed := time.Since(start)
 				if err != nil {
-					dbFailed.Store(true)
 					dbResult = pResult{index: i, err: err, elapsed: elapsed}
 					ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
 					return
@@ -334,14 +333,6 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		}
 		prefixOK = true
 		close(prefixDone)
-		if dbFailed.Load() {
-			// Database creation already failed: skip the checkout-only steps.
-			wg.Wait()
-			l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
-				ch <- StepUpdate{Index: dbResult.index, Title: steps[dbResult.index].title, Status: StepRunning, Line: line}
-			})
-			return
-		}
 
 		// Dependency installation, frontend links, Graphite and gtab need only
 		// the checkout. Run them alongside the rest of the DB chain, then join
