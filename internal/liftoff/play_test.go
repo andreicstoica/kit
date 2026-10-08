@@ -3,8 +3,48 @@ package liftoff
 import (
 	"net"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
+
+func TestRunPlayFrontendsDoNotWaitForBroker(t *testing.T) {
+	setRunDir(t)
+	t.Setenv("CELERY_BROKER_URL", "")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	old := rabbitmqctl
+	rabbitmqctl = func(args ...string) ([]byte, error) { <-release; return nil, nil }
+	t.Cleanup(func() { rabbitmqctl = old })
+	port := listener.Addr().(*net.TCPAddr).Port
+	updates := (Layout{}).RunPlay(PlayPlan{Worktree: "frontend-broker-test", WorktreePath: t.TempDir(), Ports: Ports{App: port, API: port}, Services: []Service{SvcApp, SvcAPI}})
+	defer func() {
+		unblock()
+		for range updates {
+		}
+	}()
+	select {
+	case u := <-updates:
+		if u.Service != SvcApp || u.Status != StepDone {
+			t.Fatalf("expected frontend before broker, got %+v", u)
+		}
+	case <-time.After(time.Second):
+		unblock()
+		for range updates {
+		}
+		t.Fatal("frontend startup waits for RabbitMQ even though it does not use it")
+	}
+	unblock()
+	for range updates {
+	}
+}
 
 // TestRunPlay_SkipsAlreadyListening guards `kit play` idempotency: a service
 // whose port is already listening must be reported "already running" rather

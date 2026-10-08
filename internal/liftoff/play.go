@@ -71,30 +71,41 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 
 		// Updates with no Service are notes about the run as a whole.
 		broker := CeleryBroker{}
-		if needsBroker(p.Services) {
-			var note string
-			var warn bool
-			broker, note, warn = PrepareCeleryBroker(p.Worktree, p.WorktreePath)
-			status := StepDone
-			if warn {
-				status = StepSkipped
+		brokerReady := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer close(brokerReady)
+			if needsBroker(p.Services) {
+				var note string
+				var warn bool
+				broker, note, warn = PrepareCeleryBroker(p.Worktree, p.WorktreePath)
+				status := StepDone
+				if warn {
+					status = StepSkipped
+				}
+				ch <- PlayUpdate{Status: status, Title: note}
+				if stale := ServicesOnOtherBroker(p.Worktree, p.Ports, broker); len(stale) > 0 {
+					ch <- PlayUpdate{Status: StepSkipped, Title: fmt.Sprintf(
+						"%s still on another celery broker; run `kit restart %s`",
+						serviceLabels(stale), p.Worktree)}
+				}
 			}
-			ch <- PlayUpdate{Status: status, Title: note}
-			if stale := ServicesOnOtherBroker(p.Worktree, p.Ports, broker); len(stale) > 0 {
-				ch <- PlayUpdate{Status: StepSkipped, Title: fmt.Sprintf(
-					"%s still on another celery broker; run `kit restart %s`",
-					serviceLabels(stale), p.Worktree)}
-			}
-		}
+		}()
 
 		// Fan out one goroutine per service. Emit StepRunning immediately
 		// (so the UI shows a spinner) then StartService + readiness wait.
-		var wg sync.WaitGroup
 		for _, svc := range orderedServices(p.Services) {
 			svc := svc
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				serviceBroker := CeleryBroker{}
+				if svc.IsBackend() {
+					<-brokerReady
+					serviceBroker = broker
+				}
 				SweepStalePID(p.Worktree, string(svc))
 				port := ServicePort(svc, p.Ports)
 
@@ -123,7 +134,7 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 				ch <- PlayUpdate{Service: svc, Status: StepRunning, Title: title, Port: port}
 				start := time.Now()
 
-				spec := SpecFor(p.Worktree, p.WorktreePath, svc, p.Ports, broker)
+				spec := SpecFor(p.Worktree, p.WorktreePath, svc, p.Ports, serviceBroker)
 				pid, err := StartService(spec)
 				if err != nil {
 					ch <- PlayUpdate{

@@ -13,6 +13,30 @@ import (
 	"time"
 )
 
+func TestLivePIDsOnlyQueriesTargets(t *testing.T) {
+	bin := t.TempDir()
+	capture := filepath.Join(t.TempDir(), "ps-args")
+	t.Setenv("PS_CAPTURE", capture)
+	writeExecutable(t, filepath.Join(bin, "ps"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$PS_CAPTURE\"\nexec /bin/ps \"$@\"\n")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	pid := os.Getpid()
+	got := livePIDs([]int{pid, 99999999})
+	if !slices.Equal(got, []int{pid}) {
+		t.Fatalf("live pids = %v", got)
+	}
+	args := readCapture(t, capture)
+	if !strings.Contains(args, "-p ") || strings.Contains(args, "-axo") {
+		t.Fatalf("shutdown polling scans unrelated processes: %s", args)
+	}
+}
+
+func BenchmarkLivePIDs(b *testing.B) {
+	pids := []int{os.Getpid()}
+	for i := 0; i < b.N; i++ {
+		livePIDs(pids)
+	}
+}
+
 func TestParsePS(t *testing.T) {
 	out := "  100     1   100 Ss\n  101   100   100 S+\n 102 101 102 Z\nbad line\n"
 	got := parsePS(out)

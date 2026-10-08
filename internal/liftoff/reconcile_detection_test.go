@@ -6,6 +6,34 @@ import (
 	"testing"
 )
 
+func TestFindOrphanedWorktreesDatabaseFailurePreservesOwnership(t *testing.T) {
+	l := newMasterRepo(t)
+	setStateDir(t)
+	t.Setenv("KIT_RUN_DIR", t.TempDir())
+	bin := t.TempDir()
+	writeExecutable(t, filepath.Join(bin, "pg_dump"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\nexit 1\n")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	meta := WorktreeMeta{Slot: 99, DatabaseName: "liftoff_orphan", Path: filepath.Join(filepath.Dir(l.Master), "orphan")}
+	if err := WithConfigLock(func(c *Config) error { c.Worktrees["orphan"] = meta; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if candidates, err := l.FindOrphanedWorktrees(); err == nil || len(candidates) != 0 {
+		t.Fatalf("failed DB check must block reconcile, got %+v, %v", candidates, err)
+	}
+	if err := l.ReconcileOrphan(OrphanCandidate{Name: "orphan"}, nil); err == nil {
+		t.Fatal("cleanup continued despite unknown DB state")
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cfg.Worktrees["orphan"]
+	if !ok || got.DatabaseName != meta.DatabaseName || got.Slot != meta.Slot || got.Path != meta.Path {
+		t.Fatalf("DB ownership was lost: %+v", got)
+	}
+}
+
 func TestFindOrphanedWorktrees_DetectsMissingCheckout(t *testing.T) {
 	l := newMasterRepo(t)
 	setStateDir(t)
@@ -14,7 +42,7 @@ func TestFindOrphanedWorktrees_DetectsMissingCheckout(t *testing.T) {
 
 	bin := t.TempDir()
 	writeExecutable(t, filepath.Join(bin, "pg_dump"), "#!/bin/sh\nexit 0\n")
-	writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\nprintf '1\\n'\n")
+	writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\nprintf 'liftoff_orphan\\n'\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	cfg, err := LoadConfig()

@@ -259,7 +259,19 @@ func waitGone(pids []int, timeout time.Duration) []int {
 // livePIDs returns the pids that are running. Zombies count as gone: they
 // only wait for their parent to reap them.
 func livePIDs(pids []int) []int {
-	procs, err := snapshotProcs("")
+	if len(pids) == 0 {
+		return nil
+	}
+	ids := make([]string, len(pids))
+	for i, pid := range pids {
+		ids[i] = strconv.Itoa(pid)
+	}
+	out, err := exec.Command("ps", "-p", strings.Join(ids, ","), "-o", "pid=,ppid=,pgid=,stat=").Output()
+	// ps exits 1 with no output when all requested processes are gone.
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 && len(out) == 0 && len(exit.Stderr) == 0 {
+		return nil
+	}
+	procs := parsePS(string(out))
 	var live []int
 	for _, pid := range pids {
 		if err != nil {

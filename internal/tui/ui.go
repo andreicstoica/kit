@@ -5,6 +5,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // kit UI design language
@@ -37,9 +38,12 @@ var TitleStyle = StyleTitle
 // NewListDelegate returns the shared bubbles/list delegate: a default
 // two-line delegate with kit's accent color on the selected row. Every
 // list-based picker (RunListPicker, play, pause) uses this so selection
-// highlighting looks identical everywhere.
+// highlighting looks identical everywhere. Item styles follow the current
+// theme (bubbles v2 hardcodes dark styles upstream), so callers must pass
+// through RestyleList/ApplyTheme on BackgroundColorMsg for light terminals.
 func NewListDelegate() list.DefaultDelegate {
 	d := list.NewDefaultDelegate()
+	d.Styles = list.NewDefaultItemStyles(IsDark())
 	d.Styles.SelectedTitle = d.Styles.SelectedTitle.
 		Foreground(ColorAccent).BorderForeground(ColorAccent)
 	d.Styles.SelectedDesc = d.Styles.SelectedDesc.
@@ -67,8 +71,14 @@ func NewAltView(content string) tea.View {
 }
 
 // RestyleList reapplies kit's list chrome for the current theme.
+// bubbles v2 hardcodes dark list styles at construction, so a full rebuild
+// (not just title + delegate) is needed when BackgroundColorMsg reports a
+// light terminal. Reads the theme SetDarkBackground already installed.
 func RestyleList(l *list.Model) {
+	l.Styles = list.DefaultStyles(IsDark())
 	l.Styles.Title = TitleStyle
+	l.Paginator.ActiveDot = l.Styles.ActivePaginationDot.String()
+	l.Paginator.InactiveDot = l.Styles.InactivePaginationDot.String()
 	l.SetDelegate(NewListDelegate())
 }
 
@@ -98,7 +108,18 @@ func KitHuhTheme() huh.Theme {
 		t.Focused.Title = t.Focused.Title.Foreground(accent).Bold(true)
 		t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(accent)
 		t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(accent)
-		t.Focused.FocusedButton = t.Focused.FocusedButton.Background(accent)
+		buttonBG, buttonFG := lipgloss.Color("#087443"), lipgloss.Color("#FFFFFF")
+		quietBG, quietFG := lipgloss.Color("#E6EAED"), lipgloss.Color("#25313A")
+		if isDark {
+			buttonBG, buttonFG = lipgloss.Color("#5DD39E"), lipgloss.Color("#13251C")
+			quietBG, quietFG = lipgloss.Color("#313B42"), lipgloss.Color("#E4E9ED")
+		}
+		t.Focused.FocusedButton = t.Focused.FocusedButton.Background(buttonBG).Foreground(buttonFG).Bold(true)
+		t.Focused.BlurredButton = t.Focused.BlurredButton.Background(quietBG).Foreground(quietFG)
+		t.Focused.Next = t.Focused.FocusedButton
+		t.Blurred.FocusedButton = t.Focused.FocusedButton
+		t.Blurred.BlurredButton = t.Focused.BlurredButton
+		t.Blurred.Next = t.Focused.Next
 		return t
 	})
 }

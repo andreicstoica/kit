@@ -34,6 +34,26 @@ func TestOpenRequestValidateRejectsMultipleExplicitTargets(t *testing.T) {
 	}
 }
 
+func TestOpenRequestRexConflictsBeforeLaunchingAnything(t *testing.T) {
+	for _, req := range []OpenRequest{
+		{Rex: true, Herdr: true},
+		{Rex: true, EditorFlag: "zed"},
+		{Rex: true, WorkspaceOnly: true},
+	} {
+		if _, err := OpenWorktree(req); err == nil {
+			t.Fatalf("conflicting request was executed: %+v", req)
+		}
+	}
+}
+
+func TestManagedWorkspaceRejectsUnknownBackendBeforeRuntime(t *testing.T) {
+	t.Setenv("KIT_STATE_DIR", t.TempDir())
+	t.Setenv("KIT_WORKSPACE_BACKEND", "unknown")
+	if err := OpenManagedWorktree("x", "/missing", "", HerdrConnectNone); err == nil {
+		t.Fatal("unknown backend was silently dispatched")
+	}
+}
+
 func TestHerdrConnectForFocus(t *testing.T) {
 	cases := []struct {
 		ghostty, noAttach bool

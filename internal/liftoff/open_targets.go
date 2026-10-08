@@ -14,6 +14,8 @@ const SkipSentinel = "__skip__"
 // HerdrSentinel marks the persistent Herdr space target.
 const HerdrSentinel = "__herdr__"
 
+const RexSentinel = "__rex__"
+
 // OpenTargetKind classifies a worktree-open destination.
 type OpenTargetKind int
 
@@ -22,6 +24,7 @@ const (
 	OpenTargetGhosttyWorkspace
 	OpenTargetHerdr
 	OpenTargetSkip
+	OpenTargetRex
 )
 
 // Kind reports what launching this candidate will do.
@@ -31,6 +34,8 @@ func (c EditorCandidate) Kind() OpenTargetKind {
 		return OpenTargetGhosttyWorkspace
 	case HerdrSentinel:
 		return OpenTargetHerdr
+	case RexSentinel:
+		return OpenTargetRex
 	case SkipSentinel:
 		return OpenTargetSkip
 	default:
@@ -45,6 +50,13 @@ func HerdrCandidate() EditorCandidate {
 		Binary:    HerdrSentinel,
 		Desc:      "persistent terminal session (reachable from your phone)",
 		Installed: true,
+	}
+}
+
+func RexCandidate() EditorCandidate {
+	return EditorCandidate{
+		Name: "Rex workspace", Binary: RexSentinel,
+		Desc: "native persistent workspace — shell, logs, and agents", Installed: true,
 	}
 }
 
@@ -74,6 +86,9 @@ func SkipCandidate() EditorCandidate {
 // CLI is available. Herdr is last because editors are the common case.
 func OpenCandidates() []EditorCandidate {
 	out := InstalledEditors()
+	if RexAvailable() {
+		out = append(out, RexCandidate())
+	}
 	if HerdrAvailable() {
 		out = append(out, HerdrCandidate())
 	}
@@ -98,7 +113,7 @@ func LoneEditor(eds []EditorCandidate) *EditorCandidate {
 	hasNonEditor := false
 	for _, e := range eds {
 		switch e.Kind() {
-		case OpenTargetGhosttyWorkspace, OpenTargetHerdr:
+		case OpenTargetGhosttyWorkspace, OpenTargetHerdr, OpenTargetRex:
 			hasNonEditor = true
 		case OpenTargetSkip:
 			// ignore

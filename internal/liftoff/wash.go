@@ -37,6 +37,12 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 		defer close(ch)
 		dbName := DBName(p.Name)
 		hadError := false
+		// washDB/skipDB are resolved before any destructive step runs (see
+		// the first step): a disputed database must block the worktree
+		// removal, not surface after it. The env proof is read while the
+		// checkout still exists.
+		var washDB string
+		var skipDB bool
 		steps := []step{
 			{
 				title: "stop running services",
@@ -56,6 +62,13 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 					}
 					if err := markCleanupPending(p); err != nil {
 						return err
+					}
+					if p.DropDB {
+						db, skip, err := resolveCleanupDB(p.Name, p.WorktreePath)
+						if err != nil {
+							return err
+						}
+						washDB, skipDB = db, skip
 					}
 					st, _ := LoadState()
 					var slot int
@@ -110,19 +123,23 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			{
 				title: "remove Herdr workspace",
 				run: func(emit func(string)) error {
-					if !HerdrAvailable() {
-						if hasSavedHerdrWorkspace(p.Name) {
-							return fmt.Errorf("Herdr is not installed; saved workspace still exists")
-						}
-						emit("Herdr not installed; nothing to remove")
+					// CloseManagedWorkspaces covers both backends from their
+					// persisted mappings, so no backend switch strands a
+					// workspace: a stale Herdr space is closed even when Rex
+					// is selected, and vice versa.
+					if !hasSavedManagedWorkspace(p.Name) {
+						emit("no saved workspace; nothing to remove")
 						return nil
 					}
-					return CloseHerdr(p.Name, p.WorktreePath)
+					return CloseManagedWorkspaces(p.Name, p.WorktreePath)
 				},
 			},
 			{
 				title: "remove worktree " + p.WorktreePath,
 				run: func(emit func(string)) error {
+					if err := l.verifyWorktreeOwnership(p.WorktreePath, p.Name); err != nil {
+						return err
+					}
 					return l.RemoveWorktree(p.WorktreePath, emit)
 				},
 			},
@@ -136,7 +153,11 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 				title: "drop database " + dbName,
 				skip:  !p.DropDB,
 				run: func(emit func(string)) error {
-					return DropDB(dbName, emit)
+					if skipDB {
+						emit("worktree uses a different database; nothing to drop")
+						return nil
+					}
+					return DropDB(washDB, emit)
 				},
 			},
 			{
@@ -210,12 +231,4 @@ func markCleanupPending(p WashPlan) error {
 		c.Worktrees[p.Name] = meta
 		return nil
 	})
-}
-
-func hasSavedHerdrWorkspace(name string) bool {
-	c, err := LoadConfig()
-	if err != nil {
-		return false
-	}
-	return c.Worktrees[name].HerdrID != ""
 }

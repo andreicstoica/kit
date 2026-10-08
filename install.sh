@@ -36,10 +36,12 @@ fi
 # 3. kit.
 info "installing kit (go install …@latest)…"
 go install github.com/andreicstoica/kit@latest
+kitbin="${GOBIN:-$(go env GOPATH)/bin}"
+ln -sf kit "$kitbin/kit-herdr"
 
 # 4. Wire $(go env GOPATH)/bin into the login shell's rc file (idempotent).
 #    Match kit's own fence so `kit setup` won't append a duplicate line.
-gobin="$(go env GOPATH)/bin"
+gobin="$kitbin"
 case "$(basename "${SHELL:-/bin/zsh}")" in
   bash) profile="$HOME/.bash_profile" ;;
   *)    profile="${ZDOTDIR:-$HOME}/.zshrc" ;;

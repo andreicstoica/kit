@@ -47,6 +47,14 @@ type wtNode struct {
 // When `gt` isn't installed, every worktree is a direct child of master
 // (flat tree). Toggled via `kit lineup --tree`.
 func RenderLineupTree(layout liftoff.Layout) (string, error) {
+	return renderLineupTree(layout, false)
+}
+
+func RenderLineupTreeParked(layout liftoff.Layout) (string, error) {
+	return renderLineupTree(layout, true)
+}
+
+func renderLineupTree(layout liftoff.Layout, parked bool) (string, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
 		return "", err
@@ -64,9 +72,15 @@ func RenderLineupTree(layout liftoff.Layout) (string, error) {
 		if w.IsMaster(layout) || w.Bare {
 			continue
 		}
+		if state.Worktrees[w.Name()].Parked != parked {
+			continue
+		}
 		inputs = append(inputs, wtIn{w})
 	}
 	if len(inputs) == 0 {
+		if parked {
+			return StyleDim.Render("no parked kits.") + "\n", nil
+		}
 		return StyleDim.Render("no kits available. start one with `kit design`.") + "\n", nil
 	}
 

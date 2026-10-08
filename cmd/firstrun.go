@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
+	"github.com/andreicstoica/kit/internal/liftoff"
 	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -35,9 +35,7 @@ func MaybeOfferSetup(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 	}
-	home, _ := os.UserHomeDir()
-	configDir := filepath.Join(home, ".config", "kit")
-	if _, err := os.Stat(configDir); err == nil {
+	if setupConfigExists() {
 		return nil
 	}
 	fmt.Println(tui.StyleWarn.Render("kit hasn't been set up on this machine yet."))
@@ -56,4 +54,9 @@ func MaybeOfferSetup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("setup required — run `kit setup` when ready")
 	}
 	return runSetup(cmd, nil)
+}
+
+func setupConfigExists() bool {
+	_, err := os.Stat(liftoff.ConfigPath())
+	return err == nil
 }

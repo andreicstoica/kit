@@ -393,7 +393,7 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stopwatch, cmd = m.stopwatch.Update(msg)
 		return m, cmd
 	case tea.BackgroundColorMsg:
-		ApplyTheme(msg.IsDark(), &m.help)
+		ApplyTheme(msg.IsDark(), &m.help, &m.picker)
 		m.spinner.Style = lipgloss.NewStyle().Foreground(colorAccent)
 		return m, nil
 	case tea.KeyPressMsg:

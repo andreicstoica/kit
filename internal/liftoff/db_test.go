@@ -76,6 +76,29 @@ EOF
 	}
 }
 
+func TestDBNameFromEnv(t *testing.T) {
+	wt := t.TempDir()
+	if _, found, err := DBNameFromEnv(wt); err != nil || found {
+		t.Fatalf("missing env should report found=false, got found=%v err=%v", found, err)
+	}
+	backend := filepath.Join(wt, "backend")
+	if err := os.MkdirAll(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backend, ".env"), []byte("# comment\nSQLALCHEMY_DATABASE_NAME=\"liftoff_feat_x\"\nOTHER=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, found, err := DBNameFromEnv(wt); err != nil || !found || got != "liftoff_feat_x" {
+		t.Fatalf("DBNameFromEnv = %q, found=%v, err=%v", got, found, err)
+	}
+	if err := os.WriteFile(filepath.Join(backend, ".env"), []byte("OTHER=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := DBNameFromEnv(wt); err != nil || found {
+		t.Fatalf("missing key should report found=false, got found=%v err=%v", found, err)
+	}
+}
+
 func writeExecutable(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {

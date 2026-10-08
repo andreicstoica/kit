@@ -2,10 +2,12 @@ package liftoff
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -77,6 +79,34 @@ func CreateDB(name string, onLine LineFn) error {
 // DropDB removes a database if it exists.
 func DropDB(name string, onLine LineFn) error {
 	return RunStream("", "dropdb", []string{"--if-exists", name}, onLine)
+}
+
+// DBNameFromEnv returns SQLALCHEMY_DATABASE_NAME from a worktree's
+// backend/.env. Missing files or keys report found=false.
+//
+// The value is ownership evidence for cleanup only: it proves which database
+// a checkout actually uses, so a derived name is never dropped on a label
+// guess alone. Callers must not log the returned value.
+func DBNameFromEnv(worktreePath string) (name string, found bool, err error) {
+	path := filepath.Join(worktreePath, "backend", ".env")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(key) == "SQLALCHEMY_DATABASE_NAME" {
+			return strings.Trim(strings.TrimSpace(value), `"'`), true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // SweepOldTestDBs drops disconnected test databases whose data has not changed

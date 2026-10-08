@@ -22,6 +22,14 @@ var (
 // RenderLineup prints a static (non-interactive) table of active worktrees.
 // Used by `kit lineup` / `kit ls`.
 func RenderLineup(layout liftoff.Layout) (string, error) {
+	return renderLineup(layout, false)
+}
+
+func RenderLineupParked(layout liftoff.Layout) (string, error) {
+	return renderLineup(layout, true)
+}
+
+func renderLineup(layout liftoff.Layout, parked bool) (string, error) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
 		return "", err
@@ -31,7 +39,16 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		state = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
 	var herdrState liftoff.HerdrState
-	if liftoff.HerdrAvailable() {
+	var rexState liftoff.RexState
+	backend, err := liftoff.WorkspaceBackend()
+	if err != nil {
+		return "", err
+	}
+	header := "HERDR"
+	if backend == liftoff.BackendRex {
+		header = "REX"
+		rexState, _ = liftoff.ReadRexState()
+	} else if liftoff.HerdrAvailable() {
 		herdrState, _ = liftoff.ReadHerdrState()
 	}
 
@@ -59,6 +76,10 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 		if isMaster {
 			name = "master"
 		}
+		meta, hasMeta := state.Worktrees[name]
+		if (isMaster && parked) || (!isMaster && meta.Parked != parked) {
+			continue
+		}
 		stRaw := "clean"
 		if w.Missing {
 			stRaw = "missing"
@@ -73,7 +94,6 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			}
 		}
 
-		meta, hasMeta := state.Worktrees[name]
 		herdrStatus := "—"
 		if hasMeta && meta.HerdrSpace != "" {
 			herdrStatus = meta.HerdrSpace
@@ -82,6 +102,23 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			herdrStatus = liftoff.TruncateHerdrStatus(herdrState.WorkspaceAgentSummary(space.WorkspaceID), 28)
 			if herdrStatus == "idle" {
 				herdrStatus = "ready"
+			}
+		}
+		if backend == liftoff.BackendRex {
+			herdrStatus = "—"
+			id := meta.RexID
+			if isMaster {
+				id = state.Settings.RexMasterSession
+			}
+			for _, session := range rexState.Sessions {
+				if id == "" || session.SessionID != id {
+					continue
+				}
+				panes := 0
+				for _, window := range session.Windows {
+					panes += len(window.Blocks)
+				}
+				herdrStatus = fmt.Sprintf("%d tabs · %d panes · %s", len(session.Windows), panes, session.ProgramStatusSummary())
 			}
 		}
 		ports := liftoff.PortsForSlot(meta.Slot)
@@ -148,6 +185,9 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 	var b strings.Builder
 
 	if len(rows) == 0 {
+		if parked {
+			return StyleDim.Render("no parked kits.") + "\n", nil
+		}
 		b.WriteString(StyleDim.Render("no kits available. start one with `kit design`.") + "\n")
 		return b.String(), nil
 	}
@@ -189,7 +229,7 @@ func RenderLineup(layout liftoff.Layout) (string, error) {
 			}
 			return colCell
 		}).
-		Headers("NAME", "SLOT", "RUNNING", "HERDR", "BRANCH", "STATUS")
+		Headers("NAME", "SLOT", "RUNNING", header, "BRANCH", "STATUS")
 
 	for _, r := range rows {
 		tbl.Row(r.name, r.slot, r.running, r.herdr, r.branch, r.status)

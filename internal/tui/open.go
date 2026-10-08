@@ -38,6 +38,7 @@ type OpenRequest struct {
 	// matching branch below wins: EditorFlag, Herdr, WorkspaceOnly.
 	EditorFlag    string
 	Herdr         bool
+	Rex           bool
 	HerdrLayout   string
 	WorkspaceOnly bool
 	Detailed      bool
@@ -58,11 +59,14 @@ func (req OpenRequest) Validate() error {
 	if req.Herdr {
 		n++
 	}
+	if req.Rex {
+		n++
+	}
 	if req.WorkspaceOnly {
 		n++
 	}
 	if n > 1 {
-		return fmt.Errorf("choose one open target: editor (--editor), Herdr (--herdr), or Ghostty workspace (--workspace)")
+		return fmt.Errorf("choose one open target: editor (--editor), Rex (--rex), Herdr (--herdr), or Ghostty workspace (--workspace)")
 	}
 	return nil
 }
@@ -82,6 +86,9 @@ func OpenWorktree(req OpenRequest) (bool, error) {
 	}
 	if req.Herdr {
 		return true, OpenHerdrWorktree(req.Name, req.Path, req.HerdrLayout, req.HerdrConnect)
+	}
+	if req.Rex {
+		return true, OpenRexWorktree(req.Name, req.Path, req.HerdrLayout, true)
 	}
 	if req.WorkspaceOnly {
 		return true, openGhosttyWorkspace(req, gtabFromFlag(req.Detailed))
@@ -114,6 +121,8 @@ func ExecuteOpen(req OpenRequest, c liftoff.EditorCandidate) (bool, error) {
 		return true, openGhosttyWorkspace(req, gl)
 	case liftoff.OpenTargetHerdr:
 		return true, OpenHerdrWorktree(req.Name, req.Path, req.HerdrLayout, req.HerdrConnect)
+	case liftoff.OpenTargetRex:
+		return true, OpenRexWorktree(req.Name, req.Path, req.HerdrLayout, true)
 	default:
 		if err := liftoff.LaunchEditor(c, req.Path); err != nil {
 			return false, err
@@ -132,11 +141,31 @@ type FocusHerdrRequest struct {
 	Editor     string
 	Ghostty    bool
 	NoAttach   bool
+	Backend    string
 }
 
 // FocusHerdr is the kit focus path — Herdr-first, with optional editor and
 // client wiring that OpenWorktree does not cover.
 func FocusHerdr(req FocusHerdrRequest) error {
+	backend, err := resolveWorkspaceBackend(req.Backend)
+	if err != nil {
+		return err
+	}
+	if backend == liftoff.BackendRex && req.Ghostty {
+		return fmt.Errorf("--ghostty requires the herdr backend; choose --backend herdr")
+	}
+	if backend == liftoff.BackendRex {
+		if req.Editor != "" {
+			editor := liftoff.ResolveEditor(req.Editor)
+			if editor == nil {
+				return fmt.Errorf("editor %q not on PATH or in /Applications", req.Editor)
+			}
+			if err := liftoff.LaunchEditor(*editor, req.Path); err != nil {
+				return err
+			}
+		}
+		return OpenRexWorktree(req.Name, req.Path, req.Layout, !req.NoAttach)
+	}
 	workspace, err := EnsureHerdrWorktree(req.Name, req.Path, req.Layout)
 	if err != nil {
 		return err
@@ -151,6 +180,40 @@ func FocusHerdr(req FocusHerdrRequest) error {
 		}
 	}
 	return ConnectHerdr(req.Name, workspace, herdrConnectForFocus(req.Ghostty, req.NoAttach))
+}
+
+func resolveWorkspaceBackend(value string) (liftoff.TerminalBackend, error) {
+	if value != "" {
+		return liftoff.ParseTerminalBackend(value)
+	}
+	return liftoff.WorkspaceBackend()
+}
+
+// OpenManagedWorktree is used by flows that want the configured terminal,
+// rather than a user explicitly choosing Herdr in the open-target picker.
+func OpenManagedWorktree(name, path, layout string, connect HerdrConnect) error {
+	backend, err := liftoff.WorkspaceBackend()
+	if err != nil {
+		return err
+	}
+	if backend == liftoff.BackendRex {
+		return OpenRexWorktree(name, path, layout, connect != HerdrConnectNone)
+	}
+	return OpenHerdrWorktree(name, path, layout, connect)
+}
+
+func OpenRexWorktree(name, path, layout string, focus bool) error {
+	session, err := liftoff.OpenRex(name, path, layout)
+	if err != nil {
+		return err
+	}
+	if focus {
+		if err := liftoff.FocusRexClient(session.SessionID); err != nil {
+			return fmt.Errorf("Rex workspace %s is ready; automatic selection failed (select it manually in Rex): %w", session.SessionID, err)
+		}
+	}
+	fmt.Printf("opened %s in Rex (%s)\n", name, session.SessionID)
+	return nil
 }
 
 func herdrConnectForFocus(ghostty, noAttach bool) HerdrConnect {

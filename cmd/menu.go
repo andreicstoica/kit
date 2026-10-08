@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
+	"charm.land/huh/v2"
 	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -17,10 +19,10 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 	}
 	items := []item{
 		{"lineup", "see all workspaces"},
-		{"open", "attach to a persistent Herdr space"},
-		{"close", "delete a Herdr space (keep the worktree)"},
+		{"open", "open an editor, Rex workspace, or Herdr space"},
+		{"close", "delete mapped terminal workspaces (keep the checkout)"},
 		{"focus", "make a workspace your active environment"},
-		{"remote", "pick a remote-ready Herdr space"},
+		{"remote", "reconnect to a terminal workspace"},
 		{"play", "start a workspace"},
 		{"pause", "stop a workspace"},
 		{"restart", "stop and start a workspace"},
@@ -41,6 +43,9 @@ func runRootMenu(cmd *cobra.Command, args []string) error {
 		opts = append(opts, tui.SelectOption[string]{Label: label, Value: it.verb})
 	}
 	picked, err := tui.RunSelect("kit · what do you want to do?", "Choose an action. Press Ctrl-C to exit.", opts, items[0].verb)
+	if errors.Is(err, huh.ErrUserAborted) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

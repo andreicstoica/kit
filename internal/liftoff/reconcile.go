@@ -21,6 +21,7 @@ type OrphanCandidate struct {
 	HasGtab        bool
 	HasRunDir      bool
 	HasHerdr       bool
+	HasRex         bool
 	GitPath        string
 }
 
@@ -41,6 +42,9 @@ func (o OrphanCandidate) Resources() []string {
 	}
 	if o.HasHerdr {
 		resources = append(resources, "Herdr")
+	}
+	if o.HasRex {
+		resources = append(resources, "Rex")
 	}
 	return resources
 }
@@ -120,7 +124,10 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 	}
 	var dbMap map[string]bool
 	if hasPostgres && len(orphanNames) > 0 {
-		dbMap = HasDBs(orphanNames)
+		dbMap, err = HasDBs(orphanNames)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	out := make([]OrphanCandidate, 0, len(orphans))
@@ -135,7 +142,8 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 			HasDB:          dbMap[o.name],
 			HasGtab:        l.HasGtab(o.name),
 			HasRunDir:      runErr == nil,
-			HasHerdr:       o.meta.HerdrID != "",
+			HasHerdr:       o.meta.HerdrID != "" || o.meta.HerdrSpace != "",
+			HasRex:         o.meta.RexID != "",
 			GitPath:        o.gitPath,
 		})
 	}
@@ -161,6 +169,20 @@ func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error 
 	}
 	if !found {
 		return fmt.Errorf("worktree %q exists or config record was already removed", candidate.Name)
+	}
+	var candidateDB string
+	if candidate.HasDB {
+		// Ownership is re-checked here, before any resource is removed:
+		// the config may have changed since detection, and the database
+		// name is only a guess without a persisted DatabaseName. A
+		// disputed drop retains the orphan record for a human decision.
+		db, skip, err := resolveCleanupDB(candidate.Name, candidate.Path)
+		if err != nil {
+			return err
+		}
+		if !skip {
+			candidateDB = db
+		}
 	}
 	if candidate.GitPath != "" {
 		if _, err := os.Stat(candidate.GitPath); !errors.Is(err, os.ErrNotExist) {
@@ -190,18 +212,16 @@ func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error 
 	}
 
 	var errs []error
-	if candidate.HasHerdr {
-		if !HerdrAvailable() {
-			errs = append(errs, errors.New("Herdr is not installed; saved workspace still exists"))
-		} else if err := CloseHerdr(candidate.Name, candidate.Path); err != nil {
-			errs = append(errs, fmt.Errorf("remove Herdr workspace: %w", err))
+	if candidate.HasHerdr || candidate.HasRex {
+		if err := CloseManagedWorkspaces(candidate.Name, candidate.Path); err != nil {
+			errs = append(errs, fmt.Errorf("remove managed workspace: %w", err))
 		}
 	}
 	if err := RemoveRunDir(candidate.Name); err != nil {
 		errs = append(errs, err)
 	}
-	if candidate.HasDB {
-		if err := DropDB(DBName(candidate.Name), onLine); err != nil {
+	if candidate.HasDB && candidateDB != "" {
+		if err := DropDB(candidateDB, onLine); err != nil {
 			errs = append(errs, fmt.Errorf("drop database: %w", err))
 		}
 	}

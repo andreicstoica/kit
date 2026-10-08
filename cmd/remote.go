@@ -19,13 +19,25 @@ func (i remoteWorktreeItem) Title() string       { return i.name }
 func (i remoteWorktreeItem) Description() string { return i.desc }
 func (i remoteWorktreeItem) FilterValue() string { return i.name }
 
+var remoteBackend string
+
 var remoteCmd = &cobra.Command{
 	Use:               "remote [name]",
-	Short:             "Pick a running worktree and attach to its Herdr space",
+	Short:             "Pick a worktree and reconnect to its terminal workspace",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		layout := liftoff.DefaultLayout()
+		backend, err := liftoff.WorkspaceBackend()
+		if remoteBackend != "" {
+			backend, err = liftoff.ParseTerminalBackend(remoteBackend)
+		}
+		if err != nil {
+			return err
+		}
+		if backend == liftoff.BackendRex {
+			return reconnectRexWorktree(layout, args)
+		}
 		if err := liftoff.EnsureHerdrServer(); err != nil {
 			return err
 		}
@@ -102,4 +114,25 @@ func pickRemoteWorktree(layout liftoff.Layout, state liftoff.HerdrState) (string
 	return chosen.(remoteWorktreeItem).name, nil
 }
 
-func init() { rootCmd.AddCommand(remoteCmd) }
+func reconnectRexWorktree(layout liftoff.Layout, args []string) error {
+	var name string
+	var err error
+	if len(args) > 0 {
+		name, err = resolveArgOrCwd(layout, args)
+	} else {
+		name, err = tui.PickWorktree(layout, "kit remote — pick a Rex workspace")
+	}
+	if err != nil || name == "" {
+		return err
+	}
+	path, err := layout.ResolveWorktreePath(name)
+	if err != nil {
+		return err
+	}
+	return tui.OpenRexWorktree(name, path, "", true)
+}
+
+func init() {
+	remoteCmd.Flags().StringVar(&remoteBackend, "backend", "", "terminal backend: rex or herdr (default: config)")
+	rootCmd.AddCommand(remoteCmd)
+}

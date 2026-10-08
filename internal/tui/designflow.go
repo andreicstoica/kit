@@ -492,18 +492,16 @@ func PickGtabLayout(includeSkip bool) (liftoff.GtabLayout, error) {
 	)
 }
 
-// PickHerdrLayout prompts for the Kit-owned persistent terminal layout. It
-// mirrors the existing Ghostty picker so the first `kit open` feels familiar:
-// simple keeps the two-tab workflow, while detailed keeps the five-tab one.
+// PickHerdrLayout retains its name for callers using the original Herdr flow.
 func PickHerdrLayout() (string, error) {
 	opts := []SelectOption[string]{
-		{Label: "Simple (2 tabs)", Value: "default"},
+		{Label: "Simple (shell + agent split in Rex, no logs tab)", Value: "simple"},
 		{Label: "Detailed (5 tabs)", Value: "detailed"},
 	}
 	return RunSelect(
-		"Herdr workspace layout",
-		"Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service logs.",
-		opts, "default",
+		"Terminal workspace layout",
+		"Simple: one shell tab, plus a Claude Code split in Rex. Detailed: 5 tabs with per-service logs.",
+		opts, "simple",
 	)
 }
 
@@ -530,7 +528,22 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		return err
 	}
 
-	// Same opener as `kit swap`: pick an editor, Ghostty, Herdr, or skip.
+	backend, err := liftoff.WorkspaceBackend()
+	if err != nil {
+		return err
+	}
+	if backend == liftoff.BackendRex {
+		// Finish interaction in the wizard before switching sessions. New Rex
+		// workspaces default to the simple shell/Claude layout with Claude focused.
+		if wantPlay {
+			if err := RunPlayTUI(layout, PlayConfig{Name: name}); err != nil {
+				fmt.Println(StyleErr.Render("play failed: " + err.Error()))
+			}
+		}
+		return OpenRexWorktree(name, layout.WorktreePath(name), "simple", true)
+	}
+
+	// Legacy backends retain the explicit editor/terminal/skip picker.
 	// Non-fatal — a failed/declined open still lets play run.
 	if _, err := OpenWorktree(OpenRequest{
 		Layout:       layout,

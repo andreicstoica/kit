@@ -1,6 +1,7 @@
 package liftoff
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -55,12 +56,7 @@ const defaultHerdrSession = "default"
 // detailed is the old five-tab frontend/backend/celery/logs layout. AI is a
 // forward-looking layout that keeps each agent in its own durable tab.
 func BuiltinHerdrLayouts() map[string]HerdrLayout {
-	return map[string]HerdrLayout{
-		"default":  {Tabs: []string{"shell", "logs"}},
-		"simple":   {Tabs: []string{"shell", "logs"}},
-		"detailed": {Tabs: []string{"shell", "frontend", "backend", "celery", "logs"}},
-		"ai":       {Tabs: []string{"shell", "claude", "codex", "gemini", "logs"}},
-	}
+	return BuiltinWorkspaceLayouts()
 }
 
 // HerdrShellTabLabel is the stable root-tab label shared by Herdr and the
@@ -92,11 +88,23 @@ func HerdrSessionName() string {
 // DefaultHerdrLayoutName returns the configured default layout, falling back
 // to the simple layout that mirrors the old Ghostty workspace.
 func DefaultHerdrLayoutName() string {
+	return DefaultWorkspaceLayoutName()
+}
+
+func DefaultWorkspaceLayoutName() string {
+	if v := os.Getenv("KIT_WORKSPACE_LAYOUT"); v != "" {
+		return v
+	}
 	if v := os.Getenv("KIT_HERDR_LAYOUT"); v != "" {
 		return v
 	}
-	if c, err := LoadConfig(); err == nil && c.Settings.HerdrLayout != "" {
-		return c.Settings.HerdrLayout
+	if c, err := LoadConfig(); err == nil {
+		if c.Settings.WorkspaceLayout != "" {
+			return c.Settings.WorkspaceLayout
+		}
+		if c.Settings.HerdrLayout != "" {
+			return c.Settings.HerdrLayout
+		}
 	}
 	return "default"
 }
@@ -107,20 +115,7 @@ func DefaultHerdrLayoutName() string {
 //	[layouts.default]
 //	tabs = ["shell", "claude", "codex", "logs"]
 func ResolveHerdrLayout(name string) (HerdrLayout, error) {
-	if name == "" {
-		name = DefaultHerdrLayoutName()
-	}
-	layouts := BuiltinHerdrLayouts()
-	if c, err := LoadConfig(); err == nil {
-		for key, value := range c.Layouts {
-			layouts[key] = value
-		}
-	}
-	layout, ok := layouts[name]
-	if !ok || len(layout.Tabs) == 0 {
-		return HerdrLayout{}, fmt.Errorf("unknown Herdr layout %q", name)
-	}
-	return layout, nil
+	return ResolveWorkspaceLayout(name)
 }
 
 // herdrSnapshotEnvelope matches the JSON-RPC style response Herdr's CLI emits
@@ -345,24 +340,38 @@ func OpenHerdr(name, path, layoutName string) (HerdrWorkspace, error) {
 // destructive boundary for terminal state; ordinary open/attach operations
 // never remove spaces or tabs.
 func CloseHerdr(name, path string) error {
-	if !HerdrAvailable() {
-		return fmt.Errorf("Herdr is not installed; install it with `brew install herdr`")
-	}
-	if err := EnsureHerdrServer(); err != nil {
+	cfg, err := LoadConfig()
+	if err != nil {
 		return err
 	}
-	cfg, _ := LoadConfig()
-	var savedID string
-	if cfg != nil {
-		if meta, ok := cfg.Worktrees[name]; ok {
-			savedID = meta.HerdrID
-		}
+	meta, exists := cfg.Worktrees[name]
+	if !exists && name != "master" {
+		return nil
+	}
+	if !HerdrAvailable() {
+		return fmt.Errorf("Herdr is not installed; install it with `brew install herdr`")
 	}
 	state, err := ReadHerdrState()
 	if err != nil {
 		return err
 	}
-	workspace := FindHerdrWorkspace(state, savedID, name, path)
+	var workspace *HerdrWorkspace
+	for i := range state.Workspaces {
+		w := &state.Workspaces[i]
+		if meta.HerdrID != "" {
+			if w.WorkspaceID == meta.HerdrID {
+				workspace = w
+				break
+			}
+			continue // A stale ID never authorizes closing a same-label session.
+		}
+		if path != "" && ((w.Worktree != nil && cleanPath(w.Worktree.CheckoutPath) == cleanPath(path)) || workspaceHasPath(state, w.WorkspaceID, cleanPath(path))) {
+			if workspace != nil {
+				return fmt.Errorf("multiple Herdr workspaces match checkout %q; map an explicit ID before closing", path)
+			}
+			workspace = w
+		}
+	}
 	if workspace != nil {
 		if _, err := runHerdr("workspace", "close", workspace.WorkspaceID); err != nil {
 			return fmt.Errorf("close Herdr workspace %q: %w", name, err)
@@ -370,7 +379,10 @@ func CloseHerdr(name, path string) error {
 	}
 	if name != "master" {
 		if err := WithConfigLock(func(c *Config) error {
-			meta := c.Worktrees[name]
+			meta, ok := c.Worktrees[name]
+			if !ok {
+				return nil
+			}
 			meta.HerdrSpace = ""
 			meta.HerdrID = ""
 			meta.HerdrLayout = ""
@@ -595,27 +607,7 @@ func herdrTabPaneCommands(name, tabName string) []string {
 }
 
 func herdrTabCommand(name, path, tabName string) string {
-	shell := func(agent string) string {
-		return fmt.Sprintf("if command -v %s >/dev/null 2>&1; then exec %s; else printf 'Kit: %s is not installed\\n'; exec \"${SHELL:-/bin/sh}\"; fi", agent, agent, agent)
-	}
-	switch tabName {
-	case "logs":
-		bin, err := ResolvedExecutable()
-		if err != nil || bin == "" {
-			bin = "kit"
-		}
-		return shellQuote(bin) + " log " + shellQuote(name) + " --wait"
-	case "frontend":
-		return herdrCombinedTailCommand(name, SvcApp, SvcAdmin)
-	case "backend":
-		return herdrCombinedTailCommand(name, SvcAPI, SvcAdminBE)
-	case "celery":
-		return herdrTailCommand(name, SvcCelery)
-	case "claude", "codex", "gemini":
-		return shell(tabName)
-	default:
-		return ""
-	}
+	return workspaceTabCommand(name, tabName)
 }
 
 func herdrTailCommand(name string, service Service) string {
@@ -718,8 +710,18 @@ func shellQuote(value string) string {
 }
 
 func runHerdr(args ...string) (string, error) {
-	cmd := newHerdrCommand(args...)
+	timeout := 5 * time.Second
+	if len(args) >= 2 && args[0] == "workspace" && args[1] == "close" {
+		timeout = 30 * time.Second // PTY teardown can outlast a snapshot request.
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "herdr", args...)
+	cmd.Env = append(os.Environ(), "HERDR_SESSION="+HerdrSessionName())
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("Herdr CLI timed out after %s", timeout)
+	}
 	if err != nil {
 		message := strings.TrimSpace(string(out))
 		if message == "" {

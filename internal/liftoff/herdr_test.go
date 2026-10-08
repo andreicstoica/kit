@@ -1,10 +1,22 @@
 package liftoff
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestHerdrCloseCanFinishPastSnapshotTimeout(t *testing.T) {
+	setStateDir(t)
+	bin := t.TempDir()
+	writeExecutable(t, filepath.Join(bin, "herdr"), "#!/bin/sh\nsleep 5.2\nprintf closed\n")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if out, err := runHerdr("workspace", "close", "disposable-fixture"); err != nil || out != "closed" {
+		t.Fatalf("close was limited by the snapshot deadline: %q, %v", out, err)
+	}
+}
 
 func TestFindHerdrWorkspacePrefersSavedID(t *testing.T) {
 	cwd := "/tmp/kit/feature-a"

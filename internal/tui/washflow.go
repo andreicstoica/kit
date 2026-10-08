@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -15,16 +16,18 @@ import (
 
 // washItem is a list entry representing one removable worktree.
 type washItem struct {
-	name       string
-	emoji      string
-	path       string
-	branch     string
-	dirty      bool
-	aheadCount int // commits in HEAD not yet in origin/<main> — lost on -D
-	hasDB      bool
-	hasGtab    bool
-	isLegacy   bool
-	displayIdx int // 1-based for numeric quick-pick
+	name             string
+	emoji            string
+	path             string
+	branch           string
+	dirty            bool
+	aheadCount       int
+	unpublishedCount int
+	publicationKnown bool
+	hasDB            bool
+	hasGtab          bool
+	isLegacy         bool
+	displayIdx       int // 1-based for numeric quick-pick
 }
 
 func (w washItem) Title() string {
@@ -115,17 +118,21 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 		}
 		name := wt.Name()
 		ahead, _ := layout.AheadBehind(wt.Path)
+		remoteCount, remoteErr := liftoff.Run(wt.Path, "git", "rev-list", "--count", "HEAD", "--not", "--remotes")
+		unpublished, countErr := strconv.Atoi(strings.TrimSpace(remoteCount))
 		it := washItem{
-			name:       name,
-			emoji:      liftoff.EmojiFor(name),
-			path:       wt.Path,
-			branch:     wt.Branch,
-			dirty:      liftoff.IsDirty(wt.Path),
-			aheadCount: ahead,
-			hasDB:      liftoff.HasPostgres() && liftoff.HasDB(name),
-			hasGtab:    layout.HasGtab(name),
-			isLegacy:   wt.HasLegacyPrefix(),
-			displayIdx: len(items) + 1,
+			name:             name,
+			emoji:            liftoff.EmojiFor(name),
+			path:             wt.Path,
+			branch:           wt.Branch,
+			dirty:            liftoff.IsDirty(wt.Path),
+			aheadCount:       ahead,
+			unpublishedCount: unpublished,
+			publicationKnown: remoteErr == nil && countErr == nil,
+			hasDB:            liftoff.HasPostgres() && liftoff.HasDB(name),
+			hasGtab:          layout.HasGtab(name),
+			isLegacy:         wt.HasLegacyPrefix(),
+			displayIdx:       len(items) + 1,
 		}
 		items = append(items, it)
 		if preselected != "" && name == preselected {
@@ -249,7 +256,7 @@ func (m *washModel) pickWash(it washItem) {
 // needsDoubleConfirm reports whether wash would destroy work that isn't safely
 // in origin/<main> — unmerged commits (aheadCount) or uncommitted changes.
 func (m *washModel) needsDoubleConfirm() bool {
-	return m.selected.aheadCount > 0 || m.selected.dirty
+	return m.selected.aheadCount > 0 || m.selected.dirty || !m.selected.publicationKnown || m.selected.unpublishedCount > 0
 }
 
 func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -408,9 +415,16 @@ func (m *washModel) viewConfirm() string {
 		b.WriteString(StyleWarn.Render("⚠ Unsaved local file changes will be lost.") + "\n")
 	}
 	if m.selected.aheadCount > 0 {
-		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d local commit(s) are not on %s and will be permanently deleted.",
+		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d commit(s) are not on %s.",
 			m.selected.aheadCount, m.layout.MainBranch)) + "\n")
 	}
+	if m.selected.publicationKnown {
+		b.WriteString(fmt.Sprintf("%d commit(s) absent from cached remote refs.\n", m.selected.unpublishedCount))
+	} else {
+		b.WriteString("Remote publication status: unknown.\n")
+	}
+	b.WriteString("Cached refs can be stale. Fetch and verify pushed work before removing it.\n")
+	b.WriteString("Remote branches are not deleted. The local checkout and branch are removed.\n")
 	b.WriteString("\n")
 	toggles := m.visibleToggles()
 	if len(toggles) == 0 {

@@ -19,6 +19,7 @@ func TestPrintRemotePRs_IncludesMissingRecordsAndUnknownState(t *testing.T) {
 			runTestGit(t, l.Master, "worktree", "add", path, "-b", "live")
 			if err := liftoff.WithConfigLock(func(c *liftoff.Config) error {
 				c.Worktrees["lost"] = liftoff.WorktreeMeta{Branch: "lost", Path: path + "-lost"}
+				c.Worktrees["parked"] = liftoff.WorktreeMeta{Branch: "parked", Path: path + "-parked", Parked: true}
 				return nil
 			}); err != nil {
 				t.Fatal(err)
@@ -31,6 +32,7 @@ else
   case "$*" in
     *head=test:live*) printf '[[{"number":42,"state":"open","draft":true,"html_url":"https://github.com/test/repo/pull/42","head":{"ref":"live","repo":{"full_name":"test/repo"}}}]]' ;;
     *head=test:lost*) printf '[[]]' ;;
+    *head=test:parked*) printf '[[]]' ;;
     *) exit 1 ;;
   esac
 fi
@@ -57,6 +59,17 @@ fi
 				if !strings.Contains(out.String(), text) {
 					t.Fatalf("output missing %q:\n%s", text, out.String())
 				}
+			}
+			if strings.Contains(out.String(), "parked") {
+				t.Fatalf("default remote view leaked parked record: %s", out.String())
+			}
+			out.Reset()
+			err = printRemotePRsForVisibility(&out, l, true)
+			if (err != nil) != failure {
+				t.Fatalf("parked lookup error = %v", err)
+			}
+			if !strings.Contains(out.String(), "parked") || strings.Contains(out.String(), "live") || strings.Contains(out.String(), "lost") {
+				t.Fatalf("parked remote view has wrong visibility: %s", out.String())
 			}
 		})
 	}
