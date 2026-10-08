@@ -61,7 +61,7 @@ or claim a running process is necessarily working.
 
 ## Simple layout
 
-The `simple` Rex layout creates one tab named **AI Chat** with an empty interactive shell
+The `simple` Rex layout creates one unlabeled tab, which Rex names after the agent's thread title, with an empty interactive shell
 on the left (one-third width) and Claude Code on the right (two-thirds).
 No logs tab is created. If Claude Code is not installed, the right pane falls
 back to a shell with an explanation. Existing sessions are not rebuilt and

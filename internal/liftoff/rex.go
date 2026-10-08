@@ -316,8 +316,8 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 	seen := map[string]bool{}
 	for _, w := range windows {
 		seen[w.Label] = true
-		if layoutName == "simple" && w.Label == rexSimpleWindowLabel {
-			seen["shell"] = true
+		if layoutName == "simple" {
+			seen["shell"] = true // its one tab is unlabeled so Rex can title it
 		}
 		if shellWindow != "" && w.WindowID == shellWindow {
 			seen["shell"] = true
@@ -351,7 +351,7 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 	}
 	if shellWindow == "" {
 		for _, w := range session.Windows {
-			if w.Label == "shell" || (layoutName == "simple" && w.Label == rexSimpleWindowLabel) {
+			if w.Label == "shell" || layoutName == "simple" {
 				shellWindow = w.WindowID
 				break
 			}

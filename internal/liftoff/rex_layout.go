@@ -2,10 +2,6 @@ package liftoff
 
 import _ "embed"
 
-// rexSimpleWindowLabel names the simple layout's only tab. It holds the shell and
-// the Claude pane, so "shell" would mislabel it.
-const rexSimpleWindowLabel = "AI Chat"
-
 // Rex automation scripts run through `rex do -e`. They live as files so they
 // are readable and can be loaded into `rex do` by hand while debugging.
 var (
