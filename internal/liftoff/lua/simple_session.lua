@@ -1,8 +1,8 @@
 -- No window label: Rex then names the tab after the agent's terminal title,
 -- which follows the thread name once the agent sets one.
 local a=rex.args
-local shell=rex.layout.block{flavor="com.superlogical.terminal.shell",label="shell",options={cwd=a.cwd}}
-local agent=rex.layout.block{flavor="com.superlogical.terminal.shell",label="claude",options={cwd=a.cwd,command={"sh","-lc",a.command}}}
+local shell=rex.layout.block{flavor="com.superlogical.terminal.shell",options={cwd=a.cwd}}
+local agent=rex.layout.block{flavor="com.superlogical.terminal.shell",options={cwd=a.cwd,command={"sh","-lc",a.command}}}
 local session,err=rex.call("session.create",{label=a.name,initial_windows={{layout=rex.layout.horizontal(1/3,shell,agent)}}})
 if err then error(err,0) end
 -- Any failure after creation destroys the session so no half-built one
