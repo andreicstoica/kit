@@ -77,6 +77,9 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 		// Updates with no Service are notes about the run as a whole.
 		broker := CeleryBroker{}
 		skipCelery := false
+		vhostEnsured := false
+		var lateEnsure sync.Once
+		var lateErr error
 		brokerReady := make(chan struct{})
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -93,6 +96,7 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 			// backend service has to start.
 			if managed && backendNeedsStart(p) {
 				broker, note, warn = PrepareCeleryBroker(p.Worktree, p.WorktreePath)
+				vhostEnsured = !warn
 			}
 			status := StepDone
 			if warn {
@@ -106,8 +110,8 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 			}
 			// A worker on a shared broker consumes other worktrees' tasks.
 			// Never start one beside a live worker; the user decides.
-			if !broker.Isolated() && hasService(p.Services, SvcCelery) {
-				if owner, pid := FindCeleryOwner(); owner != "" && owner != p.Worktree {
+			if !broker.Isolated() && (hasService(p.Services, SvcCelery) || hasService(p.Services, SvcBeat)) {
+				if owner, pid := FindSharedCeleryOwner(p.Worktree); owner != "" {
 					skipCelery = true
 					ch <- PlayUpdate{Status: StepSkipped, Title: fmt.Sprintf(
 						"celery skipped: %s runs the worker (pid %d) on a shared broker; run `kit pause %s --only celery` first",
@@ -160,6 +164,15 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 				ch <- PlayUpdate{Service: svc, Status: StepRunning, Title: title, Port: port}
 				start := time.Now()
 
+				// A backend that went down after the up-front check still needs
+				// its private vhost before it connects.
+				if svc.IsBackend() && serviceBroker.Isolated() && !vhostEnsured {
+					lateEnsure.Do(func() { lateErr = ensureVHost(serviceBroker.VHost) })
+					if lateErr != nil {
+						ch <- PlayUpdate{Service: svc, Status: StepFailed, Title: title, Err: lateErr, Elapsed: time.Since(start)}
+						return
+					}
+				}
 				spec := SpecFor(p.Worktree, p.WorktreePath, svc, p.Ports, serviceBroker)
 				pid, err := StartService(spec)
 				if err != nil {

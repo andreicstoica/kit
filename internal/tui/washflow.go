@@ -137,6 +137,12 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 	if liftoff.HasPostgres() {
 		if found, err := liftoff.HasDBs(names); err == nil {
 			hasDB = found
+		} else {
+			// Batched lookup failed: retry per name rather than read a
+			// transient psql failure as "no database".
+			for _, name := range names {
+				hasDB[name] = liftoff.HasDB(name)
+			}
 		}
 	}
 	scanned := make([]washItem, len(candidates))

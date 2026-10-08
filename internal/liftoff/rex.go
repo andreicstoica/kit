@@ -175,8 +175,9 @@ func parseRexState(input string) (RexState, error) {
 }
 
 // ReadRexState reads a structural snapshot of every session plus per-block
-// process and program-status records, using one Lua request. It does not
-// create, close, focus, or attach to sessions.
+// process and program-status records, using one Lua request. It attaches the
+// script's own short-lived connection to each session it reads, which Rex
+// requires, but never creates, closes, or focuses sessions.
 func ReadRexState() (RexState, error) { return readRexState("", true) }
 
 // readRexStructure reads session, window, and block identity and labels only.
@@ -285,6 +286,7 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 		savedID = created.SessionID
 		if name == "master" {
 			if err := WithConfigLock(func(c *Config) error { c.Settings.RexMasterSession = savedID; return nil }); err != nil {
+				_, _ = runRex("kill", savedID)
 				return RexSession{}, fmt.Errorf("save master Rex session mapping: %w", err)
 			}
 		} else {
@@ -297,9 +299,11 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 				c.Worktrees[name] = m
 				return nil
 			}); err != nil {
+				_, _ = runRex("kill", savedID) // an unmapped session would collide on its label forever
 				return RexSession{}, fmt.Errorf("save new Rex session mapping: %w", err)
 			}
 		}
+		shellWindow = "" // window IDs of a replaced session are meaningless
 		session = &RexSession{SessionID: savedID, Label: name}
 		for _, tab := range createdTabs {
 			windows = append(windows, RexWindow{Label: tab})

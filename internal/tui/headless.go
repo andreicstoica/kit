@@ -62,8 +62,8 @@ func RunPlayHeadless(layout liftoff.Layout, cfg PlayConfig, w io.Writer) error {
 	})
 
 	on := initialToggles(cfg)
-	if on[liftoff.SvcCelery] && liftoff.WorkerSharesBroker(path) {
-		if owner, pid := liftoff.FindCeleryOwner(); owner != "" && owner != name {
+	if (on[liftoff.SvcCelery] || on[liftoff.SvcBeat]) && liftoff.WorkerSharesBroker(path) {
+		if owner, pid := liftoff.FindSharedCeleryOwner(name); owner != "" {
 			fmt.Fprintln(w, StyleWarn.Render(fmt.Sprintf(
 				"  ! celery skipped: %s runs the worker (pid %d); run `kit pause %s --only celery` first",
 				owner, pid, owner)))

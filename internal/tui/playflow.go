@@ -66,8 +66,7 @@ type playModel struct {
 
 	// Liveness of the chosen workspace's services, read once per workspace
 	// instead of on every render.
-	runningFor string
-	running    map[liftoff.Service]bool
+	running map[liftoff.Service]bool
 
 	stage playStage
 
@@ -190,6 +189,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 		}
 		m.chosen = playWtItem{name: name, path: path, slot: slot, emoji: liftoff.EmojiFor(name)}
 		m.stage = playStageToggle
+		m.running = nil // re-probe: services may have changed
 		if len(only) > 0 {
 			// Skip toggle screen — Init() will fire the transition.
 			m.skipToggle = true
@@ -325,9 +325,9 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 		}
 
 		// Detect celery owner conflict.
-		if m.toggleOn[liftoff.SvcCelery] && liftoff.WorkerSharesBroker(m.chosen.path) {
-			owner, pid := liftoff.FindCeleryOwner()
-			if owner != "" && owner != m.chosen.name {
+		if (m.toggleOn[liftoff.SvcCelery] || m.toggleOn[liftoff.SvcBeat]) && liftoff.WorkerSharesBroker(m.chosen.path) {
+			owner, pid := liftoff.FindSharedCeleryOwner(m.chosen.name)
+			if owner != "" {
 				return playCeleryConflictMsg{victim: owner, pid: pid, plan: plan}
 			}
 		}
@@ -434,6 +434,7 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case playAdoptedMsg:
 		m.stage = playStageToggle
+		m.running = nil // re-probe: services may have changed
 		return m, m.transitionAfterToggle()
 	}
 
@@ -468,6 +469,7 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if it, ok := m.picker.SelectedItem().(playWtItem); ok {
 					m.chosen = it
 					m.stage = playStageToggle
+					m.running = nil // re-probe: services may have changed
 					return m, nil
 				}
 			case "esc":
@@ -480,6 +482,7 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if it, ok := items[idx].(playWtItem); ok {
 						m.chosen = it
 						m.stage = playStageToggle
+						m.running = nil // re-probe: services may have changed
 						return m, nil
 					}
 				}
@@ -675,12 +678,11 @@ func (m *playModel) viewToggle() string {
 	}
 	b.WriteString("\n")
 	ports := liftoff.PortsForSlot(m.chosen.slot)
-	if m.runningFor != m.chosen.name || m.running == nil {
+	if m.running == nil {
 		m.running = make(map[liftoff.Service]bool, len(m.toggleSvcs))
 		for _, svc := range m.toggleSvcs {
 			m.running[svc] = liftoff.IsServiceAlive(m.chosen.name, svc, ports)
 		}
-		m.runningFor = m.chosen.name
 	}
 	for i, svc := range m.toggleSvcs {
 		cursor := "  "

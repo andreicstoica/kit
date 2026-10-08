@@ -2,6 +2,7 @@ package liftoff
 
 import (
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -124,5 +125,56 @@ func TestRunPause_SkipsWhenNoPIDAndNoListener(t *testing.T) {
 	}
 	if !strings.Contains(u.Title, "not running") {
 		t.Errorf("title = %q, want it to mention 'not running'", u.Title)
+	}
+}
+
+// A worker on a shared broker must not start beside a live shared worker,
+// whether celery or only beat is selected.
+func TestRunPlaySkipsCeleryAndBeatOnSharedBrokerWithLiveOwner(t *testing.T) {
+	for _, svcs := range [][]Service{{SvcCelery}, {SvcBeat}, {SvcCelery, SvcBeat}} {
+		setRunDir(t)
+		t.Setenv("CELERY_BROKER_URL", "pyamqp://u@remote.example/prod") // user-set: not isolated
+		if err := WritePID("other", string(SvcCelery), os.Getpid()); err != nil {
+			t.Fatal(err)
+		}
+		var updates []PlayUpdate
+		for u := range (Layout{}).RunPlay(PlayPlan{Worktree: "mine", WorktreePath: t.TempDir(), Services: svcs}) {
+			updates = append(updates, u)
+		}
+		skipped := 0
+		for _, u := range updates {
+			if u.Status == StepRunning || u.Status == StepDone && u.Service != "" {
+				t.Fatalf("%v started despite live shared worker: %+v", svcs, u)
+			}
+			if u.Status == StepSkipped && u.Service != "" {
+				skipped++
+			}
+		}
+		if skipped != len(svcs) {
+			t.Fatalf("%v: skipped %d services, want %d: %+v", svcs, skipped, len(svcs), updates)
+		}
+	}
+}
+
+func TestFindSharedCeleryOwnerIgnoresPrivateVhostWorkers(t *testing.T) {
+	setRunDir(t)
+	if err := WritePID("isolated", string(SvcCelery), os.Getpid()); err != nil {
+		t.Fatal(err)
+	}
+	cmd, err := CmdFile("isolated", string(SvcCelery))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cmd, []byte("env: CELERY_BROKER_URL="+BrokerURL("kit-isolated")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if owner, _ := FindSharedCeleryOwner("mine"); owner != "" {
+		t.Fatalf("worker on its own vhost reported as shared owner: %q", owner)
+	}
+	if err := os.WriteFile(cmd, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if owner, _ := FindSharedCeleryOwner("mine"); owner != "isolated" {
+		t.Fatalf("shared worker not found, got %q", owner)
 	}
 }

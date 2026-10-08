@@ -3,6 +3,7 @@ package liftoff
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -264,6 +265,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		// joins this goroutine before rollback so dbCreated is settled.
 		prefixDone := make(chan struct{})
 		prefixOK := false
+		var abort, dbFailed atomic.Bool
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -272,6 +274,9 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				if s.skip {
 					ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 					continue
+				}
+				if i < 5 && abort.Load() {
+					return // checkout steps failed; do not start more database work
 				}
 				if i == 5 {
 					<-prefixDone
@@ -288,6 +293,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				}
 				elapsed := time.Since(start)
 				if err != nil {
+					dbFailed.Store(true)
 					dbResult = pResult{index: i, err: err, elapsed: elapsed}
 					ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
 					return
@@ -316,6 +322,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 			}
 			if err != nil {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
+				abort.Store(true)
 				close(prefixDone)
 				wg.Wait()
 				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
@@ -327,6 +334,14 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		}
 		prefixOK = true
 		close(prefixDone)
+		if dbFailed.Load() {
+			// Database creation already failed: skip the checkout-only steps.
+			wg.Wait()
+			l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
+				ch <- StepUpdate{Index: dbResult.index, Title: steps[dbResult.index].title, Status: StepRunning, Line: line}
+			})
+			return
+		}
 
 		// Dependency installation, frontend links, Graphite and gtab need only
 		// the checkout. Run them alongside the rest of the DB chain, then join

@@ -57,6 +57,9 @@ type ProcSnapshot struct {
 	procs  map[int]procInfo
 	tagged map[string]map[int]bool
 	err    error
+	// covered holds the tags the snapshot was taken for. Stop for any other
+	// service takes its own snapshot instead of seeing no tagged processes.
+	covered map[string]bool
 }
 
 // SnapshotProcs reads the process table once and marks the processes tagged
@@ -67,7 +70,11 @@ func SnapshotProcs(worktree string, svcs []Service) *ProcSnapshot {
 		tags[i] = serviceTag(worktree, svc)
 	}
 	procs, tagged, err := snapshotProcs(tags...)
-	return &ProcSnapshot{procs: procs, tagged: tagged, err: err}
+	covered := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		covered[tag] = true
+	}
+	return &ProcSnapshot{procs: procs, tagged: tagged, err: err, covered: covered}
 }
 
 // Stop stops one service using the snapshot. It is safe to call concurrently
@@ -78,6 +85,9 @@ func (s *ProcSnapshot) Stop(worktree string, svc Service) error {
 		return stopRecordedGroup(worktree, svc, pid)
 	}
 	tag := serviceTag(worktree, svc)
+	if !s.covered[tag] {
+		return SnapshotProcs(worktree, []Service{svc}).Stop(worktree, svc)
+	}
 	procs := make(map[int]procInfo, len(s.procs))
 	for id, p := range s.procs {
 		p.Tagged = s.tagged[tag][id]
@@ -257,7 +267,7 @@ func serviceTree(procs map[int]procInfo, root, self int) (pids, groups []int) {
 // terminate sends SIGTERM to the groups and pids, escalates to SIGKILL after
 // stopGrace, and fails if any pid is still alive killWait later.
 func terminate(pids, groups []int) error {
-	signal := func(sig syscall.Signal, targets []int) {
+	signal := func(sig syscall.Signal, targets, groups []int) {
 		for _, g := range groups {
 			_ = syscall.Kill(-g, sig)
 		}
@@ -265,11 +275,25 @@ func terminate(pids, groups []int) error {
 			_ = syscall.Kill(pid, sig)
 		}
 	}
-	signal(syscall.SIGTERM, pids)
+	signal(syscall.SIGTERM, pids, groups)
 	if waitGone(pids, stopGrace) == nil {
 		return nil
 	}
-	signal(syscall.SIGKILL, livePIDs(pids))
+	// The snapshot is seconds old by now. A group id whose leader has exited
+	// may have been reused by an unrelated process, so signal only groups
+	// whose leader is still one of ours.
+	live := livePIDs(pids)
+	isLive := make(map[int]bool, len(live))
+	for _, pid := range live {
+		isLive[pid] = true
+	}
+	var liveGroups []int
+	for _, g := range groups {
+		if isLive[g] {
+			liveGroups = append(liveGroups, g)
+		}
+	}
+	signal(syscall.SIGKILL, live, liveGroups)
 	survivors := waitGone(pids, killWait)
 	if len(survivors) > 0 {
 		return fmt.Errorf("pids %v still alive after SIGKILL", survivors)

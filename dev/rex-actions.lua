@@ -23,9 +23,21 @@ local function options(cwd, verb, session_id)
   }
 end
 
+-- Verbs map to dev/rex-action. Interactive ones open a native tab that waits
+-- for Enter or exits when the wizard finishes.
 local actions = {
   {"design", "Kit: New workspace", "Create a workspace with Kit's interactive wizard"},
+  {"wash", "Kit: Delete workspace", "Remove a workspace with Kit's interactive wizard"},
+  {"play", "Kit: Start services", "Pick a workspace and start its services"},
+  {"pause", "Kit: Stop services", "Pick a workspace and stop its services"},
   {"restart", "Kit: Restart services", "Run Kit's restart CLI with visible progress"},
+  {"sync", "Kit: Sync workspaces", "Sync workspaces with the master checkout"},
+  {"lineup", "Kit: Lineup", "Show every workspace and its status"},
+  {"agents", "Kit: Agent status", "Show program status across all Rex sessions"},
+  {"parked", "Kit: Parked workspaces", "Show parked workspaces"},
+  {"park", "Kit: Park workspace", "Park the selected session's workspace"},
+  {"resume", "Kit: Resume workspace", "Resume the selected session's parked workspace"},
+  {"operation-log", "Kit: Operation log", "Show the selected workspace's operation log"},
 }
 
 for _, entry in ipairs(actions) do
