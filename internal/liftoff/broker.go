@@ -117,6 +117,21 @@ func PrepareCeleryBroker(worktree, worktreePath string) (b CeleryBroker, note st
 	return CeleryBroker{VHost: vhost}, "celery broker: vhost " + vhost, false
 }
 
+// WorkerSharesBroker reports whether a worker started for this worktree would
+// share a broker with other worktrees' workers. It is true only when kit will
+// not give the worktree its own vhost: a broker set by the user, or no
+// rabbitmqctl to create the vhost. Isolated workers cannot consume each
+// other's tasks, so they may run side by side.
+func WorkerSharesBroker(worktreePath string) bool {
+	if raw, ok := os.LookupEnv("CELERY_BROKER_URL"); ok && !kitMayReplaceBroker(raw) {
+		return true
+	}
+	if brokerOverriddenInEnvFile(filepath.Join(worktreePath, "backend", ".env")) {
+		return true
+	}
+	return findBinary("rabbitmqctl", "/opt/homebrew/sbin/rabbitmqctl", "/usr/local/sbin/rabbitmqctl") == ""
+}
+
 // kitMayReplaceBroker reports whether raw is a broker kit may swap for a
 // per-worktree vhost: unset, Liftoff's default local RabbitMQ vhost, or the
 // memory:// placeholder scripts/dev/pull-env.py writes (no worker can reach

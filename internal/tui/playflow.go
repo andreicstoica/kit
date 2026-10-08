@@ -320,7 +320,7 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 		}
 
 		// Detect celery owner conflict.
-		if m.toggleOn[liftoff.SvcCelery] {
+		if m.toggleOn[liftoff.SvcCelery] && liftoff.WorkerSharesBroker(m.chosen.path) {
 			owner, pid := liftoff.FindCeleryOwner()
 			if owner != "" && owner != m.chosen.name {
 				return playCeleryConflictMsg{victim: owner, pid: pid, plan: plan}

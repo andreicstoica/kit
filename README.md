@@ -299,7 +299,7 @@ Leading `liftoff-` in your input is stripped.
 
 1. **Picker** — if no name, pick from worktrees (sorted by slot)
 2. **Service toggle** — defaults: `app frontend, admin frontend, app backend, admin backend, celery worker` (MCP off). Each row shows current running state.
-3. **Celery prompt** — if another worktree owns celery, confirm kill-and-replace
+3. **Celery prompt** — only when this worktree's worker would share a broker with another worktree's (no private vhost); confirm kill-and-replace
 4. **Adopt prompt** — if the worktree isn't in `config.toml` yet, confirm before allocating
 5. **Live progress** — services start in parallel, ✓ when port responds
 6. **Done** — URLs printed
@@ -329,8 +329,8 @@ kit pause --all          # confirms before killing everything
 
 Without a terminal (agents, scripts, piped output), `kit play <name>` and
 `kit pause <name>` skip the UI and print one line per service. A name is
-required. Headless `play` never stops another worktree's worker: it skips
-celery and tells you what to pause first. `kit pause --all` still needs a
+required. Headless `play` never stops another worktree's worker: when the two
+would share a broker, it skips celery and tells you what to pause first. `kit pause --all` still needs a
 terminal to confirm.
 
 `kit restart [name]` (alias `bounce`) stops then starts in one go — useful when
@@ -370,9 +370,10 @@ worktree env files stay textually identical to master.
 
 ## Celery
 
-Kit runs one celery worker (plus beat) at a time across all worktrees. If
-another worktree owns it, `kit play` asks to kill and replace it (default
-Yes).
+Each worktree runs its own celery worker (plus beat) on a private vhost, so
+workers from different worktrees run side by side. Only when kit cannot isolate
+the broker (your own `CELERY_BROKER_URL`, or no `rabbitmqctl`) does `kit play`
+ask to kill and replace another worktree's worker (default Yes).
 
 **Private vhost per worktree.** All worktrees share one local RabbitMQ.
 Before it starts a backend service, kit creates the vhost `kit-<name>`

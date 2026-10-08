@@ -50,7 +50,7 @@ func ApplyRexImport(source HerdrState, mapping *RexImportMap) error {
 				latest.Panes[k] = v
 			}
 		}
-		state, err := ReadRexState()
+		state, err := readRexStructure("")
 		if err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func applyRexImport(source HerdrState, mapping *RexImportMap, existing RexState)
 			if err := saveImportedKitMapping(importWS, destID); err != nil {
 				return err
 			}
-			existing, err = ReadRexState()
+			existing, err = readRexStructure("")
 			if err != nil {
 				return fmt.Errorf("read newly created Rex session: %w", err)
 			}

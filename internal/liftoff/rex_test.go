@@ -64,6 +64,33 @@ func TestFakeRexCLI(t *testing.T) {
 	case "client":
 		_, _ = os.Stdout.WriteString(`{"clients":[{"client_id":"client:test-app","info":{"kind":"app"}}]}`)
 	case "do":
+		var tabs struct {
+			SessionID string `json:"session_id"`
+			Tabs      []struct {
+				Label string `json:"label"`
+			} `json:"tabs"`
+		}
+		for i := range args {
+			if args[i] == "--args" && i+1 < len(args) {
+				_ = json.Unmarshal([]byte(args[i+1]), &tabs)
+			}
+		}
+		if len(tabs.Tabs) > 0 {
+			for _, tab := range tabs.Tabs {
+				if os.Getenv("KIT_REX_FAIL_TAB") == tab.Label {
+					_, _ = os.Stderr.WriteString("injected window failure")
+					os.Exit(1)
+				}
+				for i := range state.Sessions {
+					if state.Sessions[i].SessionID == tabs.SessionID {
+						state.Sessions[i].Windows = append(state.Sessions[i].Windows, RexWindow{WindowID: "window:" + tabs.SessionID + ":" + tab.Label, Label: tab.Label})
+					}
+				}
+				save()
+			}
+			_, _ = os.Stdout.WriteString("true\n")
+			os.Exit(0)
+		}
 		data, _ := json.Marshal(state)
 		_, _ = os.Stdout.Write(append(data, '\n'))
 	case "new":
@@ -220,7 +247,7 @@ func TestOpenRexCreatesKitCommandTabsAndReusesWithoutRemovingManualTabs(t *testi
 		t.Fatalf("mapping = %+v", cfg.Worktrees["feature-a"])
 	}
 	calls := fake.calls(t)
-	if !containsRexCall(calls, "window new -s session:test-feature-a logs") || !containsRexCall(calls, " log 'feature-a' --wait") {
+	if !containsRexCall(calls, `"label":"logs"`) || !containsRexCall(calls, " log 'feature-a' --wait") {
 		t.Fatalf("calls did not launch Kit logs command: %q", calls)
 	}
 	for _, call := range calls {
@@ -239,7 +266,7 @@ func TestOpenRexCreatesKitCommandTabsAndReusesWithoutRemovingManualTabs(t *testi
 	if opened.SessionID != "session:test-feature-a" {
 		t.Fatalf("reopened session = %+v", opened)
 	}
-	if len(fake.calls(t)) != before+2 {
+	if len(fake.calls(t)) != before+1 {
 		t.Fatalf("reopen should only inspect; calls = %q", fake.calls(t)[before:])
 	}
 	if got := fake.state(t).Sessions[0].Windows; len(got) != 3 || got[2].Label != "manual" {
@@ -309,7 +336,7 @@ func TestOpenRexAddsMissingTabAndPersistsIDBeforeLayoutFailure(t *testing.T) {
 	if _, err := OpenRex("failure-a", t.TempDir(), "default"); err != nil {
 		t.Fatal(err)
 	}
-	if !containsRexCall(fake.calls(t), "window new -s session:test-failure-a logs") {
+	if !containsRexCall(fake.calls(t), `"label":"logs"`) {
 		t.Fatal("retry did not add missing tab")
 	}
 }

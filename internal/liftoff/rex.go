@@ -109,43 +109,6 @@ func rexArray(raw json.RawMessage) ([]byte, error) {
 	return raw, nil
 }
 
-const rexSnapshotLua = `local result = {sessions={}}
-local sessions, err = rex.call("session.list")
-if err then error(err, 0) end
-for _, s in ipairs(sessions.sessions or {}) do
-  local attached, attach_err = rex.session.attach{session_id=s.session_id}
-  if attach_err then error(attach_err, 0) end
-  local v, e = rex.session.view{session_id=s.session_id}; if e then error(e, 0) end
-  local b, be = rex.session.list_blocks{session_id=s.session_id}; if be then error(be, 0) end
-  local session = {session_id=s.session_id, label=s.label, windows={}, detached_blocks={}}
-  for _, block in ipairs(b.blocks or {}) do
-    if block.creator_name == "com.superlogical.terminal" then
-      block.program_status = rex.block.call(block.creator_name, "program_status", {session_id=s.session_id, block_id=block.block_id})
-    end
-    if not block.window_id then table.insert(session.detached_blocks, block) end
-  end
-  for _, w in ipairs(v.windows or {}) do
-    local window = {window_id=w.window_id, label=w.label, active=w.active, blocks={}}
-    for _, block in ipairs(b.blocks or {}) do
-      if block.window_id == w.window_id then
-        block.status = "unknown"
-        if block.creator_name and block.block_id then
-          local process = rex.block.call(block.creator_name, "process", {session_id=s.session_id, block_id=block.block_id})
-          if process then
-            if process.foreground then block.status = process.foreground.name
-            elseif process.child then block.status = process.child.name
-            elseif process.last_exit then block.status = "exited (" .. tostring(process.last_exit.exit_code) .. ")" end
-          end
-        end
-        table.insert(window.blocks, block)
-      end
-    end
-    table.insert(session.windows, window)
-  end
-  table.insert(result.sessions, session)
-end
-return result`
-
 func rexCLIPath() string {
 	if path, err := exec.LookPath("rex"); err == nil {
 		return path
@@ -211,13 +174,29 @@ func parseRexState(input string) (RexState, error) {
 	return state, nil
 }
 
-// ReadRexState reads one consistent-enough structural snapshot using one Lua
-// script and does not create, close, or focus sessions.
-func ReadRexState() (RexState, error) {
+// ReadRexState reads a structural snapshot of every session plus per-block
+// process and program-status records, using one Lua request. It does not
+// create, close, focus, or attach to sessions.
+func ReadRexState() (RexState, error) { return readRexState("", true) }
+
+// readRexStructure reads session, window, and block identity and labels only.
+// It skips the per-block process and program-status requests. A non-empty
+// sessionID limits the read to that session.
+func readRexStructure(sessionID string) (RexState, error) { return readRexState(sessionID, false) }
+
+func readRexState(sessionID string, status bool) (RexState, error) {
 	if !RexAvailable() {
 		return RexState{}, fmt.Errorf("Rex is unavailable: `rex` was not found on PATH and no supported Rex app bundle was found")
 	}
-	out, err := runRex("do", "-e", rexSnapshotLua)
+	args := map[string]any{"status": status}
+	if sessionID != "" {
+		args["session_id"] = sessionID
+	}
+	payload, err := json.Marshal(args)
+	if err != nil {
+		return RexState{}, err
+	}
+	out, err := runRex("do", "-e", rexSnapshotLua, "--args", string(payload))
 	if err != nil {
 		return RexState{}, err
 	}
@@ -258,11 +237,13 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 		savedID = cfg.Settings.RexMasterSession
 		shellWindow = cfg.Settings.RexMasterShellWindow
 	}
-	state, err := ReadRexState()
+	state, err := readRexStructure("")
 	if err != nil {
 		return RexSession{}, err
 	}
 	session := findRexSession(state, savedID, "")
+	changed := false
+	var windows []RexWindow
 	if session == nil {
 		if collision := findRexSession(state, "", name); collision != nil {
 			return RexSession{}, fmt.Errorf("Rex session label %q is already in use by unrelated session %s; rename that session or explicitly map its ID", name, collision.SessionID)
@@ -306,40 +287,52 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 				return RexSession{}, fmt.Errorf("save new Rex session mapping: %w", err)
 			}
 		}
-		state, err = ReadRexState()
+		session = &RexSession{SessionID: savedID, Label: name}
+		windows = []RexWindow{{Label: "shell"}}
+		changed = true
+	} else {
+		windows = session.Windows
+	}
+	seen := map[string]bool{}
+	for _, w := range windows {
+		seen[w.Label] = true
+		if shellWindow != "" && w.WindowID == shellWindow {
+			seen["shell"] = true
+		}
+	}
+	var missing []map[string]string
+	for _, tab := range uniqueStrings(layout.Tabs) {
+		if !seen[tab] {
+			missing = append(missing, map[string]string{"label": tab, "command": workspaceTabCommand(name, tab)})
+		}
+	}
+	if len(missing) > 0 {
+		payload, err := json.Marshal(map[string]any{"session_id": session.SessionID, "cwd": path, "tabs": missing})
 		if err != nil {
 			return RexSession{}, err
 		}
-		session = findRexSession(state, savedID, "")
+		changed = true
+		if _, err := runRex("do", "-e", rexEnsureTabsLua, "--args", string(payload)); err != nil {
+			return RexSession{}, err
+		}
+	}
+	if changed {
+		state, err = readRexStructure(session.SessionID)
+		if err != nil {
+			return RexSession{}, err
+		}
+		session = findRexSession(state, session.SessionID, "")
 		if session == nil {
 			return RexSession{}, fmt.Errorf("Rex created session %q but it was not present in the state snapshot", name)
 		}
 	}
-	seen := map[string]bool{}
-	for _, w := range session.Windows {
-		seen[w.Label] = true
-		if w.WindowID == shellWindow {
-			seen["shell"] = true
-		} else if shellWindow == "" && w.Label == "shell" {
-			shellWindow = w.WindowID
+	if shellWindow == "" {
+		for _, w := range session.Windows {
+			if w.Label == "shell" {
+				shellWindow = w.WindowID
+				break
+			}
 		}
-	}
-	for _, tab := range uniqueStrings(layout.Tabs) {
-		if seen[tab] {
-			continue
-		}
-		args := []string{"window", "new", "-s", session.SessionID, tab, "--cwd", path, "--focus=false"}
-		if command := workspaceTabCommand(name, tab); command != "" {
-			args = append(args, "--", "sh", "-lc", command)
-		}
-		if _, err := runRex(args...); err != nil {
-			return RexSession{}, fmt.Errorf("create Rex %s tab: %w", tab, err)
-		}
-		seen[tab] = true
-	}
-	state, err = ReadRexState()
-	if err != nil {
-		return RexSession{}, err
 	}
 	if name == "master" {
 		if err := WithConfigLock(func(c *Config) error {
@@ -362,11 +355,6 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 			return nil
 		}); err != nil {
 			return RexSession{}, fmt.Errorf("save Rex mapping: %w", err)
-		}
-	}
-	for i := range state.Sessions {
-		if state.Sessions[i].SessionID == session.SessionID {
-			return state.Sessions[i], nil
 		}
 	}
 	return *session, nil
@@ -409,7 +397,7 @@ func closeRex(name, path string) error {
 		if id == "" {
 			return nil
 		}
-		state, err := ReadRexState()
+		state, err := readRexStructure(id)
 		if err != nil {
 			return err
 		}
@@ -430,7 +418,7 @@ func closeRex(name, path string) error {
 		return nil
 	}
 	id := meta.RexID
-	state, err := ReadRexState()
+	state, err := readRexStructure(id)
 	if err != nil {
 		return err
 	}
@@ -456,7 +444,7 @@ func closeRex(name, path string) error {
 // FocusRexClient selects the active window of a session. Rex's server applies
 // this focus to attached clients; foregrounding the app itself is platform UI work.
 func FocusRexClient(sessionID string) error {
-	state, err := ReadRexState()
+	state, err := readRexStructure(sessionID)
 	if err != nil {
 		return err
 	}

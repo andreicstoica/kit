@@ -29,7 +29,7 @@ func closeImportedRexWorkspaces(path string) error {
 		if len(ids) == 0 {
 			return nil
 		}
-		state, err := ReadRexState()
+		state, err := readRexStructure("")
 		if err != nil {
 			return err
 		}
