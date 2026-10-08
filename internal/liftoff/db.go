@@ -71,6 +71,34 @@ func CloneDB(srcDB, dstDB string, onLine LineFn) error {
 	return nil
 }
 
+// cloneByTemplate lets design copy the database at file level when possible.
+// Tests turn it off to exercise the pg_dump path.
+var cloneByTemplate = true
+
+// CreateDBFromTemplate creates name as a file-level copy of src, which is far
+// faster than dump and restore for a multi-gigabyte database. Postgres refuses
+// the copy while anyone is connected to src. Any failure returns copied=false
+// with no error so the caller falls back to createdb plus CloneDB; createdb
+// leaves no database behind when it fails.
+func CreateDBFromTemplate(name, src string, onLine LineFn) (copied bool, err error) {
+	var last string
+	capture := func(line string) {
+		if strings.TrimSpace(line) != "" {
+			last = line
+		}
+	}
+	if err := RunStream("", "createdb", []string{name, "--template=" + src, "--strategy=file_copy"}, capture); err != nil {
+		if onLine != nil {
+			onLine("template copy unavailable, using pg_dump: " + strings.TrimSpace(last))
+		}
+		return false, nil
+	}
+	if onLine != nil {
+		onLine("copied " + src + " by template")
+	}
+	return true, nil
+}
+
 // CreateDB runs `createdb <name>`.
 func CreateDB(name string, onLine LineFn) error {
 	return RunStream("", "createdb", []string{name}, onLine)

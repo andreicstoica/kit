@@ -60,6 +60,8 @@ func runDressBlocking(l Layout, p DressPlan) error {
 // nil for a plain success; otherwise it is the script body.
 func stubDBBins(t *testing.T, dropdbBody, pgDumpBody string, createdCapture, dropCapture string) {
 	t.Helper()
+	cloneByTemplate = false // these tests exercise the dump path
+	t.Cleanup(func() { cloneByTemplate = true })
 	bin := t.TempDir()
 	if createdCapture != "" {
 		writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$CREATE_CAPTURE\"\n")

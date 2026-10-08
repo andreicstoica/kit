@@ -61,7 +61,7 @@ or claim a running process is necessarily working.
 
 ## Simple layout
 
-The `simple` Rex layout creates one shell tab with an empty interactive shell
+The `simple` Rex layout creates one tab named **AI Chat** with an empty interactive shell
 on the left (one-third width) and Claude Code on the right (two-thirds).
 No logs tab is created. If Claude Code is not installed, the right pane falls
 back to a shell with an explanation. Existing sessions are not rebuilt and
@@ -129,3 +129,11 @@ After Rex-backed design, Kit finishes any selected service-start flow and opens
 the new simple workspace with the Claude pane focused. Existing sessions are not
 rebuilt. Native app selection requires Remote Control in Rex Server settings;
 failure leaves the created workspace intact and reports how to select it.
+
+## Database copy
+
+`kit design` copies the local `liftoff` database with `createdb --template=liftoff
+--strategy=file_copy`, a file-level copy that skips SQL replay and index rebuilds.
+Postgres refuses it while anything is connected to `liftoff`. Kit then creates an
+empty database and falls back to `pg_dump | psql`. A failed template copy leaves
+no database behind.

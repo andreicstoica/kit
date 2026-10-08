@@ -75,6 +75,7 @@ type step struct {
 // PlanSteps returns the ordered step list, including skipped ones (for display).
 func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 	dbName := DBName(p.Name)
+	templated := false // set by the create step, read by the clone step that follows it
 	return []step{
 		{
 			title: "fetch origin/" + l.MainBranch,
@@ -96,9 +97,19 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			},
 		},
 		{
-			title: "create database " + dbName,
+			title: "create database " + dbName + " (template copy of liftoff when possible)",
 			skip:  !p.CloneDB,
 			run: func(emit func(string)) error {
+				if cloneByTemplate {
+					copied, err := CreateDBFromTemplate(dbName, "liftoff", emit)
+					if err != nil {
+						return err
+					}
+					if copied {
+						templated = true
+						return nil
+					}
+				}
 				return CreateDB(dbName, emit)
 			},
 		},
@@ -106,6 +117,10 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			title: "clone database liftoff -> " + dbName,
 			skip:  !p.CloneDB,
 			run: func(emit func(string)) error {
+				if templated {
+					emit("already copied by template")
+					return nil
+				}
 				return CloneDB("liftoff", dbName, emit)
 			},
 		},
