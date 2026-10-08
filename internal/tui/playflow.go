@@ -64,6 +64,11 @@ func (i playWtItem) FilterValue() string { return i.name }
 type playModel struct {
 	layout liftoff.Layout
 
+	// Liveness of the chosen workspace's services, read once per workspace
+	// instead of on every render.
+	runningFor string
+	running    map[liftoff.Service]bool
+
 	stage playStage
 
 	// Picker stage
@@ -670,6 +675,13 @@ func (m *playModel) viewToggle() string {
 	}
 	b.WriteString("\n")
 	ports := liftoff.PortsForSlot(m.chosen.slot)
+	if m.runningFor != m.chosen.name || m.running == nil {
+		m.running = make(map[liftoff.Service]bool, len(m.toggleSvcs))
+		for _, svc := range m.toggleSvcs {
+			m.running[svc] = liftoff.IsServiceAlive(m.chosen.name, svc, ports)
+		}
+		m.runningFor = m.chosen.name
+	}
 	for i, svc := range m.toggleSvcs {
 		cursor := "  "
 		if i == m.toggleCursor {
@@ -686,7 +698,7 @@ func (m *playModel) viewToggle() string {
 		// Show whether the service is currently running so the user can tell
 		// "kit will (re)start these" apart from "these are already alive".
 		state := StyleDim.Render("○ stopped")
-		if liftoff.IsServiceAlive(m.chosen.name, svc, ports) {
+		if m.running[svc] {
 			state = StyleOK.Render("● running")
 		}
 		b.WriteString(cursor + box + " " + padRight(label, 12) + "  " + state + "\n")

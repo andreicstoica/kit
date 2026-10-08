@@ -10,6 +10,8 @@ var (
 	rexSimpleSessionLua string
 	//go:embed lua/snapshot.lua
 	rexSnapshotLua string
+	//go:embed lua/create_session.lua
+	rexCreateSessionLua string
 	//go:embed lua/ensure_tabs.lua
 	rexEnsureTabsLua string
 )

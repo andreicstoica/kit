@@ -104,6 +104,20 @@ func (s Service) IsBackend() bool {
 // isolates it, makes sure the vhost exists. note is a one-line summary for
 // the user; warn is true when kit could not isolate the worktree.
 func PrepareCeleryBroker(worktree, worktreePath string) (b CeleryBroker, note string, warn bool) {
+	b, note, managed := PlanCeleryBroker(worktree, worktreePath)
+	if !managed {
+		return b, note, false
+	}
+	if err := ensureVHost(b.VHost); err != nil {
+		return CeleryBroker{}, "celery broker: not isolated by kit, tasks may leak across worktrees (" + err.Error() + ")", true
+	}
+	return b, note, false
+}
+
+// PlanCeleryBroker is PrepareCeleryBroker without side effects. managed is
+// true when kit would run the worktree on its own vhost, which still has to be
+// created with ensureVHost. A user-set broker returns the zero CeleryBroker.
+func PlanCeleryBroker(worktree, worktreePath string) (b CeleryBroker, note string, managed bool) {
 	if raw, ok := os.LookupEnv("CELERY_BROKER_URL"); ok && !kitMayReplaceBroker(raw) {
 		return CeleryBroker{}, "celery broker: CELERY_BROKER_URL from your shell (not isolated by kit)", false
 	}
@@ -111,10 +125,7 @@ func PrepareCeleryBroker(worktree, worktreePath string) (b CeleryBroker, note st
 		return CeleryBroker{}, "celery broker: CELERY_BROKER_URL from backend/.env (not isolated by kit)", false
 	}
 	vhost := BrokerVHost(worktree)
-	if err := ensureVHost(vhost); err != nil {
-		return CeleryBroker{}, "celery broker: not isolated by kit, tasks may leak across worktrees (" + err.Error() + ")", true
-	}
-	return CeleryBroker{VHost: vhost}, "celery broker: vhost " + vhost, false
+	return CeleryBroker{VHost: vhost}, "celery broker: vhost " + vhost, true
 }
 
 // WorkerSharesBroker reports whether a worker started for this worktree would

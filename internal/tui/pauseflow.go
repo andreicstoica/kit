@@ -364,8 +364,9 @@ func PauseAll(layout liftoff.Layout) error {
 	owner, pid := liftoff.FindCeleryOwner()
 	if owner != "" {
 		fmt.Printf("  stopping orphan celery for %s (pid %d)\n", owner, pid)
-		_ = liftoff.StopService(owner, liftoff.SvcCelery)
-		_ = liftoff.StopService(owner, liftoff.SvcBeat)
+		snap := liftoff.SnapshotProcs(owner, []liftoff.Service{liftoff.SvcCelery, liftoff.SvcBeat})
+		_ = snap.Stop(owner, liftoff.SvcCelery)
+		_ = snap.Stop(owner, liftoff.SvcBeat)
 	}
 	if count == 0 {
 		fmt.Println("nothing to stop")

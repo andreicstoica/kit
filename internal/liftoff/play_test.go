@@ -24,7 +24,14 @@ func TestRunPlayFrontendsDoNotWaitForBroker(t *testing.T) {
 	rabbitmqctl = func(args ...string) ([]byte, error) { <-release; return nil, nil }
 	t.Cleanup(func() { rabbitmqctl = old })
 	port := listener.Addr().(*net.TCPAddr).Port
-	updates := (Layout{}).RunPlay(PlayPlan{Worktree: "frontend-broker-test", WorktreePath: t.TempDir(), Ports: Ports{App: port, API: port}, Services: []Service{SvcApp, SvcAPI}})
+	// The API must be down, or no backend needs the broker and kit skips it.
+	idle, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiPort := idle.Addr().(*net.TCPAddr).Port
+	idle.Close()
+	updates := (Layout{}).RunPlay(PlayPlan{Worktree: "frontend-broker-test", WorktreePath: t.TempDir(), Ports: Ports{App: port, API: apiPort}, Services: []Service{SvcApp, SvcAPI}})
 	defer func() {
 		unblock()
 		for range updates {

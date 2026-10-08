@@ -65,6 +65,7 @@ func TestFakeRexCLI(t *testing.T) {
 		_, _ = os.Stdout.WriteString(`{"clients":[{"client_id":"client:test-app","info":{"kind":"app"}}]}`)
 	case "do":
 		var tabs struct {
+			Name      string `json:"name"`
 			SessionID string `json:"session_id"`
 			Tabs      []struct {
 				Label string `json:"label"`
@@ -74,6 +75,24 @@ func TestFakeRexCLI(t *testing.T) {
 			if args[i] == "--args" && i+1 < len(args) {
 				_ = json.Unmarshal([]byte(args[i+1]), &tabs)
 			}
+		}
+		if tabs.Name != "" && len(tabs.Tabs) > 0 {
+			if os.Getenv("KIT_REX_DELAY_CREATE") == "1" {
+				time.Sleep(100 * time.Millisecond)
+			}
+			id := "session:test-" + strings.ReplaceAll(tabs.Name, "/", "-")
+			session := RexSession{SessionID: id, Label: tabs.Name}
+			for i, tab := range tabs.Tabs {
+				if os.Getenv("KIT_REX_FAIL_TAB") == tab.Label {
+					_, _ = os.Stderr.WriteString("injected window failure")
+					os.Exit(1)
+				}
+				session.Windows = append(session.Windows, RexWindow{WindowID: "window:" + id + ":" + tab.Label, Label: tab.Label, Active: i == 0})
+			}
+			state.Sessions = append(state.Sessions, session)
+			save()
+			_, _ = os.Stdout.WriteString(`{"session_id":"` + id + `"}`)
+			os.Exit(0)
 		}
 		if len(tabs.Tabs) > 0 {
 			for _, tab := range tabs.Tabs {
@@ -302,7 +321,7 @@ func TestConcurrentRexOpensCreateOneOwnedSession(t *testing.T) {
 	}
 	creates := 0
 	for _, call := range fake.calls(t) {
-		if strings.HasPrefix(call, "new concurrent ") {
+		if strings.HasPrefix(call, "do ") && strings.Contains(call, `"name":"concurrent"`) {
 			creates++
 		}
 	}
@@ -311,7 +330,7 @@ func TestConcurrentRexOpensCreateOneOwnedSession(t *testing.T) {
 	}
 }
 
-func TestOpenRexAddsMissingTabAndPersistsIDBeforeLayoutFailure(t *testing.T) {
+func TestOpenRexCreationIsAtomicAndRetryable(t *testing.T) {
 	setStateDir(t)
 	fake := installFakeRex(t, RexState{})
 	addRexWorktree(t, "failure-a", t.TempDir())
@@ -323,21 +342,33 @@ func TestOpenRexAddsMissingTabAndPersistsIDBeforeLayoutFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Worktrees["failure-a"].RexID != "session:test-failure-a" {
-		t.Fatalf("failed setup lost session mapping: %+v", cfg.Worktrees["failure-a"])
-	}
-	if len(fake.state(t).Sessions) != 1 {
-		t.Fatal("session should remain available for retry/cleanup")
+	if cfg.Worktrees["failure-a"].RexID != "" || len(fake.state(t).Sessions) != 0 {
+		t.Fatalf("failed creation left a half-built session: mapping=%+v sessions=%+v", cfg.Worktrees["failure-a"], fake.state(t).Sessions)
 	}
 	t.Setenv("KIT_REX_FAIL_TAB", "")
-	state := fake.state(t)
-	state.Sessions[0].Windows = nil
-	writeFakeState(t, fake, state)
 	if _, err := OpenRex("failure-a", t.TempDir(), "default"); err != nil {
 		t.Fatal(err)
 	}
-	if !containsRexCall(fake.calls(t), `"label":"logs"`) {
-		t.Fatal("retry did not add missing tab")
+	if got := fake.state(t).Sessions; len(got) != 1 || len(got[0].Windows) < 2 {
+		t.Fatalf("retry did not create the full layout: %+v", got)
+	}
+}
+
+func TestOpenRexAddsMissingTabToExistingSession(t *testing.T) {
+	setStateDir(t)
+	fake := installFakeRex(t, RexState{})
+	addRexWorktree(t, "missing-a", t.TempDir())
+	if _, err := OpenRex("missing-a", t.TempDir(), "default"); err != nil {
+		t.Fatal(err)
+	}
+	state := fake.state(t)
+	state.Sessions[0].Windows = state.Sessions[0].Windows[:1]
+	writeFakeState(t, fake, state)
+	if _, err := OpenRex("missing-a", t.TempDir(), "default"); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.state(t).Sessions[0].Windows; len(got) < 2 {
+		t.Fatalf("missing tab not added: %+v", got)
 	}
 }
 

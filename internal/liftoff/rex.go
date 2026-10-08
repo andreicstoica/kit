@@ -251,13 +251,26 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 		if name != "master" && !exists {
 			return RexSession{}, fmt.Errorf("cannot create Rex session for %q: no Kit worktree mapping exists", name)
 		}
-		args := []string{"new", name, "--cwd", path, "--window", "shell", "--json"}
+		var createdTabs []string
+		var args []string
 		if layoutName == "simple" {
 			payload, err := json.Marshal(map[string]string{"name": name, "cwd": path, "command": workspaceTabCommand(name, "claude")})
 			if err != nil {
 				return RexSession{}, err
 			}
 			args = []string{"do", "-e", rexSimpleSessionLua, "--args", string(payload)}
+			createdTabs = []string{"shell"}
+		} else {
+			var tabs []map[string]string
+			for _, tab := range uniqueStrings(layout.Tabs) {
+				tabs = append(tabs, map[string]string{"label": tab, "command": workspaceTabCommand(name, tab)})
+				createdTabs = append(createdTabs, tab)
+			}
+			payload, err := json.Marshal(map[string]any{"name": name, "cwd": path, "tabs": tabs})
+			if err != nil {
+				return RexSession{}, err
+			}
+			args = []string{"do", "-e", rexCreateSessionLua, "--args", string(payload)}
 		}
 		out, e := runRex(args...)
 		if e != nil {
@@ -288,7 +301,9 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 			}
 		}
 		session = &RexSession{SessionID: savedID, Label: name}
-		windows = []RexWindow{{Label: "shell"}}
+		for _, tab := range createdTabs {
+			windows = append(windows, RexWindow{Label: tab})
+		}
 		changed = true
 	} else {
 		windows = session.Windows

@@ -11,7 +11,7 @@ import (
 func WaitForPort(port int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	tick := time.NewTicker(200 * time.Millisecond)
+	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	for {
 		if PortListening(port) {

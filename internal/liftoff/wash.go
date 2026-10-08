@@ -36,12 +36,14 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 	go func() {
 		defer close(ch)
 		dbName := DBName(p.Name)
-		hadError := false
 		// washDB/skipDB are resolved before any destructive step runs (see
 		// the first step): a disputed database must block the worktree
 		// removal, not surface after it. The env proof is read while the
 		// checkout still exists.
 		var washDB string
+		var errMu sync.Mutex
+		failed := false
+		markFailed := func() { errMu.Lock(); failed = true; errMu.Unlock() }
 		var skipDB bool
 		steps := []step{
 			{
@@ -96,12 +98,13 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 					var mu sync.Mutex
 					var firstErr error
 					var wg sync.WaitGroup
+					snap := SnapshotProcs(p.Name, alive)
 					for _, svc := range alive {
 						svc := svc
 						wg.Add(1)
 						go func() {
 							defer wg.Done()
-							err := StopService(p.Name, svc)
+							err := snap.Stop(p.Name, svc)
 							mu.Lock()
 							defer mu.Unlock()
 							if err != nil && firstErr == nil {
@@ -170,7 +173,10 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 			{
 				title: "free port slot",
 				run: func(emit func(string)) error {
-					if hadError {
+					errMu.Lock()
+					incomplete := failed
+					errMu.Unlock()
+					if incomplete {
 						return errors.New("cleanup incomplete; keeping config for retry")
 					}
 					return WithConfigLock(func(c *Config) error {
@@ -180,29 +186,47 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 				},
 			},
 		}
-		for i, s := range steps {
+		// runStep reports false when the step failed.
+		runStep := func(i int) bool {
+			s := steps[i]
 			if s.skip {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
-				continue
+				return true
 			}
 			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
 			start := time.Now()
-			emit := func(line string) {
+			err := s.run(func(line string) {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
-			}
-			err := s.run(emit)
+			})
 			if err != nil {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: fmt.Errorf("%w", err), Elapsed: time.Since(start)}
-				hadError = true
-				// Service and run-state failures are safety stops. The worktree
-				// cannot be removed safely while a service may still be alive.
-				if i == 0 || i == 1 || i == 3 {
-					return
-				}
-				continue
+				markFailed()
+				return false
 			}
 			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: time.Since(start)}
+			return true
 		}
+		// Services, run state and worktree removal are safety stops: a failure
+		// there ends the run before any later cleanup, so a worktree that could
+		// not be removed keeps its database. Workspace close failing is not a stop.
+		for _, i := range []int{0, 1} {
+			if !runStep(i) {
+				return
+			}
+		}
+		runStep(2)
+		if !runStep(3) {
+			return
+		}
+		// Branch, database and gtab cleanups are independent once the
+		// worktree is gone.
+		var wg sync.WaitGroup
+		for _, i := range []int{4, 5, 6} {
+			wg.Add(1)
+			go func() { defer wg.Done(); runStep(i) }()
+		}
+		wg.Wait()
+		runStep(7)
 	}()
 	return ch
 }

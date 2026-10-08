@@ -46,10 +46,42 @@ type procInfo struct {
 // before kit's recorded launch. Otherwise kit skips it: killing its group
 // could hit unrelated processes.
 func StopService(worktree string, svc Service) error {
+	return SnapshotProcs(worktree, []Service{svc}).Stop(worktree, svc)
+}
+
+// ProcSnapshot is one process-table read shared by several stops. Taking it
+// once per command avoids one `ps -E` environment dump per service, the
+// costly call on macOS. A snapshot is only valid for the services it was
+// taken for, and only until kit starts new processes.
+type ProcSnapshot struct {
+	procs  map[int]procInfo
+	tagged map[string]map[int]bool
+	err    error
+}
+
+// SnapshotProcs reads the process table once and marks the processes tagged
+// for each of svcs in worktree.
+func SnapshotProcs(worktree string, svcs []Service) *ProcSnapshot {
+	tags := make([]string, len(svcs))
+	for i, svc := range svcs {
+		tags[i] = serviceTag(worktree, svc)
+	}
+	procs, tagged, err := snapshotProcs(tags...)
+	return &ProcSnapshot{procs: procs, tagged: tagged, err: err}
+}
+
+// Stop stops one service using the snapshot. It is safe to call concurrently
+// for different services.
+func (s *ProcSnapshot) Stop(worktree string, svc Service) error {
 	pid := ReadPID(worktree, string(svc))
-	procs, err := snapshotProcs(serviceTag(worktree, svc))
-	if err != nil {
+	if s.err != nil {
 		return stopRecordedGroup(worktree, svc, pid)
+	}
+	tag := serviceTag(worktree, svc)
+	procs := make(map[int]procInfo, len(s.procs))
+	for id, p := range s.procs {
+		p.Tagged = s.tagged[tag][id]
+		procs[id] = p
 	}
 	root := 0
 	if p, ok := procs[pid]; ok && pid > 0 && !p.Zombie {
@@ -96,26 +128,28 @@ func stopRecordedGroup(worktree string, svc Service, pid int) error {
 }
 
 // snapshotProcs lists every process with its parent, group and state, and
-// marks the ones whose environment contains tag.
-func snapshotProcs(tag string) (map[int]procInfo, error) {
+// returns, per tag, the pids whose environment contains it.
+func snapshotProcs(tags ...string) (map[int]procInfo, map[string]map[int]bool, error) {
 	out, err := exec.Command("ps", "-axo", "pid=,ppid=,pgid=,stat=").Output()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	procs := parsePS(string(out))
-	if tag != "" {
+	tagged := map[string]map[int]bool{}
+	if len(tags) > 0 {
 		// macOS ps -E appends each process's environment to its command line.
 		// If it fails, kit still stops the recorded tree.
 		if envOut, err := exec.Command("ps", "-E", "-ww", "-axo", "pid=,command=").Output(); err == nil {
-			for _, pid := range parseTagged(string(envOut), tag) {
-				if p, ok := procs[pid]; ok {
-					p.Tagged = true
-					procs[pid] = p
+			for _, tag := range tags {
+				ids := map[int]bool{}
+				for _, pid := range parseTagged(string(envOut), tag) {
+					ids[pid] = true
 				}
+				tagged[tag] = ids
 			}
 		}
 	}
-	return procs, nil
+	return procs, tagged, nil
 }
 
 // parsePS parses `ps -axo pid=,ppid=,pgid=,stat=` output.

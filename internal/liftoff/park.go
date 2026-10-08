@@ -15,8 +15,9 @@ func (l Layout) Park(name string) error {
 			return err
 		}
 		var failures []error
+		snap := SnapshotProcs(name, AllServices)
 		for _, svc := range AllServices {
-			if err := StopService(name, svc); err != nil {
+			if err := snap.Stop(name, svc); err != nil {
 				failures = append(failures, err)
 			}
 		}

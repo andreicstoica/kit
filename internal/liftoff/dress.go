@@ -250,51 +250,6 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		}
 		steps := l.planSteps(p, &slot)
 
-		// Fetch, create the checkout, and copy env files before any parallel work.
-		for i := 0; i <= 2 && i < len(steps); i++ {
-			s := steps[i]
-			if s.skip {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
-				continue
-			}
-			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
-			start := time.Now()
-			emit := func(line string) {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
-			}
-			err := s.run(emit)
-			elapsed := time.Since(start)
-			if err != nil {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
-				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
-					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
-				})
-				return
-			}
-			switch i {
-			case 1:
-				worktreeAdded = true
-				err = persistDressCheckout(p)
-			}
-			if err != nil {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
-				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
-					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
-				})
-				return
-			}
-			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed, AllocatedSlot: slot}
-		}
-
-		// Database creation/copy/env update must stay ordered, but dependency
-		// installation, frontend links, Graphite and gtab need only the checkout.
-		// Run them alongside the DB chain, then join every branch before rollback
-		// or slot allocation. No rollback may delete files a sibling is still using.
-		parallelStart := 6
-		parallelEnd := 9
-		if parallelEnd >= len(steps) {
-			parallelEnd = len(steps) - 1
-		}
 		type pResult struct {
 			index   int
 			err     error
@@ -302,6 +257,13 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		}
 		var wg sync.WaitGroup
 		var dbResult pResult
+
+		// The database chain (create, clone) needs neither the fetch nor the
+		// checkout, so it starts now. Only the backend DB-name update edits
+		// files in the checkout and waits for steps 0-2. Every failure path
+		// joins this goroutine before rollback so dbCreated is settled.
+		prefixDone := make(chan struct{})
+		prefixOK := false
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -310,6 +272,12 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				if s.skip {
 					ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 					continue
+				}
+				if i == 5 {
+					<-prefixDone
+					if !prefixOK {
+						return
+					}
 				}
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
 				start := time.Now()
@@ -327,6 +295,48 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed}
 			}
 		}()
+
+		// Fetch, create the checkout, and copy env files before the checkout-only work.
+		for i := 0; i <= 2 && i < len(steps); i++ {
+			s := steps[i]
+			if s.skip {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
+				continue
+			}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
+			start := time.Now()
+			emit := func(line string) {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+			}
+			err := s.run(emit)
+			elapsed := time.Since(start)
+			if err == nil && i == 1 {
+				worktreeAdded = true
+				err = persistDressCheckout(p)
+			}
+			if err != nil {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
+				close(prefixDone)
+				wg.Wait()
+				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
+					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+				})
+				return
+			}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed, AllocatedSlot: slot}
+		}
+		prefixOK = true
+		close(prefixDone)
+
+		// Dependency installation, frontend links, Graphite and gtab need only
+		// the checkout. Run them alongside the rest of the DB chain, then join
+		// every branch before rollback or slot allocation. No rollback may
+		// delete files a sibling is still using.
+		parallelStart := 6
+		parallelEnd := 9
+		if parallelEnd >= len(steps) {
+			parallelEnd = len(steps) - 1
+		}
 		results := make([]pResult, parallelEnd-parallelStart+1)
 		for i := parallelStart; i <= parallelEnd; i++ {
 			s := steps[i]
