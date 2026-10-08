@@ -263,7 +263,8 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 			createdTabs = []string{"shell"}
 		} else {
 			var tabs []map[string]string
-			for _, tab := range uniqueStrings(layout.Tabs) {
+			// Every Kit session has a shell tab, even when a custom layout omits it.
+			for _, tab := range uniqueStrings(append([]string{"shell"}, layout.Tabs...)) {
 				tabs = append(tabs, map[string]string{"label": tab, "command": workspaceTabCommand(name, tab)})
 				createdTabs = append(createdTabs, tab)
 			}

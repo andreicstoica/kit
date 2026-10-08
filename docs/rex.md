@@ -80,8 +80,8 @@ dofile(os.getenv("HOME") .. "/code/kit/dev/rex-actions.lua")
 Run `rex config check` and `rex config reload`. In Rex's command palette, search
 for **Kit:** actions: new and delete workspace, start, stop and restart services,
 sync, lineup, agent status, parked, park, resume, and operation log. Wizards
-(new, delete, start, stop) run the real terminal UI in a temporary tab and close it
-when they exit successfully. Read-only views and restart wait for Enter. Park and
+run the real terminal UI in a temporary tab. New and delete close the tab when they
+exit successfully. Start, stop, restart, sync and the read-only views wait for Enter. Park and
 resume act on the selected session without a tab. Rex's sidebar and Cmd+K handle navigation.
 Restart uses the existing CLI behavior: resolve the workspace from the focused
 directory or offer a workspace picker, and restart the currently running services.
