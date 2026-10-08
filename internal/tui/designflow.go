@@ -157,6 +157,7 @@ type designModel struct {
 	stepStatuses  []liftoff.StepStatus
 	stepElapsed   []time.Duration
 	currentLines  map[int][]string
+	stepNotes     map[int]string // how a finished step went, shown beside it
 	failed        bool
 	failedAt      int
 	failureErr    error
@@ -196,6 +197,7 @@ func (m *designModel) Init() tea.Cmd {
 	m.stepStatuses = make([]liftoff.StepStatus, len(titles))
 	m.stepElapsed = make([]time.Duration, len(titles))
 	m.currentLines = map[int][]string{}
+	m.stepNotes = map[int]string{}
 	m.updates = m.layout.RunDress(m.plan())
 	return tea.Batch(
 		m.spinner.Tick,
@@ -251,6 +253,9 @@ func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if u.AllocatedSlot > 0 {
 				m.allocatedSlot = u.AllocatedSlot
+			}
+			if note := designStepNote(u.Line); note != "" {
+				m.stepNotes[u.Index] = note
 			}
 			if u.Line != "" {
 				lines := m.currentLines[u.Index]
@@ -321,6 +326,9 @@ func (m *designModel) View() tea.View {
 		if m.stepElapsed[i] > 0 && m.stepStatuses[i] == liftoff.StepDone {
 			line += StyleDim.Render(fmt.Sprintf("  (%s)", m.stepElapsed[i].Round(10*time.Millisecond)))
 		}
+		if note := m.stepNotes[i]; note != "" && m.stepStatuses[i] == liftoff.StepDone {
+			line += StyleDim.Render("  · " + note)
+		}
 		left.WriteString(line + "\n")
 		if m.stepStatuses[i] == liftoff.StepRunning {
 			for _, ln := range m.currentLines[i] {
@@ -386,6 +394,20 @@ func truncate(s string, w int) string {
 		return s[:w]
 	}
 	return s[:w-1] + "…"
+}
+
+// designStepNote turns a step's progress line into a short note for how the
+// step finished, or "" when the line is ordinary output.
+func designStepNote(line string) string {
+	switch {
+	case strings.HasPrefix(line, "copied ") && strings.HasSuffix(line, " by template"):
+		return "fast copy"
+	case strings.HasPrefix(line, "template copy unavailable"):
+		return "full copy, source database in use"
+	case line == "already copied by template":
+		return "copied in the previous step"
+	}
+	return ""
 }
 
 func friendlyDesignStepTitle(title string) string {

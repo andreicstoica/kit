@@ -83,6 +83,11 @@ type playModel struct {
 	celeryVictim string
 	celeryPID    int
 	celeryAccept bool // true if user said yes (default Y)
+	// afterRun marks a prompt raised once the run finished: a shared-broker
+	// worker blocked celery and beat, and "yes" runs them again with a replace.
+	afterRun    bool
+	sharedOwner string
+	sharedPID   int
 
 	// Adopt prompt stage — fires when m.chosen has no slot yet.
 	adoptBranch string
@@ -583,11 +588,30 @@ func (m *playModel) updateCelery(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.celeryAccept = true
 			m.plan.ReplaceCelery = true
 			m.plan.ReplaceVictim = m.celeryVictim
+			if m.afterRun {
+				// Only the blocked workers run again; the rest already started,
+				// and stay listed in the run view.
+				m.runOrder = m.plan.Services
+				var workers []liftoff.Service
+				for _, s := range m.plan.Services {
+					if s == liftoff.SvcCelery || s == liftoff.SvcBeat {
+						workers = append(workers, s)
+					}
+				}
+				m.plan.Services = workers
+				m.afterRun = false
+			} else {
+				m.runOrder = m.plan.Services
+			}
 			m.stage = playStageRun
-			m.runOrder = m.plan.Services
 			m.runUpdates = m.layout.RunPlay(m.plan)
 			return m, tea.Batch(m.spinner.Tick, playNext(m.runUpdates))
 		case isConfirmNo(k):
+			if m.afterRun {
+				m.afterRun = false
+				m.stage = playStageDone
+				return m, nil
+			}
 			// Drop celery + beat from the plan, then proceed.
 			filtered := make([]liftoff.Service, 0, len(m.plan.Services))
 			for _, s := range m.plan.Services {
@@ -616,10 +640,21 @@ func (m *playModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case playUpdMsg:
 		if !msg.ok {
+			if m.sharedOwner != "" {
+				m.celeryVictim, m.celeryPID = m.sharedOwner, m.sharedPID
+				m.sharedOwner = ""
+				m.afterRun = true
+				m.celeryAccept = true
+				m.stage = playStageCeleryPrompt
+				return m, nil
+			}
 			m.stage = playStageDone
 			return m, nil
 		}
 		u := msg.upd
+		if u.SharedOwner != "" {
+			m.sharedOwner, m.sharedPID = u.SharedOwner, u.SharedPID
+		}
 		if u.Service == "" {
 			m.runNotes = append(m.runNotes, u)
 			return m, playNext(m.runUpdates)
@@ -728,7 +763,11 @@ func (m *playModel) viewCelery() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit play — background worker already running") + "\n\n")
 	b.WriteString(fmt.Sprintf("Background jobs are already running for %s (pid %d).\n", StyleHi.Render(m.celeryVictim), m.celeryPID))
-	b.WriteString("Starting them here will stop the old ones and move background jobs to " + StyleHi.Render(m.chosen.name) + ".\n\n")
+	b.WriteString("Starting them here will stop the old ones and move background jobs to " + StyleHi.Render(m.chosen.name) + ".\n")
+	if m.afterRun {
+		b.WriteString(StyleDim.Render("Your other services already started; only the workers were held back.") + "\n")
+	}
+	b.WriteString("\n")
 	b.WriteString(confirmHelp("Move workers here", "Skip workers this time"))
 	return b.String()
 }

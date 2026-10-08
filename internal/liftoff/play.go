@@ -24,11 +24,15 @@ type PlayUpdate struct {
 	Status  StepStatus
 	Title   string
 	Message string
-	PID     int
-	Port    int
-	URL     string
-	Err     error
-	Elapsed time.Duration
+	// SharedOwner and SharedPID name the worktree whose live worker kept this
+	// run from starting celery and beat on a shared broker.
+	SharedOwner string
+	SharedPID   int
+	PID         int
+	Port        int
+	URL         string
+	Err         error
+	Elapsed     time.Duration
 }
 
 // RunPlay starts the selected services in parallel, emitting PlayUpdate
@@ -113,7 +117,7 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 			if !broker.Isolated() && (hasService(p.Services, SvcCelery) || hasService(p.Services, SvcBeat)) {
 				if owner, pid := FindSharedCeleryOwner(p.Worktree); owner != "" {
 					skipCelery = true
-					ch <- PlayUpdate{Status: StepSkipped, Title: fmt.Sprintf(
+					ch <- PlayUpdate{Status: StepSkipped, SharedOwner: owner, SharedPID: pid, Title: fmt.Sprintf(
 						"celery skipped: %s runs the worker (pid %d) on a shared broker; run `kit pause %s --only celery` first",
 						owner, pid, owner)}
 				}

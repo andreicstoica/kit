@@ -27,6 +27,7 @@ type washItem struct {
 	publicationKnown bool
 	hasDB            bool
 	hasGtab          bool
+	rexOpen          bool // a Rex session for it is open, and wash will close it
 	isLegacy         bool
 	displayIdx       int // 1-based for numeric quick-pick
 }
@@ -58,6 +59,9 @@ func (w washItem) Description() string {
 	}
 	if w.hasGtab {
 		tags = append(tags, "gtab")
+	}
+	if w.rexOpen {
+		tags = append(tags, "rex session open")
 	}
 	if len(tags) > 0 {
 		bits = append(bits, "["+strings.Join(tags, " ")+"]")
@@ -145,6 +149,10 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 			}
 		}
 	}
+	var rexOpen map[string]bool
+	if backend, err := liftoff.WorkspaceBackend(); err == nil && backend == liftoff.BackendRex {
+		rexOpen, _ = liftoff.RexOpenWorkspaces() // a failed read only hides the tag
+	}
 	scanned := make([]washItem, len(candidates))
 	sem := make(chan struct{}, washScanWorkers)
 	var scan sync.WaitGroup
@@ -169,6 +177,7 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 				publicationKnown: remoteErr == nil && countErr == nil,
 				hasDB:            hasDB[name],
 				hasGtab:          layout.HasGtab(name),
+				rexOpen:          rexOpen[name],
 				isLegacy:         wt.HasLegacyPrefix(),
 				displayIdx:       i + 1,
 			}

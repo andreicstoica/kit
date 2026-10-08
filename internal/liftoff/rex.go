@@ -537,3 +537,27 @@ func CloseOwnRexTab() {
 	}
 	_, _ = runRex("do", "-s", sessionID, "-e", rexCloseOwnTabLua, "--args", string(payload))
 }
+
+// RexOpenWorkspaces reports, per Kit worktree name, whether its mapped Rex
+// session is currently open. It uses one scoped read and never mutates Rex.
+func RexOpenWorkspaces() (map[string]bool, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	state, err := readRexStructure("")
+	if err != nil {
+		return nil, err
+	}
+	live := make(map[string]bool, len(state.Sessions))
+	for _, s := range state.Sessions {
+		live[s.SessionID] = true
+	}
+	open := map[string]bool{}
+	for name, meta := range cfg.Worktrees {
+		if meta.RexID != "" && live[meta.RexID] {
+			open[name] = true
+		}
+	}
+	return open, nil
+}

@@ -666,3 +666,23 @@ func TestCloseOwnRexTabNeedsRexTerminalEnv(t *testing.T) {
 		t.Fatalf("close request = %q", calls)
 	}
 }
+
+func TestRexOpenWorkspacesMatchesSavedSessionIDs(t *testing.T) {
+	setStateDir(t)
+	installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:live", Label: "a"}}})
+	if err := WithConfigLock(func(c *Config) error {
+		c.Worktrees["open-wt"] = WorktreeMeta{RexID: "session:live"}
+		c.Worktrees["stale-wt"] = WorktreeMeta{RexID: "session:gone"}
+		c.Worktrees["none-wt"] = WorktreeMeta{}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	open, err := RexOpenWorkspaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !open["open-wt"] || open["stale-wt"] || open["none-wt"] {
+		t.Fatalf("open = %v", open)
+	}
+}
