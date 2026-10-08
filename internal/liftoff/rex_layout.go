@@ -12,6 +12,8 @@ var (
 	rexSnapshotLua string
 	//go:embed lua/create_session.lua
 	rexCreateSessionLua string
+	//go:embed lua/close_own_tab.lua
+	rexCloseOwnTabLua string
 	//go:embed lua/ensure_tabs.lua
 	rexEnsureTabsLua string
 )

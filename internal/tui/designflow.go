@@ -519,7 +519,11 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	if backend == liftoff.BackendRex {
 		// Open the new session with Claude focused and leave starting services
 		// to `kit play` in its shell, so this wizard can close right away.
-		return OpenRexWorktree(name, layout.WorktreePath(name), "simple", true)
+		if err := OpenRexWorktree(name, layout.WorktreePath(name), "simple", true); err != nil {
+			return err
+		}
+		liftoff.CloseOwnRexTab()
+		return nil
 	}
 
 	// Legacy backends keep the start prompt. Ask before opening the workspace:

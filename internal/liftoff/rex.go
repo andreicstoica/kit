@@ -521,3 +521,19 @@ func selectRexAppSession(sessionID, windowID string) error {
 	}
 	return nil
 }
+
+// CloseOwnRexTab closes the Rex tab this process runs in, once the caller is
+// done, when that tab holds only this terminal and is not its session's last
+// tab. Outside Rex, or for any other layout, it does nothing. It ends this
+// process when it succeeds, so call it last.
+func CloseOwnRexTab() {
+	sessionID, blockID := os.Getenv("REX_SESSION"), os.Getenv("REX_BLOCK")
+	if sessionID == "" || blockID == "" || !RexAvailable() {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"session_id": sessionID, "block_id": blockID})
+	if err != nil {
+		return
+	}
+	_, _ = runRex("do", "-s", sessionID, "-e", rexCloseOwnTabLua, "--args", string(payload))
+}

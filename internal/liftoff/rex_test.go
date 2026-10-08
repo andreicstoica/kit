@@ -649,3 +649,20 @@ func containsRexCall(calls []string, fragment string) bool {
 	}
 	return false
 }
+
+func TestCloseOwnRexTabNeedsRexTerminalEnv(t *testing.T) {
+	fake := installFakeRex(t, RexState{})
+	t.Setenv("REX_SESSION", "")
+	t.Setenv("REX_BLOCK", "")
+	CloseOwnRexTab()
+	if len(fake.calls(t)) != 0 {
+		t.Fatalf("outside Rex must not call the CLI: %q", fake.calls(t))
+	}
+	t.Setenv("REX_SESSION", "session:wizard")
+	t.Setenv("REX_BLOCK", "block:wizard")
+	CloseOwnRexTab()
+	calls := strings.Join(fake.calls(t), "\n")
+	if !strings.Contains(calls, "do -s session:wizard") || !strings.Contains(calls, `"block_id":"block:wizard"`) {
+		t.Fatalf("close request = %q", calls)
+	}
+}
