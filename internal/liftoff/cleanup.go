@@ -2,6 +2,8 @@ package liftoff
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 // hasSavedManagedWorkspace reports whether a persisted workspace mapping
@@ -78,6 +80,13 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 	// name. Without it the name is only a label guess.
 	if worktreePath != "" {
 		envDB, found, envErr := DBNameFromEnv(worktreePath)
+		if envErr == nil && !found {
+			// Kit writes the key only when it clones a database. An env
+			// file without it means the checkout uses the app default.
+			if _, statErr := os.Stat(filepath.Join(worktreePath, "backend", ".env")); statErr == nil {
+				return "", true, nil
+			}
+		}
 		if envErr != nil || !found || envDB == "" {
 			return "", false, fmt.Errorf("cannot prove database ownership for %q; refusing to guess", name)
 		}

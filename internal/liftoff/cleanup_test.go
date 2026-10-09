@@ -191,6 +191,33 @@ func TestResolveCleanupDB_EnvMismatchSkips(t *testing.T) {
 	}
 }
 
+// Kit writes SQLALCHEMY_DATABASE_NAME only when it clones a database, so an
+// env without the key proves the checkout owns no per-worktree database.
+// A missing env proves nothing and must still refuse.
+func TestResolveCleanupDB_EnvWithoutDBKeySkips(t *testing.T) {
+	setStateDir(t)
+	wt := t.TempDir()
+	if _, _, err := resolveCleanupDB("plain", wt); err == nil {
+		t.Fatal("missing backend/.env should refuse")
+	}
+	if err := os.MkdirAll(filepath.Join(wt, "backend"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "backend", ".env"), []byte("environment=local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, skip, err := resolveCleanupDB("plain", wt)
+	if err != nil || !skip || db != "" {
+		t.Fatalf("env without db key should skip, got %q skip=%v err=%v", db, skip, err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "backend", ".env"), []byte("SQLALCHEMY_DATABASE_NAME=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := resolveCleanupDB("plain", wt); err == nil {
+		t.Fatal("empty db key should refuse")
+	}
+}
+
 // Wash must not drop a database owned by another worktree, and must retain
 // the config record for retry instead of freeing it.
 func TestRunWash_DisputedDBRetainsConfig(t *testing.T) {
