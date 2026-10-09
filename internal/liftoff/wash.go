@@ -134,6 +134,11 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 						emit("no saved workspace; nothing to remove")
 						return nil
 					}
+					if cfg, err := LoadConfig(); err == nil && !HerdrAvailable() {
+						if m := cfg.Worktrees[p.Name]; m.HerdrID != "" || m.HerdrSpace != "" {
+							emit("Herdr not installed; dropping its saved mapping")
+						}
+					}
 					return CloseManagedWorkspaces(p.Name, p.WorktreePath)
 				},
 			},
