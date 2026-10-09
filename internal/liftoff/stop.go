@@ -46,10 +46,52 @@ type procInfo struct {
 // before kit's recorded launch. Otherwise kit skips it: killing its group
 // could hit unrelated processes.
 func StopService(worktree string, svc Service) error {
+	return SnapshotProcs(worktree, []Service{svc}).Stop(worktree, svc)
+}
+
+// ProcSnapshot is one process-table read shared by several stops. Taking it
+// once per command avoids one `ps -E` environment dump per service, the
+// costly call on macOS. A snapshot is only valid for the services it was
+// taken for, and only until kit starts new processes.
+type ProcSnapshot struct {
+	procs  map[int]procInfo
+	tagged map[string]map[int]bool
+	err    error
+	// covered holds the tags the snapshot was taken for. Stop for any other
+	// service takes its own snapshot instead of seeing no tagged processes.
+	covered map[string]bool
+}
+
+// SnapshotProcs reads the process table once and marks the processes tagged
+// for each of svcs in worktree.
+func SnapshotProcs(worktree string, svcs []Service) *ProcSnapshot {
+	tags := make([]string, len(svcs))
+	for i, svc := range svcs {
+		tags[i] = serviceTag(worktree, svc)
+	}
+	procs, tagged, err := snapshotProcs(tags...)
+	covered := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		covered[tag] = true
+	}
+	return &ProcSnapshot{procs: procs, tagged: tagged, err: err, covered: covered}
+}
+
+// Stop stops one service using the snapshot. It is safe to call concurrently
+// for different services.
+func (s *ProcSnapshot) Stop(worktree string, svc Service) error {
 	pid := ReadPID(worktree, string(svc))
-	procs, err := snapshotProcs(serviceTag(worktree, svc))
-	if err != nil {
+	if s.err != nil {
 		return stopRecordedGroup(worktree, svc, pid)
+	}
+	tag := serviceTag(worktree, svc)
+	if !s.covered[tag] {
+		return SnapshotProcs(worktree, []Service{svc}).Stop(worktree, svc)
+	}
+	procs := make(map[int]procInfo, len(s.procs))
+	for id, p := range s.procs {
+		p.Tagged = s.tagged[tag][id]
+		procs[id] = p
 	}
 	root := 0
 	if p, ok := procs[pid]; ok && pid > 0 && !p.Zombie {
@@ -96,26 +138,28 @@ func stopRecordedGroup(worktree string, svc Service, pid int) error {
 }
 
 // snapshotProcs lists every process with its parent, group and state, and
-// marks the ones whose environment contains tag.
-func snapshotProcs(tag string) (map[int]procInfo, error) {
+// returns, per tag, the pids whose environment contains it.
+func snapshotProcs(tags ...string) (map[int]procInfo, map[string]map[int]bool, error) {
 	out, err := exec.Command("ps", "-axo", "pid=,ppid=,pgid=,stat=").Output()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	procs := parsePS(string(out))
-	if tag != "" {
+	tagged := map[string]map[int]bool{}
+	if len(tags) > 0 {
 		// macOS ps -E appends each process's environment to its command line.
 		// If it fails, kit still stops the recorded tree.
 		if envOut, err := exec.Command("ps", "-E", "-ww", "-axo", "pid=,command=").Output(); err == nil {
-			for _, pid := range parseTagged(string(envOut), tag) {
-				if p, ok := procs[pid]; ok {
-					p.Tagged = true
-					procs[pid] = p
+			for _, tag := range tags {
+				ids := map[int]bool{}
+				for _, pid := range parseTagged(string(envOut), tag) {
+					ids[pid] = true
 				}
+				tagged[tag] = ids
 			}
 		}
 	}
-	return procs, nil
+	return procs, tagged, nil
 }
 
 // parsePS parses `ps -axo pid=,ppid=,pgid=,stat=` output.
@@ -223,7 +267,7 @@ func serviceTree(procs map[int]procInfo, root, self int) (pids, groups []int) {
 // terminate sends SIGTERM to the groups and pids, escalates to SIGKILL after
 // stopGrace, and fails if any pid is still alive killWait later.
 func terminate(pids, groups []int) error {
-	signal := func(sig syscall.Signal, targets []int) {
+	signal := func(sig syscall.Signal, targets, groups []int) {
 		for _, g := range groups {
 			_ = syscall.Kill(-g, sig)
 		}
@@ -231,11 +275,25 @@ func terminate(pids, groups []int) error {
 			_ = syscall.Kill(pid, sig)
 		}
 	}
-	signal(syscall.SIGTERM, pids)
+	signal(syscall.SIGTERM, pids, groups)
 	if waitGone(pids, stopGrace) == nil {
 		return nil
 	}
-	signal(syscall.SIGKILL, livePIDs(pids))
+	// The snapshot is seconds old by now. A group id whose leader has exited
+	// may have been reused by an unrelated process, so signal only groups
+	// whose leader is still one of ours.
+	live := livePIDs(pids)
+	isLive := make(map[int]bool, len(live))
+	for _, pid := range live {
+		isLive[pid] = true
+	}
+	var liveGroups []int
+	for _, g := range groups {
+		if isLive[g] {
+			liveGroups = append(liveGroups, g)
+		}
+	}
+	signal(syscall.SIGKILL, live, liveGroups)
 	survivors := waitGone(pids, killWait)
 	if len(survivors) > 0 {
 		return fmt.Errorf("pids %v still alive after SIGKILL", survivors)
@@ -259,7 +317,19 @@ func waitGone(pids []int, timeout time.Duration) []int {
 // livePIDs returns the pids that are running. Zombies count as gone: they
 // only wait for their parent to reap them.
 func livePIDs(pids []int) []int {
-	procs, err := snapshotProcs("")
+	if len(pids) == 0 {
+		return nil
+	}
+	ids := make([]string, len(pids))
+	for i, pid := range pids {
+		ids[i] = strconv.Itoa(pid)
+	}
+	out, err := exec.Command("ps", "-p", strings.Join(ids, ","), "-o", "pid=,ppid=,pgid=,stat=").Output()
+	// ps exits 1 with no output when all requested processes are gone.
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 && len(out) == 0 && len(exit.Stderr) == 0 {
+		return nil
+	}
+	procs := parsePS(string(out))
 	var live []int
 	for _, pid := range pids {
 		if err != nil {

@@ -19,7 +19,7 @@ var designCmd = &cobra.Command{
 		"- optionally reuses master frontend packages to save disk/time\n" +
 		"- optionally adds the branch to Graphite\n" +
 		"- writes the legacy Ghostty workspace and reserves local ports\n" +
-		"- can later materialize the persistent Herdr space with `kit open`\n\n" +
+		"- can later materialize a persistent Rex or Herdr workspace with `kit open`\n\n" +
 		"Passing `name` pre-fills the wizard's first field. A leading `liftoff-`\n" +
 		"is stripped from your input.\n\n" +
 		"Alias: `new`.",

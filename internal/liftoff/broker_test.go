@@ -355,3 +355,21 @@ func TestServicesOnOtherBroker(t *testing.T) {
 		t.Errorf("shared: got %v, want [beat]", got)
 	}
 }
+
+func TestWorkerSharesBroker(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CELERY_BROKER_URL", "")
+	os.Unsetenv("CELERY_BROKER_URL")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "rabbitmqctl"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	if WorkerSharesBroker(dir) {
+		t.Error("isolatable worktree should not conflict")
+	}
+	t.Setenv("CELERY_BROKER_URL", "pyamqp://u@remote.example/prod")
+	if !WorkerSharesBroker(dir) {
+		t.Error("user-set remote broker should conflict")
+	}
+}

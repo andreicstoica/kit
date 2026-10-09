@@ -77,3 +77,17 @@ func TestFriendlyDesignStepTitle(t *testing.T) {
 		t.Errorf("unknown step = %q, want passthrough", got)
 	}
 }
+
+func TestDesignStepNote(t *testing.T) {
+	cases := map[string]string{
+		"copied liftoff by template":                     "fast copy",
+		"template copy unavailable, using pg_dump: busy": "full copy, source database in use",
+		"already copied by template":                     "copied in the previous step",
+		"CREATE TABLE":                                   "",
+	}
+	for line, want := range cases {
+		if got := designStepNote(line); got != want {
+			t.Errorf("designStepNote(%q) = %q, want %q", line, got, want)
+		}
+	}
+}

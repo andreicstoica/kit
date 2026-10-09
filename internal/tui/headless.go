@@ -34,8 +34,8 @@ func PrintPlayUpdates(w io.Writer, ch <-chan liftoff.PlayUpdate) (failed bool) {
 }
 
 // RunPlayHeadless is `kit play` without a terminal. It takes the TUI's
-// defaults, except that it never stops another worktree's celery worker:
-// that needs the confirmation only the TUI asks for.
+// defaults, except that it never stops another worktree's celery worker when
+// they would share a broker: that needs the confirmation only the TUI asks for.
 func RunPlayHeadless(layout liftoff.Layout, cfg PlayConfig, w io.Writer) error {
 	name := cfg.Name
 	if name == "" {
@@ -62,8 +62,8 @@ func RunPlayHeadless(layout liftoff.Layout, cfg PlayConfig, w io.Writer) error {
 	})
 
 	on := initialToggles(cfg)
-	if on[liftoff.SvcCelery] {
-		if owner, pid := liftoff.FindCeleryOwner(); owner != "" && owner != name {
+	if (on[liftoff.SvcCelery] || on[liftoff.SvcBeat]) && liftoff.WorkerSharesBroker(path) {
+		if owner, pid := liftoff.FindSharedCeleryOwner(name); owner != "" {
 			fmt.Fprintln(w, StyleWarn.Render(fmt.Sprintf(
 				"  ! celery skipped: %s runs the worker (pid %d); run `kit pause %s --only celery` first",
 				owner, pid, owner)))

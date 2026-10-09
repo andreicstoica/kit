@@ -30,13 +30,16 @@ var rootCmd = &cobra.Command{
 		"- `lineup` (`ls`) — show kits available\n" +
 		"- `play` (`start`) — spin up dev servers\n" +
 		"- `pause` (`stop`) — halt services\n" +
+		"- `park` — stop services and hide a workspace without deleting its resources\n" +
+		"- `resume` — show a parked workspace again without starting services\n" +
 		"- `restart` (`bounce`) — stop then start (bounce a hung service)\n" +
 		"- `log` (`logs`) — tail service logs\n" +
-		"- `wash` (`rm`, `remove`, `delete`) — delete a kit and its paired Herdr space (`--merged` bulk-washes merged/closed)\n" +
-		"- `open` — attach to the worktree's persistent Herdr space\n" +
-		"- `close` — explicitly delete a worktree's Herdr space\n" +
-		"- `focus` — make a worktree the active Herdr + editor environment\n" +
-		"- `remote` — pick a worktree and attach to Herdr\n" +
+		"- `wash` (`rm`, `remove`, `delete`) — delete a kit and its mapped terminal workspaces (`--merged` bulk-washes merged/closed)\n" +
+		"- `open` — open an editor, Rex workspace, or Herdr space\n" +
+		"- `close` — explicitly delete mapped terminal workspaces\n" +
+		"- `focus` — make a worktree the active terminal + editor environment\n" +
+		"- `remote` — pick a worktree and reconnect to its configured terminal\n" +
+		"- `migrate rex` — safely plan/import Herdr terminal structure into Rex\n" +
 		"- `swap` (`gtab`) — open the worktree in your IDE (`--workspace` for legacy Ghostty)\n" +
 		"- `links` (`urls`, `ports`) — print the worktree's URLs\n" +
 		"- `diff` — show the worktree's diff vs master (via hunk if installed)\n" +

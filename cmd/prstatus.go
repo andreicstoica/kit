@@ -11,6 +11,10 @@ import (
 )
 
 func printRemotePRs(out io.Writer, layout liftoff.Layout) error {
+	return printRemotePRsForVisibility(out, layout, false)
+}
+
+func printRemotePRsForVisibility(out io.Writer, layout liftoff.Layout, parked bool) error {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
 		return err
@@ -31,6 +35,9 @@ func printRemotePRs(out io.Writer, layout liftoff.Layout) error {
 		if wt.IsMaster(layout) || wt.Bare {
 			continue
 		}
+		if cfg.Worktrees[wt.Name()].Parked != parked {
+			continue
+		}
 		checkout := "present"
 		if wt.Missing {
 			checkout = "missing"
@@ -45,6 +52,9 @@ func printRemotePRs(out io.Writer, layout liftoff.Layout) error {
 		seenPaths[wt.Path] = true
 	}
 	for name, meta := range cfg.Worktrees {
+		if meta.Parked != parked {
+			continue
+		}
 		if name == "master" || seenNames[name] || (meta.Branch != "" && seenBranches[meta.Branch]) || seenPaths[meta.Path] {
 			continue
 		}

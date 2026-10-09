@@ -76,9 +76,59 @@ EOF
 	}
 }
 
+func TestDBNameFromEnv(t *testing.T) {
+	wt := t.TempDir()
+	if _, found, err := DBNameFromEnv(wt); err != nil || found {
+		t.Fatalf("missing env should report found=false, got found=%v err=%v", found, err)
+	}
+	backend := filepath.Join(wt, "backend")
+	if err := os.MkdirAll(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backend, ".env"), []byte("# comment\nSQLALCHEMY_DATABASE_NAME=\"liftoff_feat_x\"\nOTHER=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, found, err := DBNameFromEnv(wt); err != nil || !found || got != "liftoff_feat_x" {
+		t.Fatalf("DBNameFromEnv = %q, found=%v, err=%v", got, found, err)
+	}
+	if err := os.WriteFile(filepath.Join(backend, ".env"), []byte("OTHER=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := DBNameFromEnv(wt); err != nil || found {
+		t.Fatalf("missing key should report found=false, got found=%v err=%v", found, err)
+	}
+}
+
 func writeExecutable(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateDBFromTemplateUsesFileCopyAndFallsBackWhenSourceBusy(t *testing.T) {
+	bin := t.TempDir()
+	log := filepath.Join(t.TempDir(), "args")
+	t.Setenv("ARGS_LOG", log)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\necho \"$@\" >> \"$ARGS_LOG\"\nexit 0\n")
+	copied, err := CreateDBFromTemplate("dst", "liftoff", nil)
+	if err != nil || !copied {
+		t.Fatalf("copied=%v err=%v", copied, err)
+	}
+	got, _ := os.ReadFile(log)
+	if strings.TrimSpace(string(got)) != "dst --template=liftoff --strategy=file_copy" {
+		t.Fatalf("createdb args = %q", got)
+	}
+
+	writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\necho 'source database \"liftoff\" is being accessed by other users' >&2\nexit 1\n")
+	var lines []string
+	copied, err = CreateDBFromTemplate("dst", "liftoff", func(l string) { lines = append(lines, l) })
+	if err != nil || copied {
+		t.Fatalf("busy source: copied=%v err=%v, want fallback", copied, err)
+	}
+	if len(lines) == 0 || !strings.Contains(lines[len(lines)-1], "being accessed") {
+		t.Fatalf("fallback reason not reported: %q", lines)
 	}
 }

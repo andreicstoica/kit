@@ -76,7 +76,7 @@ another workspace's background worker; it skips celery instead.`,
 		if err != nil {
 			return err
 		}
-		return tui.OpenHerdrWorktree(name, path, "", tui.HerdrConnectAttach)
+		return tui.OpenManagedWorktree(name, path, "", tui.HerdrConnectAttach)
 	},
 }
 
@@ -86,7 +86,7 @@ func init() {
 	playCmd.Flags().BoolVar(&playNoCelery, "no-celery", false,
 		"skip celery worker and beat")
 	playCmd.Flags().BoolVar(&playOpen, "open", false,
-		"attach to the worktree's Herdr space after services start")
+		"open the worktree's configured terminal workspace after services start")
 	playCmd.Flags().BoolVar(&playOpen, "attach", false,
 		"alias for --open")
 	rootCmd.AddCommand(playCmd)

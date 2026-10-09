@@ -10,15 +10,15 @@ var (
 	openLayout string
 	openEditor string
 	openHerdr  bool
+	openRex    bool
 )
 
 var openCmd = &cobra.Command{
 	Use:   "open [name]",
-	Short: "Open a worktree in an editor or its persistent Herdr space",
-	Long: "open picks a worktree, then asks how to open it: any installed editor (Zed, Cursor, …) rooted at " +
-		"that worktree's checkout, or the worktree's persistent Herdr space. Choosing Herdr creates the space " +
-		"and Kit-owned tabs once — offering the Simple (2 tabs) or Detailed (5 tabs) layout on first open — then " +
-		"attaches the shared session. --editor and --herdr skip the picker.",
+	Short: "Open a worktree in an editor, Rex, or Herdr",
+	Long: "open picks a worktree, then asks where to open it: an installed editor, a native Rex workspace, or a persistent Herdr space. " +
+		"Terminal workspaces reuse their stable IDs and add missing Kit layout tabs without removing your custom tabs. " +
+		"--editor, --rex, and --herdr skip the destination picker. Explicit destinations override the configured backend.",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -38,6 +38,7 @@ var openCmd = &cobra.Command{
 			Path:         path,
 			EditorFlag:   openEditor,
 			Herdr:        openHerdr,
+			Rex:          openRex,
 			HerdrLayout:  openLayout,
 			HerdrConnect: tui.HerdrConnectAttach,
 		})
@@ -46,8 +47,9 @@ var openCmd = &cobra.Command{
 }
 
 func init() {
-	openCmd.Flags().StringVar(&openLayout, "layout", "", "Kit Herdr layout (default, detailed, ai, or a configured layout)")
+	openCmd.Flags().StringVar(&openLayout, "layout", "", "Kit terminal layout (default, detailed, ai, or a configured layout)")
 	openCmd.Flags().StringVarP(&openEditor, "editor", "e", "", "open this editor directly (zed, cursor, code, or any PATH binary)")
 	openCmd.Flags().BoolVar(&openHerdr, "herdr", false, "go straight to the persistent Herdr space")
+	openCmd.Flags().BoolVar(&openRex, "rex", false, "go straight to the persistent Rex workspace")
 	rootCmd.AddCommand(openCmd)
 }

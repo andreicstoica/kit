@@ -22,15 +22,19 @@ const (
 // existing env-var override; env wins at read time when set. Persisted by
 // `kit setup` and editable by hand.
 type Settings struct {
-	Root         string `toml:"root,omitempty"`
-	MasterDir    string `toml:"master_dir,omitempty"`
-	GtabDir      string `toml:"gtab_dir,omitempty"`
-	MainBranch   string `toml:"main_branch,omitempty"`
-	PyVenv       string `toml:"py_venv,omitempty"`
-	Editor       string `toml:"editor,omitempty"`
-	LiftoffRepo  string `toml:"liftoff_repo,omitempty"`
-	HerdrSession string `toml:"herdr_session,omitempty"`
-	HerdrLayout  string `toml:"herdr_layout,omitempty"`
+	Root                 string `toml:"root,omitempty"`
+	MasterDir            string `toml:"master_dir,omitempty"`
+	GtabDir              string `toml:"gtab_dir,omitempty"`
+	MainBranch           string `toml:"main_branch,omitempty"`
+	PyVenv               string `toml:"py_venv,omitempty"`
+	Editor               string `toml:"editor,omitempty"`
+	LiftoffRepo          string `toml:"liftoff_repo,omitempty"`
+	HerdrSession         string `toml:"herdr_session,omitempty"`
+	HerdrLayout          string `toml:"herdr_layout,omitempty"`
+	WorkspaceBackend     string `toml:"workspace_backend,omitempty"`
+	WorkspaceLayout      string `toml:"workspace_layout,omitempty"`
+	RexMasterSession     string `toml:"rex_master_session_id,omitempty"`
+	RexMasterShellWindow string `toml:"rex_master_shell_window_id,omitempty"`
 }
 
 // WorktreeMeta is the persisted record for one worktree in config.toml.
@@ -41,23 +45,31 @@ type WorktreeMeta struct {
 	Slot            int       `toml:"slot"`
 	Created         time.Time `toml:"created"`
 	LastUsed        time.Time `toml:"last_used"`
-	Branch          string    `toml:"branch,omitempty"`  // actual git branch (may differ from key)
-	Path            string    `toml:"path,omitempty"`    // worktree path (for adoption troubleshooting)
-	Adopted         bool      `toml:"adopted,omitempty"` // true when added via kit adopt (vs kit design)
-	HerdrSpace      string    `toml:"space,omitempty"`   // durable Herdr workspace label
+	Branch          string    `toml:"branch,omitempty"`        // actual git branch (may differ from key)
+	Path            string    `toml:"path,omitempty"`          // worktree path (for adoption troubleshooting)
+	Adopted         bool      `toml:"adopted,omitempty"`       // true when added via kit adopt (vs kit design)
+	DatabaseName    string    `toml:"database_name,omitempty"` // exact Kit-owned DB; retained during partial cleanup
+	HerdrSpace      string    `toml:"space,omitempty"`         // durable Herdr workspace label
 	HerdrID         string    `toml:"herdr_workspace_id,omitempty"`
 	HerdrLayout     string    `toml:"layout,omitempty"`
+	RexID           string    `toml:"rex_session_id,omitempty"`
+	RexLayout       string    `toml:"rex_layout,omitempty"`
+	RexShellWindow  string    `toml:"rex_shell_window_id,omitempty"`
 	LastOpened      time.Time `toml:"last_opened,omitempty"`
 	PreferredAgents []string  `toml:"preferred_agents,omitempty"`
 	CleanupPending  bool      `toml:"cleanup_pending,omitempty"`
+	Parked          bool      `toml:"parked,omitempty"`
 }
 
 // HerdrLayout describes the tabs Kit materializes inside a Herdr workspace.
 // Tab names are intentionally user-facing; Kit owns the commands each
 // built-in tab runs.
-type HerdrLayout struct {
+type WorkspaceLayout struct {
 	Tabs []string `toml:"tabs"`
 }
+
+// HerdrLayout is retained for existing configuration and callers.
+type HerdrLayout = WorkspaceLayout
 
 // Config is the on-disk shape of ~/.config/kit/config.toml.
 type Config struct {

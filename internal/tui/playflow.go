@@ -64,6 +64,10 @@ func (i playWtItem) FilterValue() string { return i.name }
 type playModel struct {
 	layout liftoff.Layout
 
+	// Liveness of the chosen workspace's services, read once per workspace
+	// instead of on every render.
+	running map[liftoff.Service]bool
+
 	stage playStage
 
 	// Picker stage
@@ -79,6 +83,11 @@ type playModel struct {
 	celeryVictim string
 	celeryPID    int
 	celeryAccept bool // true if user said yes (default Y)
+	// afterRun marks a prompt raised once the run finished: a shared-broker
+	// worker blocked celery and beat, and "yes" runs them again with a replace.
+	afterRun    bool
+	sharedOwner string
+	sharedPID   int
 
 	// Adopt prompt stage — fires when m.chosen has no slot yet.
 	adoptBranch string
@@ -185,6 +194,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 		}
 		m.chosen = playWtItem{name: name, path: path, slot: slot, emoji: liftoff.EmojiFor(name)}
 		m.stage = playStageToggle
+		m.running = nil // re-probe: services may have changed
 		if len(only) > 0 {
 			// Skip toggle screen — Init() will fire the transition.
 			m.skipToggle = true
@@ -320,9 +330,9 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 		}
 
 		// Detect celery owner conflict.
-		if m.toggleOn[liftoff.SvcCelery] {
-			owner, pid := liftoff.FindCeleryOwner()
-			if owner != "" && owner != m.chosen.name {
+		if (m.toggleOn[liftoff.SvcCelery] || m.toggleOn[liftoff.SvcBeat]) && liftoff.WorkerSharesBroker(m.chosen.path) {
+			owner, pid := liftoff.FindSharedCeleryOwner(m.chosen.name)
+			if owner != "" {
 				return playCeleryConflictMsg{victim: owner, pid: pid, plan: plan}
 			}
 		}
@@ -393,7 +403,7 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stopwatch, cmd = m.stopwatch.Update(msg)
 		return m, cmd
 	case tea.BackgroundColorMsg:
-		ApplyTheme(msg.IsDark(), &m.help)
+		ApplyTheme(msg.IsDark(), &m.help, &m.picker)
 		m.spinner.Style = lipgloss.NewStyle().Foreground(colorAccent)
 		return m, nil
 	case tea.KeyPressMsg:
@@ -429,6 +439,7 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case playAdoptedMsg:
 		m.stage = playStageToggle
+		m.running = nil // re-probe: services may have changed
 		return m, m.transitionAfterToggle()
 	}
 
@@ -463,6 +474,7 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if it, ok := m.picker.SelectedItem().(playWtItem); ok {
 					m.chosen = it
 					m.stage = playStageToggle
+					m.running = nil // re-probe: services may have changed
 					return m, nil
 				}
 			case "esc":
@@ -475,6 +487,7 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if it, ok := items[idx].(playWtItem); ok {
 						m.chosen = it
 						m.stage = playStageToggle
+						m.running = nil // re-probe: services may have changed
 						return m, nil
 					}
 				}
@@ -575,11 +588,30 @@ func (m *playModel) updateCelery(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.celeryAccept = true
 			m.plan.ReplaceCelery = true
 			m.plan.ReplaceVictim = m.celeryVictim
+			if m.afterRun {
+				// Only the blocked workers run again; the rest already started,
+				// and stay listed in the run view.
+				m.runOrder = m.plan.Services
+				var workers []liftoff.Service
+				for _, s := range m.plan.Services {
+					if s == liftoff.SvcCelery || s == liftoff.SvcBeat {
+						workers = append(workers, s)
+					}
+				}
+				m.plan.Services = workers
+				m.afterRun = false
+			} else {
+				m.runOrder = m.plan.Services
+			}
 			m.stage = playStageRun
-			m.runOrder = m.plan.Services
 			m.runUpdates = m.layout.RunPlay(m.plan)
 			return m, tea.Batch(m.spinner.Tick, playNext(m.runUpdates))
 		case isConfirmNo(k):
+			if m.afterRun {
+				m.afterRun = false
+				m.stage = playStageDone
+				return m, nil
+			}
 			// Drop celery + beat from the plan, then proceed.
 			filtered := make([]liftoff.Service, 0, len(m.plan.Services))
 			for _, s := range m.plan.Services {
@@ -608,10 +640,21 @@ func (m *playModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case playUpdMsg:
 		if !msg.ok {
+			if m.sharedOwner != "" {
+				m.celeryVictim, m.celeryPID = m.sharedOwner, m.sharedPID
+				m.sharedOwner = ""
+				m.afterRun = true
+				m.celeryAccept = true
+				m.stage = playStageCeleryPrompt
+				return m, nil
+			}
 			m.stage = playStageDone
 			return m, nil
 		}
 		u := msg.upd
+		if u.SharedOwner != "" {
+			m.sharedOwner, m.sharedPID = u.SharedOwner, u.SharedPID
+		}
 		if u.Service == "" {
 			m.runNotes = append(m.runNotes, u)
 			return m, playNext(m.runUpdates)
@@ -670,6 +713,12 @@ func (m *playModel) viewToggle() string {
 	}
 	b.WriteString("\n")
 	ports := liftoff.PortsForSlot(m.chosen.slot)
+	if m.running == nil {
+		m.running = make(map[liftoff.Service]bool, len(m.toggleSvcs))
+		for _, svc := range m.toggleSvcs {
+			m.running[svc] = liftoff.IsServiceAlive(m.chosen.name, svc, ports)
+		}
+	}
 	for i, svc := range m.toggleSvcs {
 		cursor := "  "
 		if i == m.toggleCursor {
@@ -686,7 +735,7 @@ func (m *playModel) viewToggle() string {
 		// Show whether the service is currently running so the user can tell
 		// "kit will (re)start these" apart from "these are already alive".
 		state := StyleDim.Render("○ stopped")
-		if liftoff.IsServiceAlive(m.chosen.name, svc, ports) {
+		if m.running[svc] {
 			state = StyleOK.Render("● running")
 		}
 		b.WriteString(cursor + box + " " + padRight(label, 12) + "  " + state + "\n")
@@ -714,7 +763,11 @@ func (m *playModel) viewCelery() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit play — background worker already running") + "\n\n")
 	b.WriteString(fmt.Sprintf("Background jobs are already running for %s (pid %d).\n", StyleHi.Render(m.celeryVictim), m.celeryPID))
-	b.WriteString("Starting them here will stop the old ones and move background jobs to " + StyleHi.Render(m.chosen.name) + ".\n\n")
+	b.WriteString("Starting them here will stop the old ones and move background jobs to " + StyleHi.Render(m.chosen.name) + ".\n")
+	if m.afterRun {
+		b.WriteString(StyleDim.Render("Your other services already started; only the workers were held back.") + "\n")
+	}
+	b.WriteString("\n")
 	b.WriteString(confirmHelp("Move workers here", "Skip workers this time"))
 	return b.String()
 }

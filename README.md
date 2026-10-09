@@ -30,7 +30,13 @@ kit open <name>          # pick 2/5 tabs on first open, then attach to Herdr
 kit close <name>         # explicitly delete Herdr terminal state
 kit focus <name>         # Herdr + optional Cursor/Ghostty client
 kit remote               # pick a worktree/space, then attach
+kit open <name> --rex     # open/reuse a native Rex workspace
+kit focus <name> --backend rex # Rex workspace + optional editor
+kit migrate rex --dry-run # preview Herdr → Rex structure import
 kit pause <name>         # stop services
+kit park <name>          # stop services + hide from lineup; keep all resources
+kit lineup --parked      # show only parked workspaces
+kit resume <name>        # show it again; does not start services
 kit restart <name>       # stop then start (bounce a hung service)
 kit log <name>           # tail logs (color-coded, / search, t filter)
 kit diff                 # diff vs master (hunk-aware)
@@ -50,6 +56,83 @@ Commands that take a worktree name (`open`, `close`, `focus`, `remote`, `swap`, 
 `log`, `wash`, `links`, `diff`, `submit`, `adopt`) accept the same three shapes: pass a name,
 omit to auto-pick from cwd, or get a numbered picker (1-9 quick-select)
 otherwise. Master appears in every picker as 🧊 slot 0.
+
+## Parking work in progress
+
+`kit park <name>` stops Kit-managed services and hides the workspace from
+default lineup, including the tree and remote PR views. It keeps the checkout
+at the same path, all files and commits, local/remote branches, the private DB,
+the allocated port slot, and terminal panes. Running agents are not stopped.
+If stopping a service fails, the workspace remains visible.
+
+Use `kit lineup --parked` (optionally `--tree` or `--remote`) to see parked
+workspaces. `kit resume <name>` restores visibility only; use `kit play <name>`
+when you want services running again. Master and workspaces with pending cleanup
+cannot be parked. No folder moves or database deletion are involved.
+
+The explicit `lineup --agents` view still shows every Rex session, including
+parked workspaces, because their terminal panes and agents are kept.
+
+## Workspace providers
+
+Rex is Kit's default workspace backend. `make install` and `install.sh` also
+install **`kit-herdr`**, an alias for the same binary that selects Herdr instead.
+Both use the same Kit config and service state; switching viewers does not clone
+worktrees, replace sessions, or restart services. A saved `workspace_backend`
+setting is still honored by `kit`, and `KIT_WORKSPACE_BACKEND` overrides both.
+Explicit
+`kit open --rex` / `--herdr` and `focus --backend` override that choice.
+
+```sh
+kit design                    # Rex workspace with Claude focused
+kit focus <name>              # default/configured provider
+kit-herdr focus <name>        # explicit Herdr fallback
+```
+
+With a bare `go install`, add the fallback alias yourself:
+`ln -sf kit "$(go env GOPATH)/bin/kit-herdr"` (or your `GOBIN` directory).
+
+### Isolated development trial
+
+```sh
+go build -o dist/kit-rex .             # does not replace your installed kit
+mkdir -p ~/.config/kit-rex
+cp -n ~/.config/kit/config.toml ~/.config/kit-rex/config.toml
+sh dev/kit-rex migrate rex --dry-run
+sh dev/kit-rex migrate rex --apply     # shells/labels/CWDs, not live processes
+sh dev/kit-rex focus <name>
+sh dev/kit-rex close <name> --backend rex # leave Herdr running during trial
+```
+
+The development launcher defaults to Rex and isolates config in
+`~/.config/kit-rex`, while sharing the existing Kit service PID/log directory.
+This matters when keeping an older installed Kit: its config writer does not
+know about the new Rex ownership fields. Treat the trial config as a snapshot;
+adopt newly created worktrees in the trial before opening them there.
+
+Rex must be running; Kit discovers its bundled CLI if `rex` is not on PATH.
+Native app selection requires Rex's Remote Control setting. Migration retains
+Herdr and never replays arbitrary commands, starts services, or launches duplicate
+agents. Multi-pane layouts are reconstructed horizontally because Herdr's
+snapshot does not expose their geometry. See [migration notes](docs/rex-migration.md).
+
+**Cleanup follows ownership, not your selected backend:** ordinary `kit close`
+closes all mapped terminal workspaces; `wash`/`reconcile` also clean both runtimes.
+Exact database ownership and incomplete-cleanup metadata are retained for retries.
+
+### Development validation
+
+```sh
+go test ./...
+go test -race ./...
+go vet ./...
+KIT_TEST_REX=1 go test ./internal/liftoff -run 'TestRex.*Live' -v
+python3 dev/pty-smoke.py dist/kit-rex
+python3 dev/provider-smoke.py          # installs only into a disposable prefix
+```
+
+Live tests create uniquely named disposable Rex sessions and clean them up by
+their recorded IDs. They do not migrate or stop your existing sessions.
 
 ## Why
 
@@ -216,7 +299,7 @@ Leading `liftoff-` in your input is stripped.
 
 1. **Picker** — if no name, pick from worktrees (sorted by slot)
 2. **Service toggle** — defaults: `app frontend, admin frontend, app backend, admin backend, celery worker` (MCP off). Each row shows current running state.
-3. **Celery prompt** — if another worktree owns celery, confirm kill-and-replace
+3. **Celery prompt** — only when this worktree's worker would share a broker with another worktree's (no private vhost); confirm kill-and-replace
 4. **Adopt prompt** — if the worktree isn't in `config.toml` yet, confirm before allocating
 5. **Live progress** — services start in parallel, ✓ when port responds
 6. **Done** — URLs printed
@@ -246,8 +329,8 @@ kit pause --all          # confirms before killing everything
 
 Without a terminal (agents, scripts, piped output), `kit play <name>` and
 `kit pause <name>` skip the UI and print one line per service. A name is
-required. Headless `play` never stops another worktree's worker: it skips
-celery and tells you what to pause first. `kit pause --all` still needs a
+required. Headless `play` never stops another worktree's worker: when the two
+would share a broker, it skips celery and tells you what to pause first. `kit pause --all` still needs a
 terminal to confirm.
 
 `kit restart [name]` (alias `bounce`) stops then starts in one go — useful when
@@ -287,9 +370,10 @@ worktree env files stay textually identical to master.
 
 ## Celery
 
-Kit runs one celery worker (plus beat) at a time across all worktrees. If
-another worktree owns it, `kit play` asks to kill and replace it (default
-Yes).
+Each worktree runs its own celery worker (plus beat) on a private vhost, so
+workers from different worktrees run side by side. Only when kit cannot isolate
+the broker (your own `CELERY_BROKER_URL`, or no `rabbitmqctl`) does `kit play`
+ask to kill and replace another worktree's worker (default Yes).
 
 **Private vhost per worktree.** All worktrees share one local RabbitMQ.
 Before it starts a backend service, kit creates the vhost `kit-<name>`

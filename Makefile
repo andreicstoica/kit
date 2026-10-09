@@ -15,6 +15,7 @@ build:
 install: build
 	@mkdir -p $(PREFIX)/bin
 	cp $(DIST)/$(BIN) $(PREFIX)/bin/$(BIN)
+	ln -sf $(BIN) $(PREFIX)/bin/kit-herdr
 	@# macOS attaches com.apple.provenance to freshly-built local binaries,
 	@# which can cause Gatekeeper to SIGKILL the process on launch. Ad-hoc
 	@# re-signing clears the flag chain so the binary runs cleanly.
@@ -24,6 +25,7 @@ install: build
 
 uninstall:
 	rm -f $(PREFIX)/bin/$(BIN)
+	rm -f $(PREFIX)/bin/kit-herdr
 
 test:
 	go test ./...

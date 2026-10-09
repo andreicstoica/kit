@@ -3,7 +3,9 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/list"
@@ -15,16 +17,19 @@ import (
 
 // washItem is a list entry representing one removable worktree.
 type washItem struct {
-	name       string
-	emoji      string
-	path       string
-	branch     string
-	dirty      bool
-	aheadCount int // commits in HEAD not yet in origin/<main> — lost on -D
-	hasDB      bool
-	hasGtab    bool
-	isLegacy   bool
-	displayIdx int // 1-based for numeric quick-pick
+	name             string
+	emoji            string
+	path             string
+	branch           string
+	dirty            bool
+	aheadCount       int
+	unpublishedCount int
+	publicationKnown bool
+	hasDB            bool
+	hasGtab          bool
+	rexOpen          bool // a Rex session for it is open, and wash will close it
+	isLegacy         bool
+	displayIdx       int // 1-based for numeric quick-pick
 }
 
 func (w washItem) Title() string {
@@ -54,6 +59,9 @@ func (w washItem) Description() string {
 	}
 	if w.hasGtab {
 		tags = append(tags, "gtab")
+	}
+	if w.rexOpen {
+		tags = append(tags, "rex session open")
 	}
 	if len(tags) > 0 {
 		bits = append(bits, "["+strings.Join(tags, " ")+"]")
@@ -95,6 +103,9 @@ type washModel struct {
 	width, height int
 }
 
+// washScanWorkers bounds concurrent git scans when building the picker.
+const washScanWorkers = 6
+
 func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
 	return NewWashModelFor(layout, "")
 }
@@ -107,29 +118,78 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 	if err != nil {
 		return nil, err
 	}
-	items := []list.Item{}
-	var preselectedItem *washItem
+	var candidates []liftoff.Worktree
 	for _, wt := range wts {
-		if wt.IsMaster(layout) || wt.Bare {
-			continue
+		if !wt.IsMaster(layout) && !wt.Bare {
+			candidates = append(candidates, wt)
 		}
-		name := wt.Name()
-		ahead, _ := layout.AheadBehind(wt.Path)
-		it := washItem{
-			name:       name,
-			emoji:      liftoff.EmojiFor(name),
-			path:       wt.Path,
-			branch:     wt.Branch,
-			dirty:      liftoff.IsDirty(wt.Path),
-			aheadCount: ahead,
-			hasDB:      liftoff.HasPostgres() && liftoff.HasDB(name),
-			hasGtab:    layout.HasGtab(name),
-			isLegacy:   wt.HasLegacyPrefix(),
-			displayIdx: len(items) + 1,
+	}
+	// A named workspace skips the picker, so scan only that one.
+	if preselected != "" {
+		for _, wt := range candidates {
+			if wt.Name() == preselected {
+				candidates = []liftoff.Worktree{wt}
+				break
+			}
 		}
-		items = append(items, it)
-		if preselected != "" && name == preselected {
-			pinned := it
+	}
+	names := make([]string, len(candidates))
+	for i, wt := range candidates {
+		names[i] = wt.Name()
+	}
+	hasDB := map[string]bool{}
+	if liftoff.HasPostgres() {
+		if found, err := liftoff.HasDBs(names); err == nil {
+			hasDB = found
+		} else {
+			// Batched lookup failed: retry per name rather than read a
+			// transient psql failure as "no database".
+			for _, name := range names {
+				hasDB[name] = liftoff.HasDB(name)
+			}
+		}
+	}
+	var rexOpen map[string]bool
+	if backend, err := liftoff.WorkspaceBackend(); err == nil && backend == liftoff.BackendRex {
+		rexOpen, _ = liftoff.RexOpenWorkspaces() // a failed read only hides the tag
+	}
+	scanned := make([]washItem, len(candidates))
+	sem := make(chan struct{}, washScanWorkers)
+	var scan sync.WaitGroup
+	for i, wt := range candidates {
+		scan.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer scan.Done()
+			defer func() { <-sem }()
+			name := wt.Name()
+			ahead, _ := layout.AheadBehind(wt.Path)
+			remoteCount, remoteErr := liftoff.Run(wt.Path, "git", "rev-list", "--count", "HEAD", "--not", "--remotes")
+			unpublished, countErr := strconv.Atoi(strings.TrimSpace(remoteCount))
+			scanned[i] = washItem{
+				name:             name,
+				emoji:            liftoff.EmojiFor(name),
+				path:             wt.Path,
+				branch:           wt.Branch,
+				dirty:            liftoff.IsDirty(wt.Path),
+				aheadCount:       ahead,
+				unpublishedCount: unpublished,
+				publicationKnown: remoteErr == nil && countErr == nil,
+				hasDB:            hasDB[name],
+				hasGtab:          layout.HasGtab(name),
+				rexOpen:          rexOpen[name],
+				isLegacy:         wt.HasLegacyPrefix(),
+				displayIdx:       i + 1,
+			}
+		}()
+	}
+	scan.Wait()
+	items := make([]list.Item, 0, len(scanned))
+	var preselectedItem *washItem
+	for i := range scanned {
+		items = append(items, scanned[i])
+		if preselected != "" && scanned[i].name == preselected {
+			pinned := scanned[i]
 			preselectedItem = &pinned
 		}
 	}
@@ -249,7 +309,7 @@ func (m *washModel) pickWash(it washItem) {
 // needsDoubleConfirm reports whether wash would destroy work that isn't safely
 // in origin/<main> — unmerged commits (aheadCount) or uncommitted changes.
 func (m *washModel) needsDoubleConfirm() bool {
-	return m.selected.aheadCount > 0 || m.selected.dirty
+	return m.selected.aheadCount > 0 || m.selected.dirty || !m.selected.publicationKnown || m.selected.unpublishedCount > 0
 }
 
 func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -408,9 +468,16 @@ func (m *washModel) viewConfirm() string {
 		b.WriteString(StyleWarn.Render("⚠ Unsaved local file changes will be lost.") + "\n")
 	}
 	if m.selected.aheadCount > 0 {
-		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d local commit(s) are not on %s and will be permanently deleted.",
+		b.WriteString(StyleWarn.Render(fmt.Sprintf("⚠ %d commit(s) are not on %s.",
 			m.selected.aheadCount, m.layout.MainBranch)) + "\n")
 	}
+	if m.selected.publicationKnown {
+		b.WriteString(fmt.Sprintf("%d commit(s) absent from cached remote refs.\n", m.selected.unpublishedCount))
+	} else {
+		b.WriteString("Remote publication status: unknown.\n")
+	}
+	b.WriteString("Cached refs can be stale. Fetch and verify pushed work before removing it.\n")
+	b.WriteString("Remote branches are not deleted. The local checkout and branch are removed.\n")
 	b.WriteString("\n")
 	toggles := m.visibleToggles()
 	if len(toggles) == 0 {

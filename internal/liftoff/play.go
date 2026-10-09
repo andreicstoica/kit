@@ -24,11 +24,15 @@ type PlayUpdate struct {
 	Status  StepStatus
 	Title   string
 	Message string
-	PID     int
-	Port    int
-	URL     string
-	Err     error
-	Elapsed time.Duration
+	// SharedOwner and SharedPID name the worktree whose live worker kept this
+	// run from starting celery and beat on a shared broker.
+	SharedOwner string
+	SharedPID   int
+	PID         int
+	Port        int
+	URL         string
+	Err         error
+	Elapsed     time.Duration
 }
 
 // RunPlay starts the selected services in parallel, emitting PlayUpdate
@@ -48,8 +52,13 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 				Title:   fmt.Sprintf("stop %s's celery (replacing)", p.ReplaceVictim),
 			}
 			start := time.Now()
-			err1 := StopService(p.ReplaceVictim, SvcCelery)
-			err2 := StopService(p.ReplaceVictim, SvcBeat)
+			snap := SnapshotProcs(p.ReplaceVictim, []Service{SvcCelery, SvcBeat})
+			var err1, err2 error
+			var stopWG sync.WaitGroup
+			stopWG.Add(2)
+			go func() { defer stopWG.Done(); err1 = snap.Stop(p.ReplaceVictim, SvcCelery) }()
+			go func() { defer stopWG.Done(); err2 = snap.Stop(p.ReplaceVictim, SvcBeat) }()
+			stopWG.Wait()
 			elapsed := time.Since(start)
 			if err1 != nil || err2 != nil {
 				ch <- PlayUpdate{
@@ -71,10 +80,28 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 
 		// Updates with no Service are notes about the run as a whole.
 		broker := CeleryBroker{}
-		if needsBroker(p.Services) {
-			var note string
-			var warn bool
-			broker, note, warn = PrepareCeleryBroker(p.Worktree, p.WorktreePath)
+		skipCelery := false
+		vhostEnsured := false
+		var lateEnsure sync.Once
+		var lateErr error
+		brokerReady := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer close(brokerReady)
+			if !needsBroker(p.Services) {
+				return
+			}
+			planned, note, managed := PlanCeleryBroker(p.Worktree, p.WorktreePath)
+			broker = planned
+			warn := false
+			// rabbitmqctl boots an Erlang VM per call; only pay for it when a
+			// backend service has to start.
+			if managed && backendNeedsStart(p) {
+				broker, note, warn = PrepareCeleryBroker(p.Worktree, p.WorktreePath)
+				vhostEnsured = !warn
+			}
 			status := StepDone
 			if warn {
 				status = StepSkipped
@@ -85,16 +112,34 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 					"%s still on another celery broker; run `kit restart %s`",
 					serviceLabels(stale), p.Worktree)}
 			}
-		}
+			// A worker on a shared broker consumes other worktrees' tasks.
+			// Never start one beside a live worker; the user decides.
+			if !broker.Isolated() && (hasService(p.Services, SvcCelery) || hasService(p.Services, SvcBeat)) {
+				if owner, pid := FindSharedCeleryOwner(p.Worktree); owner != "" {
+					skipCelery = true
+					ch <- PlayUpdate{Status: StepSkipped, SharedOwner: owner, SharedPID: pid, Title: fmt.Sprintf(
+						"celery skipped: %s runs the worker (pid %d) on a shared broker; run `kit pause %s --only celery` first",
+						owner, pid, owner)}
+				}
+			}
+		}()
 
 		// Fan out one goroutine per service. Emit StepRunning immediately
 		// (so the UI shows a spinner) then StartService + readiness wait.
-		var wg sync.WaitGroup
 		for _, svc := range orderedServices(p.Services) {
 			svc := svc
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				serviceBroker := CeleryBroker{}
+				if svc.IsBackend() {
+					<-brokerReady
+					serviceBroker = broker
+					if skipCelery && (svc == SvcCelery || svc == SvcBeat) {
+						ch <- PlayUpdate{Service: svc, Status: StepSkipped, Title: svc.Label() + " skipped (shared broker)"}
+						return
+					}
+				}
 				SweepStalePID(p.Worktree, string(svc))
 				port := ServicePort(svc, p.Ports)
 
@@ -123,7 +168,16 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 				ch <- PlayUpdate{Service: svc, Status: StepRunning, Title: title, Port: port}
 				start := time.Now()
 
-				spec := SpecFor(p.Worktree, p.WorktreePath, svc, p.Ports, broker)
+				// A backend that went down after the up-front check still needs
+				// its private vhost before it connects.
+				if svc.IsBackend() && serviceBroker.Isolated() && !vhostEnsured {
+					lateEnsure.Do(func() { lateErr = ensureVHost(serviceBroker.VHost) })
+					if lateErr != nil {
+						ch <- PlayUpdate{Service: svc, Status: StepFailed, Title: title, Err: lateErr, Elapsed: time.Since(start)}
+						return
+					}
+				}
+				spec := SpecFor(p.Worktree, p.WorktreePath, svc, p.Ports, serviceBroker)
 				pid, err := StartService(spec)
 				if err != nil {
 					ch <- PlayUpdate{
@@ -178,6 +232,7 @@ func (l Layout) RunPause(p PausePlan) <-chan PlayUpdate {
 	go func() {
 		defer close(ch)
 		var wg sync.WaitGroup
+		snap := SnapshotProcs(p.Worktree, p.Services)
 		for _, svc := range orderedServices(p.Services) {
 			svc := svc
 			wg.Add(1)
@@ -198,7 +253,7 @@ func (l Layout) RunPause(p PausePlan) <-chan PlayUpdate {
 				}
 				ch <- PlayUpdate{Service: svc, Status: StepRunning, Title: title, PID: pid}
 				start := time.Now()
-				err := StopService(p.Worktree, svc)
+				err := snap.Stop(p.Worktree, svc)
 				if err == nil && port > 0 && PortListening(port) {
 					// Recorded pid was stale (or absent) but the port is still
 					// bound — kill whatever is actually listening.
@@ -235,6 +290,25 @@ func orderedServices(selected []Service) []Service {
 func needsBroker(svcs []Service) bool {
 	for _, s := range svcs {
 		if s.IsBackend() {
+			return true
+		}
+	}
+	return false
+}
+
+func hasService(svcs []Service, want Service) bool {
+	for _, s := range svcs {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// backendNeedsStart reports whether any selected backend service is down.
+func backendNeedsStart(p PlayPlan) bool {
+	for _, s := range p.Services {
+		if s.IsBackend() && !serviceUp(p.Worktree, s, p.Ports) {
 			return true
 		}
 	}

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Run the local build without sharing config writes with an older installed Kit.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export KIT_STATE_DIR="${KIT_STATE_DIR:-$HOME/.config/kit-rex}"
+export KIT_RUN_DIR="${KIT_RUN_DIR:-$HOME/.config/kit/run}"
+export KIT_WORKSPACE_BACKEND="${KIT_WORKSPACE_BACKEND:-rex}"
+if [ ! -f "$KIT_STATE_DIR/config.toml" ]; then
+  printf '%s\n' "Initialize an isolated trial config at $KIT_STATE_DIR/config.toml before using this launcher." >&2
+  exit 1
+fi
+exec "$repo/dist/kit-rex" "$@"

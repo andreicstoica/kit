@@ -157,6 +157,7 @@ type designModel struct {
 	stepStatuses  []liftoff.StepStatus
 	stepElapsed   []time.Duration
 	currentLines  map[int][]string
+	stepNotes     map[int]string // how a finished step went, shown beside it
 	failed        bool
 	failedAt      int
 	failureErr    error
@@ -196,6 +197,7 @@ func (m *designModel) Init() tea.Cmd {
 	m.stepStatuses = make([]liftoff.StepStatus, len(titles))
 	m.stepElapsed = make([]time.Duration, len(titles))
 	m.currentLines = map[int][]string{}
+	m.stepNotes = map[int]string{}
 	m.updates = m.layout.RunDress(m.plan())
 	return tea.Batch(
 		m.spinner.Tick,
@@ -251,6 +253,9 @@ func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if u.AllocatedSlot > 0 {
 				m.allocatedSlot = u.AllocatedSlot
+			}
+			if note := designStepNote(u.Line); note != "" {
+				m.stepNotes[u.Index] = note
 			}
 			if u.Line != "" {
 				lines := m.currentLines[u.Index]
@@ -321,6 +326,9 @@ func (m *designModel) View() tea.View {
 		if m.stepElapsed[i] > 0 && m.stepStatuses[i] == liftoff.StepDone {
 			line += StyleDim.Render(fmt.Sprintf("  (%s)", m.stepElapsed[i].Round(10*time.Millisecond)))
 		}
+		if note := m.stepNotes[i]; note != "" && m.stepStatuses[i] == liftoff.StepDone {
+			line += StyleDim.Render("  · " + note)
+		}
 		left.WriteString(line + "\n")
 		if m.stepStatuses[i] == liftoff.StepRunning {
 			for _, ln := range m.currentLines[i] {
@@ -386,6 +394,20 @@ func truncate(s string, w int) string {
 		return s[:w]
 	}
 	return s[:w-1] + "…"
+}
+
+// designStepNote turns a step's progress line into a short note for how the
+// step finished, or "" when the line is ordinary output.
+func designStepNote(line string) string {
+	switch {
+	case strings.HasPrefix(line, "copied ") && strings.HasSuffix(line, " by template"):
+		return "fast copy"
+	case strings.HasPrefix(line, "template copy unavailable"):
+		return "full copy, source database in use"
+	case line == "already copied by template":
+		return "copied in the previous step"
+	}
+	return ""
 }
 
 func friendlyDesignStepTitle(title string) string {
@@ -492,18 +514,16 @@ func PickGtabLayout(includeSkip bool) (liftoff.GtabLayout, error) {
 	)
 }
 
-// PickHerdrLayout prompts for the Kit-owned persistent terminal layout. It
-// mirrors the existing Ghostty picker so the first `kit open` feels familiar:
-// simple keeps the two-tab workflow, while detailed keeps the five-tab one.
+// PickHerdrLayout retains its name for callers using the original Herdr flow.
 func PickHerdrLayout() (string, error) {
 	opts := []SelectOption[string]{
-		{Label: "Simple (2 tabs)", Value: "default"},
+		{Label: "Simple (shell + agent split in Rex, no logs tab)", Value: "simple"},
 		{Label: "Detailed (5 tabs)", Value: "detailed"},
 	}
 	return RunSelect(
-		"Herdr workspace layout",
-		"Simple: 2 tabs (shell + combined logs). Detailed: 5 tabs with per-service logs.",
-		opts, "default",
+		"Terminal workspace layout",
+		"Simple: one shell tab, plus a Claude Code split in Rex. Detailed: 5 tabs with per-service logs.",
+		opts, "simple",
 	)
 }
 
@@ -514,8 +534,23 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	fmt.Println(StyleOK.Render(fmt.Sprintf("✓ %s is ready", name)))
 	fmt.Println()
 
-	// Ask before opening the workspace — that can spawn a window/editor that
-	// steals focus, leaving the user hunting back here to answer.
+	backend, err := liftoff.WorkspaceBackend()
+	if err != nil {
+		return err
+	}
+	if backend == liftoff.BackendRex {
+		// Open the new session with Claude focused and leave starting services
+		// to `kit play` in its shell, so this wizard can close right away.
+		if err := OpenRexWorktree(name, layout.WorktreePath(name), "simple", true); err != nil {
+			return err
+		}
+		liftoff.CloseOwnRexTab()
+		return nil
+	}
+
+	// Legacy backends keep the start prompt. Ask before opening the workspace:
+	// that can spawn a window/editor that steals focus, leaving the user
+	// hunting back here to answer.
 	wantPlay, err := RunConfirm(ConfirmConfig{
 		Title:       "Start the app now?",
 		Description: "Starts the website, admin, API, and background worker for this workspace. You can also do this later with `kit play`.",
@@ -530,7 +565,7 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 		return err
 	}
 
-	// Same opener as `kit swap`: pick an editor, Ghostty, Herdr, or skip.
+	// Legacy backends retain the explicit editor/terminal/skip picker.
 	// Non-fatal — a failed/declined open still lets play run.
 	if _, err := OpenWorktree(OpenRequest{
 		Layout:       layout,

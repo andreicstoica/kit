@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+kit=${KIT_REX_BIN:-$HOME/.local/bin/kit-rex}
+action=${1:-menu}
+session=${2:-}
+hold=false
+direct=false
+case "$action" in
+  design|wash) set -- "$action" ;;
+  play|pause|restart) set -- "$action"; hold=true ;;
+  sync) set -- sync; hold=true ;;
+  lineup) set -- lineup; hold=true ;;
+  agents) set -- lineup --agents; hold=true ;;
+  parked) set -- lineup --parked; hold=true ;;
+  park|resume)
+    [ -n "$session" ] || { printf 'Select a Kit workspace in Rex first.\n' >&2; exit 2; }
+    set -- rex action "$action" --session "$session" --notify
+    direct=true
+    ;;
+  operation-log)
+    [ -n "$session" ] || { printf 'Select a Kit workspace in Rex first.\n' >&2; exit 2; }
+    set -- rex log --session "$session"
+    hold=true
+    ;;
+  *) printf 'Unknown Kit palette action: %s\n' "$action" >&2; exit 2 ;;
+esac
+status=0
+"$kit" "$@" || status=$?
+if [ "$direct" = false ] && { [ "$hold" = true ] || [ "$status" -ne 0 ]; }; then
+  printf '\nPress Enter to close this Kit panel. '
+  IFS= read -r answer || true
+fi
+exit "$status"

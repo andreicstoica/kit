@@ -68,13 +68,14 @@ var restartCmd = &cobra.Command{
 			var mu sync.Mutex
 			var wg sync.WaitGroup
 			var stuck []string
+			snap := liftoff.SnapshotProcs(name, svcs)
 			for _, svc := range svcs {
 				svc := svc
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
 					fmt.Printf("  stopping %s…\n", svc.Label())
-					if err := liftoff.StopService(name, svc); err != nil {
+					if err := snap.Stop(name, svc); err != nil {
 						mu.Lock()
 						fmt.Println(tui.StyleErr.Render("  ✗ " + err.Error()))
 						stuck = append(stuck, svc.Label())

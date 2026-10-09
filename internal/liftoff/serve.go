@@ -302,6 +302,61 @@ func StatusOf(worktree string, svc Service, p Ports) ServiceStatus {
 	}
 }
 
+// FindSharedCeleryOwner returns a live worker other than self that is not on a
+// kit-private vhost. Only such a worker consumes the tasks of a worker on the
+// shared broker; a worker on its own vhost cannot conflict with it.
+func FindSharedCeleryOwner(self string) (owner string, pid int) {
+	for _, w := range liveCeleryWorkers() {
+		if w.name == self {
+			continue
+		}
+		if strings.HasPrefix(RecordedBroker(w.name, SvcCelery), localBroker+"/kit-") {
+			continue
+		}
+		return w.name, w.pid
+	}
+	return "", 0
+}
+
+type celeryWorker struct {
+	name string
+	pid  int
+}
+
+// liveCeleryWorkers lists every worktree whose celery pid is alive, including
+// run directories no longer in state.
+func liveCeleryWorkers() []celeryWorker {
+	seen := map[string]bool{}
+	var out []celeryWorker
+	add := func(name string) {
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		if p := ReadPID(name, string(SvcCelery)); p > 0 && IsAlive(p) {
+			out = append(out, celeryWorker{name, p})
+		}
+	}
+	if st, err := LoadState(); err == nil {
+		for name := range st.Worktrees {
+			add(name)
+		}
+	}
+	home, _ := os.UserHomeDir()
+	runRoot := filepath.Join(home, ".config", "kit", "run")
+	if v := os.Getenv("KIT_RUN_DIR"); v != "" {
+		runRoot = v
+	}
+	if entries, err := os.ReadDir(runRoot); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				add(e.Name())
+			}
+		}
+	}
+	return out
+}
+
 // FindCeleryOwner scans every worktree's celery.pid and returns the worktree
 // name + pid of the live celery, if any. Returns "" if nothing is running.
 func FindCeleryOwner() (owner string, pid int) {

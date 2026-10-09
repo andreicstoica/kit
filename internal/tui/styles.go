@@ -65,8 +65,7 @@ func IsDark() bool { return darkBackground }
 // resolve their own dark/light state per render (huh themes) use this
 // instead of the package-level ColorAccent.
 func AccentFor(isDark bool) color.Color {
-	buildStyles()
-	return ColorAccent
+	return lipgloss.LightDark(isDark)(lipgloss.Color("#0F8A4E"), lipgloss.Color("#5DD39E"))
 }
 
 // SetDarkBackground switches the palette and rebuilds the shared styles.

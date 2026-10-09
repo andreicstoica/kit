@@ -14,12 +14,13 @@ var (
 	focusGhostty  bool
 	focusNoAttach bool
 	focusLayout   string
+	focusBackend  string
 )
 
 var focusCmd = &cobra.Command{
 	Use:               "focus [name]",
 	Short:             "Make a worktree the active development environment",
-	Long:              "focus opens or reuses the worktree's Herdr space, optionally opens an editor or Ghostty client, and attaches the current terminal unless --no-attach is set. First-time spaces use the Simple (2 tabs) or Detailed (5 tabs) picker.",
+	Long:              "focus opens or reuses the worktree's configured terminal workspace, optionally opens an editor, and connects its viewer unless --no-attach is set. Rex uses the native app; Herdr attaches this terminal or opens Ghostty with --ghostty. --backend overrides the configured runtime.",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,6 +48,7 @@ var focusCmd = &cobra.Command{
 			Editor:   editorName,
 			Ghostty:  focusGhostty,
 			NoAttach: focusNoAttach,
+			Backend:  focusBackend,
 		})
 	},
 }
@@ -55,7 +57,8 @@ func init() {
 	focusCmd.Flags().StringVarP(&focusEditor, "editor", "e", "", "also open this editor")
 	focusCmd.Flags().BoolVar(&focusCursor, "cursor", false, "also open Cursor")
 	focusCmd.Flags().BoolVar(&focusGhostty, "ghostty", false, "open a Herdr client in Ghostty")
-	focusCmd.Flags().BoolVar(&focusNoAttach, "no-attach", false, "focus/setup only; do not attach this terminal")
-	focusCmd.Flags().StringVar(&focusLayout, "layout", "", "Kit Herdr layout (default, detailed, ai, or a configured layout)")
+	focusCmd.Flags().BoolVar(&focusNoAttach, "no-attach", false, "ensure workspace without connecting a viewer")
+	focusCmd.Flags().StringVar(&focusLayout, "layout", "", "Kit terminal layout (default, detailed, ai, or a configured layout)")
+	focusCmd.Flags().StringVar(&focusBackend, "backend", "", "terminal backend: rex or herdr (default: config)")
 	rootCmd.AddCommand(focusCmd)
 }
