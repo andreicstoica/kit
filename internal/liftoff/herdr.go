@@ -348,33 +348,12 @@ func CloseHerdr(name, path string) error {
 	if !exists && name != "master" {
 		return nil
 	}
-	if !HerdrAvailable() {
-		return fmt.Errorf("Herdr is not installed; install it with `brew install herdr`")
-	}
-	state, err := ReadHerdrState()
-	if err != nil {
-		return err
-	}
-	var workspace *HerdrWorkspace
-	for i := range state.Workspaces {
-		w := &state.Workspaces[i]
-		if meta.HerdrID != "" {
-			if w.WorkspaceID == meta.HerdrID {
-				workspace = w
-				break
-			}
-			continue // A stale ID never authorizes closing a same-label session.
-		}
-		if path != "" && ((w.Worktree != nil && cleanPath(w.Worktree.CheckoutPath) == cleanPath(path)) || workspaceHasPath(state, w.WorkspaceID, cleanPath(path))) {
-			if workspace != nil {
-				return fmt.Errorf("multiple Herdr workspaces match checkout %q; map an explicit ID before closing", path)
-			}
-			workspace = w
-		}
-	}
-	if workspace != nil {
-		if _, err := runHerdr("workspace", "close", workspace.WorkspaceID); err != nil {
-			return fmt.Errorf("close Herdr workspace %q: %w", name, err)
+	// Without the binary Kit cannot reach the workspace. Dropping the mapping
+	// can orphan it in Herdr's state but can never close the wrong one, and
+	// keeping it would block wash for every worktree that once used Herdr.
+	if HerdrAvailable() {
+		if err := closeHerdrWorkspace(name, meta.HerdrID, path); err != nil {
+			return err
 		}
 	}
 	if name != "master" {
@@ -392,6 +371,38 @@ func CloseHerdr(name, path string) error {
 			return nil
 		}); err != nil {
 			return fmt.Errorf("clear Herdr mapping: %w", err)
+		}
+	}
+	return nil
+}
+
+// closeHerdrWorkspace closes the Herdr workspace saved for name, or the one
+// found by checkout path when no ID was saved.
+func closeHerdrWorkspace(name, herdrID, path string) error {
+	state, err := ReadHerdrState()
+	if err != nil {
+		return err
+	}
+	var workspace *HerdrWorkspace
+	for i := range state.Workspaces {
+		w := &state.Workspaces[i]
+		if herdrID != "" {
+			if w.WorkspaceID == herdrID {
+				workspace = w
+				break
+			}
+			continue // A stale ID never authorizes closing a same-label session.
+		}
+		if path != "" && ((w.Worktree != nil && cleanPath(w.Worktree.CheckoutPath) == cleanPath(path)) || workspaceHasPath(state, w.WorkspaceID, cleanPath(path))) {
+			if workspace != nil {
+				return fmt.Errorf("multiple Herdr workspaces match checkout %q; map an explicit ID before closing", path)
+			}
+			workspace = w
+		}
+	}
+	if workspace != nil {
+		if _, err := runHerdr("workspace", "close", workspace.WorkspaceID); err != nil {
+			return fmt.Errorf("close Herdr workspace %q: %w", name, err)
 		}
 	}
 	return nil
