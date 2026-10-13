@@ -3,6 +3,7 @@ package cmd
 import (
 	"runtime/debug"
 
+	"github.com/andreicstoica/kit/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -12,6 +13,7 @@ var version = "dev"
 
 func init() {
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		tui.SeedTheme()
 		if err := MaybeOfferSetup(cmd, args); err != nil {
 			return err
 		}

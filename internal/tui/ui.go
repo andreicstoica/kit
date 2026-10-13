@@ -103,6 +103,9 @@ func ApplyTheme(isDark bool, h *help.Model, lists ...*list.Model) {
 // with the list pickers.
 func KitHuhTheme() huh.Theme {
 	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		if themePinned {
+			isDark = IsDark()
+		}
 		t := huh.ThemeCharm(isDark)
 		accent := AccentFor(isDark)
 		t.Focused.Title = t.Focused.Title.Foreground(accent).Bold(true)

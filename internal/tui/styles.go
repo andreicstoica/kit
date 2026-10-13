@@ -12,8 +12,9 @@ import (
 //
 // Lip Gloss v2 removed AdaptiveColor, so the theme is explicit: default
 // dark (kit developers live in dark terminals), updated asynchronously
-// from tea.BackgroundColorMsg via SetDarkBackground. No blocking terminal
-// query happens at startup.
+// from tea.BackgroundColorMsg via SetDarkBackground. Inside Rex, which never
+// answers the query, SeedTheme reads the app's appearance instead. No
+// blocking terminal query happens at startup.
 var (
 	darkBackground = true
 
@@ -57,6 +58,16 @@ var (
 	// italic, no bold — distinct from regular text but lighter than StyleHi.
 	StyleCode lipgloss.Style
 )
+
+// themePinned is set when the theme came from a terminal hint (Rex) rather
+// than a BackgroundColorMsg. huh forms then follow IsDark() instead of their
+// own detection, which defaults to light when the terminal never answers.
+var themePinned bool
+
+func pinTheme(dark bool) {
+	themePinned = true
+	SetDarkBackground(dark)
+}
 
 // IsDark reports the current theme assumption.
 func IsDark() bool { return darkBackground }
