@@ -514,6 +514,17 @@ func TestFocusRexClientUsesExistingActiveWindow(t *testing.T) {
 	}
 }
 
+func TestFocusRexClientFallsBackToFirstWindow(t *testing.T) {
+	setStateDir(t)
+	fake := installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:focus", Label: "focus", Windows: []RexWindow{{WindowID: "window:first", Label: "shell"}, {WindowID: "window:second", Label: "agent"}}}}})
+	if err := FocusRexClient("session:focus"); err != nil {
+		t.Fatal(err)
+	}
+	if !containsRexCall(fake.calls(t), "-C client:test-app do session.select session_id=session:focus window_id=window:first") {
+		t.Fatalf("focus command = %q", fake.calls(t))
+	}
+}
+
 func TestReadRexStateUsesLuaSnapshotThroughCLI(t *testing.T) {
 	fake := installFakeRex(t, RexState{})
 	state, err := ReadRexState()
@@ -684,5 +695,17 @@ func TestRexOpenWorkspacesMatchesSavedSessionIDs(t *testing.T) {
 	}
 	if !open["open-wt"] || open["stale-wt"] || open["none-wt"] {
 		t.Fatalf("open = %v", open)
+	}
+}
+
+func TestCheckRexReportsSnapshotWithoutActiveTab(t *testing.T) {
+	setStateDir(t)
+	installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:a", Label: "a", Windows: []RexWindow{{WindowID: "window:a", Active: true}}}}})
+	if r := checkRex(); r.Status != CheckOK {
+		t.Fatalf("healthy snapshot = %+v", r)
+	}
+	installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:b", Label: "b", Windows: []RexWindow{{WindowID: "window:b"}}}}})
+	if r := checkRex(); r.Status != CheckWarn || !strings.Contains(r.Detail, `"b" reports 0 active tabs`) {
+		t.Fatalf("snapshot without active tab = %+v", r)
 	}
 }

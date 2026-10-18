@@ -45,7 +45,7 @@ for _, s in ipairs(list.sessions or {}) do
         end
       end
       for _, w in ipairs(v.windows or {}) do
-        local window = {window_id=w.window_id, label=w.label, active=w.active, blocks={}}
+        local window = {window_id=w.window_id, label=w.label, active=w.active or w.window_id == v.active_window_id, blocks={}}
         for _, block in ipairs(by_window[w.window_id] or {}) do
           block.status = "unknown"
           if a.status and block.creator_name and block.block_id then

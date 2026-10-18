@@ -473,12 +473,19 @@ func FocusRexClient(sessionID string) error {
 	}
 	for _, s := range state.Sessions {
 		if s.SessionID == sessionID {
+			if len(s.Windows) == 0 {
+				return fmt.Errorf("Rex session %q has no windows", sessionID)
+			}
+			// Selecting the session matters more than which tab; fall back to
+			// the first tab if Rex stops reporting the active one.
+			windowID := s.Windows[0].WindowID
 			for _, w := range s.Windows {
 				if w.Active {
-					return selectRexAppSession(sessionID, w.WindowID)
+					windowID = w.WindowID
+					break
 				}
 			}
-			return fmt.Errorf("Rex session %q has no active window", sessionID)
+			return selectRexAppSession(sessionID, windowID)
 		}
 	}
 	return fmt.Errorf("Rex session %q not found", sessionID)
