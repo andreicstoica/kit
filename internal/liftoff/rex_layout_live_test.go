@@ -39,6 +39,9 @@ func TestRexSimpleLayoutDisposableLive(t *testing.T) {
 	if session == nil || len(session.Windows) != 1 || len(session.Windows[0].Blocks) != 2 {
 		t.Fatalf("expected one tab with shell and agent panes: %+v", session)
 	}
+	if !session.Windows[0].Active {
+		t.Fatalf("snapshot did not mark the only tab active: %+v", session.Windows[0])
+	}
 	if len(created.InitialWindows) != 1 || len(created.InitialWindows[0].BlockIDs) != 2 {
 		t.Fatalf("missing published pane identities: %s", out)
 	}
@@ -47,14 +50,22 @@ func TestRexSimpleLayoutDisposableLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	var focused struct {
-		Window struct {
-			BlockID string `json:"focused_block_id"`
-		} `json:"focused_window"`
+		ActiveWindowID string `json:"active_window_id"`
+		Windows        []struct {
+			WindowID string `json:"window_id"`
+			BlockID  string `json:"focused_block_id"`
+		} `json:"windows"`
 	}
 	if err := json.Unmarshal([]byte(view), &focused); err != nil {
 		t.Fatal(err)
 	}
-	if focused.Window.BlockID != created.InitialWindows[0].BlockIDs[1] {
+	focusedBlock := ""
+	for _, w := range focused.Windows {
+		if w.WindowID == focused.ActiveWindowID {
+			focusedBlock = w.BlockID
+		}
+	}
+	if focusedBlock != created.InitialWindows[0].BlockIDs[1] {
 		t.Fatalf("new workspace focused shell, not Claude pane: %s", view)
 	}
 }

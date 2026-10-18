@@ -514,6 +514,17 @@ func TestFocusRexClientUsesExistingActiveWindow(t *testing.T) {
 	}
 }
 
+func TestFocusRexClientFallsBackToFirstWindow(t *testing.T) {
+	setStateDir(t)
+	fake := installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:focus", Label: "focus", Windows: []RexWindow{{WindowID: "window:first", Label: "shell"}, {WindowID: "window:second", Label: "agent"}}}}})
+	if err := FocusRexClient("session:focus"); err != nil {
+		t.Fatal(err)
+	}
+	if !containsRexCall(fake.calls(t), "-C client:test-app do session.select session_id=session:focus window_id=window:first") {
+		t.Fatalf("focus command = %q", fake.calls(t))
+	}
+}
+
 func TestReadRexStateUsesLuaSnapshotThroughCLI(t *testing.T) {
 	fake := installFakeRex(t, RexState{})
 	state, err := ReadRexState()
