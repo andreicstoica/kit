@@ -55,6 +55,7 @@ func DefaultChecks(layout Layout) []Check {
 		{ID: "postgres", Run: checkPostgres},
 		{ID: "ghostty", Run: checkGhostty},
 		{ID: "herdr", Run: checkHerdr},
+		{ID: "rex", Run: checkRex},
 		{ID: "editor", Run: checkEditor},
 		{ID: "hunk", Run: checkHunk},
 		{ID: "liftoff-master", Run: func() CheckResult { return checkLiftoffMaster(layout) }},
@@ -432,6 +433,50 @@ func checkHerdr() CheckResult {
 	ver, _ := ToolVersion("herdr", "--version")
 	r.Status = CheckOK
 	r.Detail = firstLine(ver)
+	return r
+}
+
+// checkRex also reads one snapshot, because a Rex update can change its
+// output without notice and break workspace selection in `kit open`.
+func checkRex() CheckResult {
+	r := CheckResult{Name: "rex"}
+	backend, _ := WorkspaceBackend()
+	if !RexAvailable() {
+		r.Status = CheckSkip
+		r.Detail = "not installed"
+		if backend == BackendRex {
+			r.Status = CheckWarn
+			r.Detail = "not installed — Rex is the workspace backend"
+			r.FixHint = "install Rex, or set KIT_WORKSPACE_BACKEND=herdr"
+		}
+		return r
+	}
+	state, err := readRexStructure("")
+	if err != nil {
+		r.Status = CheckWarn
+		r.Detail = "cannot read Rex state: " + firstLine(err.Error())
+		r.FixHint = "open the Rex app"
+		return r
+	}
+	for _, s := range state.Sessions {
+		if len(s.Windows) == 0 {
+			continue
+		}
+		active := 0
+		for _, w := range s.Windows {
+			if w.Active {
+				active++
+			}
+		}
+		if active != 1 {
+			r.Status = CheckWarn
+			r.Detail = fmt.Sprintf("session %q reports %d active tabs, want 1; Rex output may have changed", s.Label, active)
+			r.FixHint = "KIT_TEST_REX=1 go test -run Live ./internal/liftoff"
+			return r
+		}
+	}
+	r.Status = CheckOK
+	r.Detail = fmt.Sprintf("%d sessions", len(state.Sessions))
 	return r
 }
 

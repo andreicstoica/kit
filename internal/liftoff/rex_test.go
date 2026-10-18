@@ -697,3 +697,15 @@ func TestRexOpenWorkspacesMatchesSavedSessionIDs(t *testing.T) {
 		t.Fatalf("open = %v", open)
 	}
 }
+
+func TestCheckRexReportsSnapshotWithoutActiveTab(t *testing.T) {
+	setStateDir(t)
+	installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:a", Label: "a", Windows: []RexWindow{{WindowID: "window:a", Active: true}}}}})
+	if r := checkRex(); r.Status != CheckOK {
+		t.Fatalf("healthy snapshot = %+v", r)
+	}
+	installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:b", Label: "b", Windows: []RexWindow{{WindowID: "window:b"}}}}})
+	if r := checkRex(); r.Status != CheckWarn || !strings.Contains(r.Detail, `"b" reports 0 active tabs`) {
+		t.Fatalf("snapshot without active tab = %+v", r)
+	}
+}
