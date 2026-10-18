@@ -2,6 +2,9 @@ package tui
 
 import (
 	"os"
+	"os/exec"
+	"runtime"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,6 +16,10 @@ import (
 // receive a tea.BackgroundColorMsg. Falls back to dark on error (the safe
 // default for most kit developers' terminals).
 func DetectTerminalBackground() bool {
+	if dark, ok := rexBackgroundHint(); ok {
+		pinTheme(dark)
+		return dark
+	}
 	if !isTerminal(os.Stdin) {
 		SetDarkBackground(true)
 		return true
@@ -20,6 +27,41 @@ func DetectTerminalBackground() bool {
 	dark := detectTerminalBg()
 	SetDarkBackground(dark)
 	return dark
+}
+
+// SeedTheme installs the palette from a cheap, non-interactive theme hint
+// before any output. It never probes the terminal, so it is safe to call for
+// every command.
+func SeedTheme() {
+	if dark, ok := rexBackgroundHint(); ok {
+		pinTheme(dark)
+	}
+}
+
+// readDefaults runs `defaults read` with args. Tests replace it.
+var readDefaults = func(args ...string) (string, error) {
+	out, err := exec.Command("defaults", append([]string{"read"}, args...)...).Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// rexBackgroundHint reports the Rex app's appearance on macOS. Rex answers
+// DA1 but not the OSC 11 background query, so a probe inside Rex always
+// times out. Rex stores its mode as Workspace.appearance; "system" follows
+// the macOS appearance. ok is false outside a local macOS Rex terminal.
+func rexBackgroundHint() (dark, ok bool) {
+	if runtime.GOOS != "darwin" || os.Getenv("TERM_PROGRAM") != "rex" {
+		return false, false
+	}
+	appearance, _ := readDefaults("com.superlogical.rex", "Workspace.appearance")
+	switch a := strings.ToLower(appearance); {
+	case strings.Contains(a, "dark"):
+		return true, true
+	case strings.Contains(a, "light"):
+		return false, true
+	}
+	// AppleInterfaceStyle is absent in light mode, so an error means light.
+	style, err := readDefaults("-g", "AppleInterfaceStyle")
+	return err == nil && strings.EqualFold(style, "dark"), true
 }
 
 func isTerminal(f *os.File) bool {
@@ -32,7 +74,7 @@ func isTerminal(f *os.File) bool {
 
 // detectTimeout bounds the background-color probe. Bubble Tea v2 sends no
 // fallback BackgroundColorMsg when the terminal never answers (e.g. Herdr
-// panes), so without this the probe program blocks forever and static
+// panes, Rex), so without this the probe program blocks forever and static
 // commands hang. Stays well under the 5s v1 termenv timeout.
 const detectTimeout = 500 * time.Millisecond
 
