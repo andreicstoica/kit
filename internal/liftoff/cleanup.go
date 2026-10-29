@@ -29,9 +29,9 @@ func hasSavedManagedWorkspace(name string) bool {
 // fail and retain recovery metadata so a human decides.
 //
 // skip=true means the worktree provably uses a different database (its env
-// still points elsewhere, e.g. it never cloned one): there is nothing owned
-// to drop, so the caller continues without dropping. Skipping leaks nothing
-// it could destroy; guessing would.
+// still points elsewhere, e.g. it never cloned one), or the derived database
+// does not exist: there is nothing owned to drop, so the caller continues
+// without dropping. Skipping leaks nothing it could destroy; guessing would.
 //
 // The returned value is ownership evidence, never logged.
 func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err error) {
@@ -88,7 +88,7 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 			}
 		}
 		if envErr != nil || !found || envDB == "" {
-			return "", false, fmt.Errorf("cannot prove database ownership for %q; refusing to guess", name)
+			return unprovenCleanupDB(name)
 		}
 		if envDB != candidate {
 			return "", true, nil
@@ -105,12 +105,32 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 			return "", false, fmt.Errorf("persist database ownership for %q: %w", name, err)
 		}
 	} else {
-		return "", false, fmt.Errorf("cannot prove database ownership for %q; refusing to guess", name)
+		return unprovenCleanupDB(name)
 	}
 	if candidate == "liftoff" {
 		return "", false, fmt.Errorf("refusing to drop shared database %q", candidate)
 	}
 	return candidate, false, nil
+}
+
+// derivedDBExists reports whether DBName(name) exists. A query failure is
+// unknown state, never proof of absence.
+var derivedDBExists = func(name string) (bool, error) {
+	found, err := HasDBs([]string{name})
+	if err != nil {
+		return false, err
+	}
+	return found[name], nil
+}
+
+// unprovenCleanupDB handles a derived name with no ownership proof. An absent
+// database has nothing to destroy, so cleanup skips it; an existing or
+// unknown one could belong to someone else, so cleanup refuses.
+func unprovenCleanupDB(name string) (string, bool, error) {
+	if exists, err := derivedDBExists(name); err == nil && !exists {
+		return "", true, nil
+	}
+	return "", false, fmt.Errorf("cannot prove database ownership for %q; refusing to guess", name)
 }
 
 // verifyWorktreeOwnership refuses to remove the checkout at path when git has
