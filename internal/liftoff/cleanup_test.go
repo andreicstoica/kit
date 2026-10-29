@@ -1,6 +1,7 @@
 package liftoff
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,8 +116,17 @@ func TestOwnedDBName_RefusesCollision(t *testing.T) {
 	}
 }
 
+// stubDerivedDB fixes what derivedDBExists reports for the test's duration.
+func stubDerivedDB(t *testing.T, exists bool, err error) {
+	t.Helper()
+	orig := derivedDBExists
+	derivedDBExists = func(string) (bool, error) { return exists, err }
+	t.Cleanup(func() { derivedDBExists = orig })
+}
+
 func TestResolveCleanupDB_RefusesUnprovenGuess(t *testing.T) {
 	setStateDir(t)
+	stubDerivedDB(t, true, nil)
 	if err := WithConfigLock(func(c *Config) error {
 		c.Worktrees["plain"] = WorktreeMeta{Slot: 1}
 		return nil
@@ -196,6 +206,7 @@ func TestResolveCleanupDB_EnvMismatchSkips(t *testing.T) {
 // A missing env proves nothing and must still refuse.
 func TestResolveCleanupDB_EnvWithoutDBKeySkips(t *testing.T) {
 	setStateDir(t)
+	stubDerivedDB(t, true, nil)
 	wt := t.TempDir()
 	if _, _, err := resolveCleanupDB("plain", wt); err == nil {
 		t.Fatal("missing backend/.env should refuse")
@@ -215,6 +226,25 @@ func TestResolveCleanupDB_EnvWithoutDBKeySkips(t *testing.T) {
 	}
 	if _, _, err := resolveCleanupDB("plain", wt); err == nil {
 		t.Fatal("empty db key should refuse")
+	}
+}
+
+// An adopted checkout can have no env and no persisted name. When the derived
+// database does not exist there is nothing to destroy, so cleanup skips it.
+// A failed existence check proves nothing and must still refuse.
+func TestResolveCleanupDB_UnprovenAbsentDBSkips(t *testing.T) {
+	setStateDir(t)
+	wt := t.TempDir()
+	stubDerivedDB(t, false, nil)
+	for _, path := range []string{wt, ""} {
+		db, skip, err := resolveCleanupDB("plain", path)
+		if err != nil || !skip || db != "" {
+			t.Fatalf("absent derived db (path %q) should skip, got %q skip=%v err=%v", path, db, skip, err)
+		}
+	}
+	stubDerivedDB(t, false, errors.New("psql down"))
+	if _, _, err := resolveCleanupDB("plain", wt); err == nil {
+		t.Fatal("failed existence check must refuse, not skip")
 	}
 }
 
