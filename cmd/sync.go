@@ -83,6 +83,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	var retErr error
+	if migrate.err != nil {
+		retErr = fmt.Errorf("master DB migration failed: %w", migrate.err)
+	}
 	if syncSkipTear {
 		printMigrateSummary(layout, migrate)
 		return retErr
@@ -90,7 +93,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	cands, err := layout.FindMergedWorktrees()
 	if err != nil {
-		return err
+		return errors.Join(retErr, err)
 	}
 	if len(cands) == 0 {
 		printMigrateSummary(layout, migrate)
@@ -111,13 +114,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 		Default:  true,
 	})
 	if err != nil {
-		return err
+		return errors.Join(retErr, err)
 	}
 	if !accept {
 		printMigrateSummary(layout, migrate)
 		return retErr
 	}
-	retErr = tui.RunMergedWashTUI(layout)
+	retErr = errors.Join(retErr, tui.RunMergedWashTUI(layout))
 	retErr = errors.Join(retErr, offerOrphanReconcile(layout, false))
 	printMigrateSummary(layout, migrate)
 	return retErr

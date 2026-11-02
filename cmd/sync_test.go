@@ -332,3 +332,44 @@ func TestRunMasterMigrateBehindWithoutNewSyncMigrations(t *testing.T) {
 		t.Fatalf("unexpected new-migration title:\n%s", out)
 	}
 }
+
+func TestRunSyncMigrationResult(t *testing.T) {
+	oldSkipTear, oldSkipMigrate := syncSkipTear, syncSkipMigrate
+	t.Cleanup(func() { syncSkipTear, syncSkipMigrate = oldSkipTear, oldSkipMigrate })
+	syncSkipTear = true
+	for _, tc := range []struct {
+		name        string
+		upgradeFail bool
+		skipMigrate bool
+		wantErr     bool
+	}{
+		{name: "failed migration", upgradeFail: true, wantErr: true},
+		{name: "successful migration"},
+		{name: "skipped migration", upgradeFail: true, skipMigrate: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newSyncMasterRepo(t)
+			setupSyncBackend(t, l)
+			installFakeAlembic(t, "e58a3c2f9d10", tc.upgradeFail)
+			t.Setenv("KIT_ROOT", filepath.Dir(l.Master))
+			t.Setenv("KIT_MASTER_DIR", filepath.Base(l.Master))
+			t.Setenv("KIT_MAIN_BRANCH", l.MainBranch)
+			t.Setenv("KIT_STATE_DIR", t.TempDir())
+			t.Setenv("KIT_RUN_DIR", t.TempDir())
+			bin := t.TempDir()
+			if err := os.WriteFile(filepath.Join(bin, "gt"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			syncSkipMigrate = tc.skipMigrate
+			var err error
+			out := captureStdout(func() { err = runSync(nil, nil) })
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("runSync() error = %v, want error %v; output:\n%s", err, tc.wantErr, out)
+			}
+			if tc.wantErr && !strings.Contains(err.Error(), "upgrade") {
+				t.Fatalf("migration failure missing from error: %v", err)
+			}
+		})
+	}
+}
