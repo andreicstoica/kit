@@ -62,13 +62,16 @@ func runStream(dir, name string, args []string, env []string, onLine LineFn) err
 		return err
 	}
 	var wg sync.WaitGroup
+	var lines sync.Mutex
 	pump := func(r io.Reader) {
 		defer wg.Done()
 		s := bufio.NewScanner(r)
 		s.Buffer(make([]byte, 64*1024), 1024*1024)
 		for s.Scan() {
 			if onLine != nil {
+				lines.Lock()
 				onLine(s.Text())
+				lines.Unlock()
 			}
 		}
 	}

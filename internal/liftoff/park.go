@@ -3,6 +3,7 @@ package liftoff
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
 
 func (l Layout) Park(name string) error {
@@ -14,13 +15,14 @@ func (l Layout) Park(name string) error {
 		if err := l.validateParkRecord(cfg, name); err != nil {
 			return err
 		}
-		var failures []error
+		failures := make([]error, len(AllServices))
 		snap := SnapshotProcs(name, AllServices)
-		for _, svc := range AllServices {
-			if err := snap.Stop(name, svc); err != nil {
-				failures = append(failures, err)
-			}
+		var stops sync.WaitGroup
+		for i, svc := range AllServices {
+			stops.Add(1)
+			go func() { defer stops.Done(); failures[i] = snap.Stop(name, svc) }()
 		}
+		stops.Wait()
 		if err := errors.Join(failures...); err != nil {
 			return fmt.Errorf("workspace remains visible because services could not be stopped: %w", err)
 		}

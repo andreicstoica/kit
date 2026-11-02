@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -47,10 +48,44 @@ func renderLineup(layout liftoff.Layout, parked bool) (string, error) {
 	header := "HERDR"
 	if backend == liftoff.BackendRex {
 		header = "REX"
-		rexState, _ = liftoff.ReadRexState()
-	} else if liftoff.HerdrAvailable() {
-		herdrState, _ = liftoff.ReadHerdrState()
 	}
+	var probes sync.WaitGroup
+	probes.Add(1)
+	go func() {
+		defer probes.Done()
+		if backend == liftoff.BackendRex {
+			rexState, _ = liftoff.ReadRexState()
+		} else if liftoff.HerdrAvailable() {
+			herdrState, _ = liftoff.ReadHerdrState()
+		}
+	}()
+	type worktreeStatus struct {
+		dirty                         bool
+		ahead, behind, running, total int
+	}
+	statuses := make([]worktreeStatus, len(wts))
+	scanWorktrees(wts, func(i int, w liftoff.Worktree) {
+		master := w.IsMaster(layout)
+		name := w.Name()
+		if master {
+			name = "master"
+		}
+		meta := state.Worktrees[name]
+		if w.Bare || (master && parked) || (!master && meta.Parked != parked) {
+			return
+		}
+		status := &statuses[i]
+		if !w.Missing {
+			status.dirty = liftoff.IsDirty(w.Path)
+			if !master {
+				status.ahead, status.behind = layout.AheadBehind(w.Path)
+			}
+		}
+		if master || meta.Slot > 0 {
+			status.running, status.total = liftoff.RunningCount(name, liftoff.PortsForSlot(meta.Slot))
+		}
+	})
+	probes.Wait()
 
 	type row struct {
 		name       string
@@ -67,7 +102,7 @@ func renderLineup(layout liftoff.Layout, parked bool) (string, error) {
 	}
 	var rows []row
 
-	for _, w := range wts {
+	for i, w := range wts {
 		if w.Bare {
 			continue
 		}
@@ -83,12 +118,12 @@ func renderLineup(layout liftoff.Layout, parked bool) (string, error) {
 		stRaw := "clean"
 		if w.Missing {
 			stRaw = "missing"
-		} else if liftoff.IsDirty(w.Path) {
+		} else if statuses[i].dirty {
 			stRaw = "dirty"
 		}
 		if !isMaster {
 			// Master is the reference; ahead/behind doesn't apply.
-			ahead, behind := layout.AheadBehind(w.Path)
+			ahead, behind := statuses[i].ahead, statuses[i].behind
 			if ahead > 0 || behind > 0 {
 				stRaw = fmt.Sprintf("%s ↑%d↓%d", stRaw, ahead, behind)
 			}
@@ -121,9 +156,7 @@ func renderLineup(layout liftoff.Layout, parked bool) (string, error) {
 				herdrStatus = fmt.Sprintf("%d tabs · %d panes · %s", len(session.Windows), panes, session.ProgramStatusSummary())
 			}
 		}
-		ports := liftoff.PortsForSlot(meta.Slot)
-
-		running, total := liftoff.RunningCount(name, ports)
+		running, total := statuses[i].running, statuses[i].total
 		runningStr := "—"
 		hasRunning := running > 0
 		if hasRunning {

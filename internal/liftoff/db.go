@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -49,10 +50,23 @@ func CloneDB(srcDB, dstDB string, onLine LineFn) error {
 	if err := psql.Start(); err != nil {
 		w.Close()
 		r.Close()
+		_ = dump.Process.Kill()
+		_ = dump.Wait()
 		return err
 	}
-	go drain(dumpErr, "pg_dump", onLine)
-	go drain(psqlErr, "psql", onLine)
+	var logs sync.WaitGroup
+	var logMu sync.Mutex
+	emit := func(line string) {
+		logMu.Lock()
+		defer logMu.Unlock()
+		if onLine != nil {
+			onLine(line)
+		}
+	}
+	logs.Add(2)
+	go func() { defer logs.Done(); drain(dumpErr, "pg_dump", emit) }()
+	go func() { defer logs.Done(); drain(psqlErr, "psql", emit) }()
+	defer logs.Wait()
 
 	dumpDone := make(chan error, 1)
 	go func() {
@@ -63,9 +77,13 @@ func CloneDB(srcDB, dstDB string, onLine LineFn) error {
 	psqlErr2 := psql.Wait()
 	r.Close()
 	if psqlErr2 != nil {
+		_ = dump.Process.Kill()
+	}
+	dumpResult := <-dumpDone
+	if psqlErr2 != nil {
 		return fmt.Errorf("psql restore: %w", psqlErr2)
 	}
-	if err := <-dumpDone; err != nil {
+	if err := dumpResult; err != nil {
 		return fmt.Errorf("pg_dump: %w", err)
 	}
 	return nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 type TerminalBackend string
@@ -53,16 +54,26 @@ func CloseManagedWorkspaces(name, path string) error {
 		return err
 	}
 	meta := cfg.Worktrees[name]
-	var errs []error
+	errs := make([]error, 2)
+	var closing sync.WaitGroup
 	if meta.RexID != "" || (name == "master" && cfg.Settings.RexMasterSession != "") {
-		if err := CloseRex(name, path); err != nil {
-			errs = append(errs, fmt.Errorf("close Rex: %w", err))
-		}
+		closing.Add(1)
+		go func() {
+			defer closing.Done()
+			if err := CloseRex(name, path); err != nil {
+				errs[0] = fmt.Errorf("close Rex: %w", err)
+			}
+		}()
 	}
 	if meta.HerdrID != "" || meta.HerdrSpace != "" {
-		if err := CloseHerdr(name, path); err != nil {
-			errs = append(errs, fmt.Errorf("close Herdr: %w", err))
-		}
+		closing.Add(1)
+		go func() {
+			defer closing.Done()
+			if err := CloseHerdr(name, path); err != nil {
+				errs[1] = fmt.Errorf("close Herdr: %w", err)
+			}
+		}()
 	}
+	closing.Wait()
 	return errors.Join(errs...)
 }

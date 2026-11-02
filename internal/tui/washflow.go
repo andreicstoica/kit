@@ -126,33 +126,39 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 	}
 	// A named workspace skips the picker, so scan only that one.
 	if preselected != "" {
+		var matched []liftoff.Worktree
 		for _, wt := range candidates {
 			if wt.Name() == preselected {
-				candidates = []liftoff.Worktree{wt}
+				matched = append(matched, wt)
 				break
 			}
 		}
+		if len(matched) == 0 {
+			return nil, fmt.Errorf("workspace %q has no removable worktree; use `kit reconcile` for pending cleanup", preselected)
+		}
+		candidates = matched
 	}
 	names := make([]string, len(candidates))
 	for i, wt := range candidates {
 		names[i] = wt.Name()
 	}
-	hasDB := map[string]bool{}
-	if liftoff.HasPostgres() {
-		if found, err := liftoff.HasDBs(names); err == nil {
-			hasDB = found
-		} else {
-			// Batched lookup failed: retry per name rather than read a
-			// transient psql failure as "no database".
-			for _, name := range names {
-				hasDB[name] = liftoff.HasDB(name)
-			}
-		}
-	}
+	var hasDB map[string]bool
+	var dbErr error
 	var rexOpen map[string]bool
-	if backend, err := liftoff.WorkspaceBackend(); err == nil && backend == liftoff.BackendRex {
-		rexOpen, _ = liftoff.RexOpenWorkspaces() // a failed read only hides the tag
-	}
+	var lookups sync.WaitGroup
+	lookups.Add(2)
+	go func() {
+		defer lookups.Done()
+		if liftoff.HasPostgres() {
+			hasDB, dbErr = liftoff.HasDBs(names)
+		}
+	}()
+	go func() {
+		defer lookups.Done()
+		if backend, err := liftoff.WorkspaceBackend(); err == nil && backend == liftoff.BackendRex {
+			rexOpen, _ = liftoff.RexOpenWorkspaces()
+		}
+	}()
 	scanned := make([]washItem, len(candidates))
 	sem := make(chan struct{}, washScanWorkers)
 	var scan sync.WaitGroup
@@ -175,15 +181,21 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 				aheadCount:       ahead,
 				unpublishedCount: unpublished,
 				publicationKnown: remoteErr == nil && countErr == nil,
-				hasDB:            hasDB[name],
 				hasGtab:          layout.HasGtab(name),
-				rexOpen:          rexOpen[name],
 				isLegacy:         wt.HasLegacyPrefix(),
 				displayIdx:       i + 1,
 			}
 		}()
 	}
 	scan.Wait()
+	lookups.Wait()
+	if dbErr != nil {
+		return nil, dbErr
+	}
+	for i := range scanned {
+		scanned[i].hasDB = hasDB[scanned[i].name]
+		scanned[i].rexOpen = rexOpen[scanned[i].name]
+	}
 	items := make([]list.Item, 0, len(scanned))
 	var preselectedItem *washItem
 	for i := range scanned {
@@ -297,12 +309,9 @@ func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *washModel) pickWash(it washItem) {
 	m.selected = it
 	m.confirmArmed = false
-	if !it.hasDB {
-		m.dropDB = false
-	}
-	if !it.hasGtab {
-		m.removeGtab = false
-	}
+	m.dropDB = it.hasDB
+	m.removeGtab = it.hasGtab
+	m.confirmCursor = 0
 	m.stage = washStageConfirm
 }
 
@@ -324,6 +333,7 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmCursor++
 			}
 		case "space", "tab":
+			m.confirmArmed = false
 			switch m.toggleAtCursor() {
 			case "db":
 				m.dropDB = !m.dropDB

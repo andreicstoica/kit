@@ -87,9 +87,20 @@ func renderLineupTree(layout liftoff.Layout, parked bool) (string, error) {
 	// Build a node per worktree, populating service status + git stats. Run
 	// graphite parent queries in parallel (each is a small subprocess).
 	nodes := make([]*wtNode, len(inputs))
-	parents := make([]string, len(inputs))
 	hasGt := liftoff.HasGraphite()
 	var wg sync.WaitGroup
+	var dbs map[string]bool
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if liftoff.HasPostgres() {
+			names := make([]string, len(inputs))
+			for i, in := range inputs {
+				names[i] = in.w.Name()
+			}
+			dbs, _ = liftoff.HasDBs(names)
+		}
+	}()
 	sem := make(chan struct{}, 8)
 	for i, in := range inputs {
 		i, in := i, in
@@ -101,13 +112,17 @@ func renderLineupTree(layout liftoff.Layout, parked bool) (string, error) {
 			name := in.w.Name()
 			meta := state.Worktrees[name]
 			ports := liftoff.PortsForSlot(meta.Slot)
-			running, total := liftoff.RunningCount(name, ports)
+			running, total := 0, len(liftoff.DisplayServices)
 			var svcRows []serviceRow
 			for _, svc := range liftoff.DisplayServices {
+				alive := meta.Slot > 0 && liftoff.IsServiceAlive(name, svc, ports)
+				if alive {
+					running++
+				}
 				svcRows = append(svcRows, serviceRow{
 					name:  svc.Label(),
 					port:  liftoff.ServicePort(svc, ports),
-					alive: liftoff.IsServiceAlive(name, svc, ports),
+					alive: alive,
 				})
 			}
 			ahead, behind := layout.AheadBehind(in.w.Path)
@@ -138,19 +153,18 @@ func renderLineupTree(layout liftoff.Layout, parked bool) (string, error) {
 				}
 			}
 			if name != "master" {
-				if liftoff.HasPostgres() {
-					n.hasOwnDB = liftoff.HasDB(name)
-				}
 				appNodeModules := filepath.Join(in.w.Path, "frontend", "app", "node_modules")
 				if fi, err := os.Lstat(appNodeModules); err == nil {
 					n.symlinked = fi.Mode()&os.ModeSymlink != 0
 				}
 			}
 			nodes[i] = n
-			parents[i] = n.gtParent
 		}()
 	}
 	wg.Wait()
+	for _, n := range nodes {
+		n.hasOwnDB = dbs[n.name]
+	}
 
 	// Index by branch name so children can find their parent worktrees.
 	byBranch := map[string]*wtNode{}

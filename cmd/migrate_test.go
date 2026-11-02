@@ -64,6 +64,10 @@ count="` + filepath.Join(dir, "new-count") + `"
 tab2="` + filepath.Join(dir, "tab2-created") + `"
 failed="` + filepath.Join(dir, "tab2-failed-once") + `"
 splitCount="` + filepath.Join(dir, "split-count") + `"
+if [ "$1" = "ls" ]; then
+  if [ -f "$marker" ]; then echo '{"sessions":[{"session_id":"rex-s1","label":"feature-one"}]}'; else echo '{"sessions":[]}'; fi
+  exit 0
+fi
 if [ "$1" = "new" ]; then
   n=0; [ -f "$count" ] && n=$(cat "$count"); n=$((n+1)); echo "$n" > "$count"; touch "$marker"; echo '{"session_id":"rex-s1"}'; exit 0
 fi

@@ -77,8 +77,12 @@ var updateCmd = &cobra.Command{
 
 		// Build onto the same filesystem as the current binary so the final
 		// swap is an atomic rename.
-		built := filepath.Join(filepath.Dir(self), ".kit-update-"+latest)
-		defer os.Remove(built)
+		buildDir, err := os.MkdirTemp(filepath.Dir(self), ".kit-update-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(buildDir)
+		built := filepath.Join(buildDir, "kit")
 		fmt.Println("building…")
 		build := exec.CommandContext(ctx, "go", "build",
 			"-ldflags", "-s -w -X "+kitModulePath+"/cmd.version="+latest,
@@ -174,7 +178,9 @@ func runUpdateGit(ctx context.Context, dir string, args ...string) error {
 // latestRemoteTag returns the highest semver tag on the remote (e.g. "v0.1.5"),
 // without needing a local clone.
 func latestRemoteTag() (string, error) {
-	return latestRemoteTagCtx(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return latestRemoteTagCtx(ctx)
 }
 
 // latestRemoteTagCtx is latestRemoteTag with a cancellation context, so the

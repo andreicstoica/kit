@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ type playStage int
 const (
 	playStagePicker playStage = iota
 	playStageToggle
+	playStagePreparing
 	playStageAdoptPrompt
 	playStageAdopting
 	playStageCeleryPrompt
@@ -238,31 +240,27 @@ func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.It
 	if st == nil {
 		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
-	var items []playWtItem
-	for _, w := range wts {
-		if w.Bare {
-			continue
+	scanned := make([]playWtItem, len(wts))
+	scanWorktrees(wts, func(i int, w liftoff.Worktree) {
+		if w.Bare || w.Missing {
+			return
 		}
 		name := w.Name()
 		if w.IsMaster(layout) {
 			name = "master"
 		}
-		emoji := liftoff.EmojiFor(name)
 		meta := st.Worktrees[name]
-		ports := liftoff.PortsForSlot(meta.Slot)
-		running, _ := liftoff.RunningCount(name, ports)
-		it := playWtItem{
-			name:     name,
-			path:     w.Path,
-			emoji:    emoji,
-			slot:     meta.Slot,
-			lastUsed: meta.LastUsed,
-			running:  running,
+		running := 0
+		if name == "master" || meta.Slot > 0 {
+			running, _ = liftoff.RunningCount(name, liftoff.PortsForSlot(meta.Slot))
 		}
-		if keep != nil && !keep(it) {
-			continue
+		scanned[i] = playWtItem{name: name, path: w.Path, emoji: liftoff.EmojiFor(name), slot: meta.Slot, lastUsed: meta.LastUsed, running: running}
+	})
+	var items []playWtItem
+	for _, it := range scanned {
+		if it.name != "" && (keep == nil || keep(it)) {
+			items = append(items, it)
 		}
-		items = append(items, it)
 	}
 	sortPlayWtItems(items)
 	out := make([]list.Item, 0, len(items))
@@ -288,50 +286,51 @@ func sortPlayWtItems(items []playWtItem) {
 // transitionAfterToggle resolves the slot, prompts to adopt if the
 // worktree is unknown, then shows the celery prompt or jumps to run.
 func (m *playModel) transitionAfterToggle() tea.Cmd {
+	m.stage = playStagePreparing
+	chosen, layout := m.chosen, m.layout
+	var selected []liftoff.Service
+	for _, svc := range liftoff.AllServices {
+		if m.toggleOn[svc] {
+			selected = append(selected, svc)
+		}
+	}
 	return func() tea.Msg {
 		st, err := liftoff.LoadConfig()
 		if err != nil {
 			return playSetupErrMsg{err}
 		}
-		meta, ok := st.Worktrees[m.chosen.name]
+		meta, ok := st.Worktrees[chosen.name]
 		// Master is special: slot 0 is its assigned slot (master defaults),
 		// never needs adoption. Adopt prompt only fires for unknown
 		// feature worktrees.
 		needsAdopt := false
-		if m.chosen.name != "master" {
+		if chosen.name != "master" {
 			needsAdopt = !ok || meta.Slot == 0
 		}
 		if needsAdopt {
 			// Unadopted — bail to a confirm prompt. The user explicitly approves
 			// before kit allocates a slot + writes metadata.
-			branch, path := findBranchAndPath(m.layout, m.chosen.name)
+			branch, path := findBranchAndPath(layout, chosen.name)
 			return playAdoptPromptMsg{branch: branch, path: path}
 		}
 		_ = liftoff.WithConfigLock(func(c *liftoff.Config) error {
-			c.TouchLastUsed(m.chosen.name)
+			c.TouchLastUsed(chosen.name)
 			return nil
 		})
-		m.chosen.slot = meta.Slot
+		chosen.slot = meta.Slot
 
-		// Build the plan.
-		var selected []liftoff.Service
-		for _, s := range liftoff.AllServices {
-			if m.toggleOn[s] {
-				selected = append(selected, s)
-			}
-		}
-		ports := liftoff.PortsForSlot(m.chosen.slot)
+		ports := liftoff.PortsForSlot(chosen.slot)
 		plan := liftoff.PlayPlan{
-			Worktree:     m.chosen.name,
-			WorktreePath: m.chosen.path,
-			Slot:         m.chosen.slot,
+			Worktree:     chosen.name,
+			WorktreePath: chosen.path,
+			Slot:         chosen.slot,
 			Ports:        ports,
 			Services:     selected,
 		}
 
 		// Detect celery owner conflict.
-		if (m.toggleOn[liftoff.SvcCelery] || m.toggleOn[liftoff.SvcBeat]) && liftoff.WorkerSharesBroker(m.chosen.path) {
-			owner, pid := liftoff.FindSharedCeleryOwner(m.chosen.name)
+		if (slices.Contains(selected, liftoff.SvcCelery) || slices.Contains(selected, liftoff.SvcBeat)) && liftoff.WorkerSharesBroker(chosen.path) {
+			owner, pid := liftoff.FindSharedCeleryOwner(chosen.name)
 			if owner != "" {
 				return playCeleryConflictMsg{victim: owner, pid: pid, plan: plan}
 			}
@@ -340,8 +339,6 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 	}
 }
 
-// findBranchAndPath looks up the on-disk branch + path for a kit name via
-// git worktree list. Returns ("", "") if not found.
 func findBranchAndPath(layout liftoff.Layout, name string) (string, string) {
 	wts, err := layout.ListWorktrees()
 	if err != nil {
@@ -415,17 +412,27 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.ShowAll = !m.help.ShowAll
 		}
 	case playSetupErrMsg:
+		if m.stage != playStagePreparing && m.stage != playStageAdopting {
+			return m, nil
+		}
 		m.failed = true
 		m.failureErr = msg.err
 		m.stage = playStageDone
 		return m, nil
 	case playReadyMsg:
+		if m.stage != playStagePreparing {
+			return m, nil
+		}
 		m.plan = msg.plan
+		m.chosen.slot = msg.plan.Slot
 		m.stage = playStageRun
 		m.runOrder = msg.plan.Services
 		m.runUpdates = m.layout.RunPlay(msg.plan)
 		return m, tea.Batch(m.spinner.Tick, m.stopwatch.Init(), playNext(m.runUpdates))
 	case playCeleryConflictMsg:
+		if m.stage != playStagePreparing {
+			return m, nil
+		}
 		m.celeryVictim = msg.victim
 		m.celeryPID = msg.pid
 		m.plan = msg.plan
@@ -433,11 +440,17 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stage = playStageCeleryPrompt
 		return m, nil
 	case playAdoptPromptMsg:
+		if m.stage != playStagePreparing {
+			return m, nil
+		}
 		m.adoptBranch = msg.branch
 		m.adoptPath = msg.path
 		m.stage = playStageAdoptPrompt
 		return m, nil
 	case playAdoptedMsg:
+		if m.stage != playStageAdopting {
+			return m, nil
+		}
 		m.stage = playStageToggle
 		m.running = nil // re-probe: services may have changed
 		return m, m.transitionAfterToggle()
@@ -450,7 +463,7 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateToggle(msg)
 	case playStageAdoptPrompt:
 		return m.updateAdopt(msg)
-	case playStageAdopting:
+	case playStagePreparing, playStageAdopting:
 		return m.updateAdopting(msg)
 	case playStageCeleryPrompt:
 		return m.updateCelery(msg)
@@ -686,6 +699,8 @@ func (m *playModel) View() tea.View {
 		body = m.viewToggle()
 	case playStageAdoptPrompt:
 		body = m.viewAdopt()
+	case playStagePreparing:
+		body = m.spinner.View() + " preparing " + StyleHi.Render(m.chosen.name) + "…"
 	case playStageAdopting:
 		body = m.spinner.View() + " adopting " + StyleHi.Render(m.chosen.name) + "…"
 	case playStageCeleryPrompt:

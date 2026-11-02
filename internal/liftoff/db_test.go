@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -130,5 +131,34 @@ func TestCreateDBFromTemplateUsesFileCopyAndFallsBackWhenSourceBusy(t *testing.T
 	}
 	if len(lines) == 0 || !strings.Contains(lines[len(lines)-1], "being accessed") {
 		t.Fatalf("fallback reason not reported: %q", lines)
+	}
+}
+
+func TestCloneDBStopsProducerWhenRestoreFails(t *testing.T) {
+	bin := t.TempDir()
+	pidPath := filepath.Join(bin, "dump-pid")
+	t.Setenv("DUMP_PID", pidPath)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeExecutable(t, filepath.Join(bin, "pg_dump"), "#!/bin/sh\necho $$ > \"$DUMP_PID\"\nexec sleep 30\n")
+	writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\nwhile [ ! -s \"$DUMP_PID\" ]; do sleep 0.01; done\nexit 1\n")
+	err := CloneDB("source", "destination", nil)
+	if err == nil || !strings.Contains(err.Error(), "psql restore") {
+		t.Fatalf("restore error=%v", err)
+	}
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if process, err := os.FindProcess(pid); err == nil {
+			_ = process.Kill()
+		}
+	}()
+	if IsAlive(pid) {
+		t.Fatal("failed restore left pg_dump running")
 	}
 }

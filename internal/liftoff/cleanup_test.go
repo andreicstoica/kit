@@ -16,7 +16,7 @@ func fakeRex(t *testing.T, capturePath string) string {
 	writeExecutable(t, filepath.Join(bin, "rex"), `#!/bin/sh
 # The real CLI accepts global flags before the subcommand; skip them.
 while [ "${1#--}" != "$1" ]; do shift; done
-if [ "$1" = "do" ]; then
+if [ "$1" = "do" ] || [ "$1" = "ls" ]; then
     printf '{"sessions":[{"session_id":"s1","label":"stub","windows":[]}]}'
     exit 0
 fi
@@ -412,5 +412,54 @@ func TestHasSavedManagedWorkspace(t *testing.T) {
 	}
 	if !hasSavedManagedWorkspace("herdr-only") {
 		t.Fatal("saved HerdrID must authorize managed-workspace cleanup")
+	}
+}
+
+func TestReconcilePreservesResourcesExcludedFromFailedWash(t *testing.T) {
+	l := newMasterRepo(t)
+	setStateDir(t)
+	setRunDir(t)
+	l.GtabDir = t.TempDir()
+	name := "keep-resources"
+	path := addWorktree(t, l, name)
+	if _, err := l.WriteGtab(name, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := markCleanupPending(WashPlan{Name: name, Branch: name, WorktreePath: path}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.RemoveWorktree(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	capture := filepath.Join(t.TempDir(), "db-calls")
+	writeExecutable(t, filepath.Join(bin, "pg_dump"), "#!/bin/sh\nexit 0\n")
+	for _, command := range []string{"psql", "dropdb"} {
+		writeExecutable(t, filepath.Join(bin, command), "#!/bin/sh\necho called >> \"$CAPTURE\"\nexit 1\n")
+	}
+	t.Setenv("CAPTURE", capture)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	candidates, err := l.FindOrphanedWorktrees()
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("candidates=%+v error=%v", candidates, err)
+	}
+	if candidates[0].HasDB || candidates[0].HasGtab {
+		t.Fatal("retry expanded the authorized cleanup")
+	}
+	if err := l.ReconcileOrphan(candidates[0], nil); err != nil {
+		t.Fatal(err)
+	}
+	if !l.HasGtab(name) {
+		t.Fatal("retry deleted the saved layout")
+	}
+	if got := readCapture(t, capture); got != "" {
+		t.Fatalf("retry accessed preserved database: %s", got)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := cfg.Worktrees[name]; exists {
+		t.Fatal("finished cleanup retained the config record")
 	}
 }

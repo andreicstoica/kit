@@ -189,6 +189,24 @@ func readRexState(sessionID string, status bool) (RexState, error) {
 	if !RexAvailable() {
 		return RexState{}, fmt.Errorf("Rex is unavailable: `rex` was not found on PATH and no supported Rex app bundle was found")
 	}
+	out, err := runRex("ls", "--json")
+	if err != nil {
+		return RexState{}, err
+	}
+	listed, err := parseRexState(out)
+	if err != nil {
+		return RexState{}, err
+	}
+	if len(listed.Sessions) == 0 {
+		return listed, nil
+	}
+	target := listed.Sessions[0].SessionID
+	if sessionID != "" {
+		if findRexSession(listed, sessionID, "") == nil {
+			return RexState{}, nil
+		}
+		target = sessionID
+	}
 	args := map[string]any{"status": status}
 	if sessionID != "" {
 		args["session_id"] = sessionID
@@ -197,7 +215,7 @@ func readRexState(sessionID string, status bool) (RexState, error) {
 	if err != nil {
 		return RexState{}, err
 	}
-	out, err := runRex("do", "-e", rexSnapshotLua, "--args", string(payload))
+	out, err = runRex("do", "-s", target, "-e", rexSnapshotLua, "--args", string(payload))
 	if err != nil {
 		return RexState{}, err
 	}
@@ -274,6 +292,10 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 			}
 			args = []string{"do", "-e", rexCreateSessionLua, "--args", string(payload)}
 		}
+		// Creation is server-wide, but Rex still resolves a script context when sessions exist.
+		if len(state.Sessions) > 0 {
+			args = append(args, "-s", state.Sessions[0].SessionID)
+		}
 		out, e := runRex(args...)
 		if e != nil {
 			return RexSession{}, fmt.Errorf("create Rex session %q: %w", name, e)
@@ -335,7 +357,7 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 			return RexSession{}, err
 		}
 		changed = true
-		if _, err := runRex("do", "-e", rexEnsureTabsLua, "--args", string(payload)); err != nil {
+		if _, err := runRex("do", "-s", session.SessionID, "-e", rexEnsureTabsLua, "--args", string(payload)); err != nil {
 			return RexSession{}, err
 		}
 	}

@@ -64,7 +64,17 @@ type logLineMsg struct {
 // logEOFMsg fires when a tail goroutine exits.
 type logEOFMsg struct{ tag string }
 
+type logMode int
+
+const (
+	logModeBrowse logMode = iota
+	logModeSearch
+	logModeTags
+	logModeClosed
+)
+
 type logModel struct {
+	mode     logMode
 	worktree string
 	dir      string // run dir holding the .log files — shown at the bottom
 	files    []string
@@ -83,14 +93,12 @@ type logModel struct {
 	height int
 
 	// Search (text substring) filter.
-	filterMode  bool
 	filterInput textinput.Model
 	pattern     string
 
 	// Service tag filter — when a tag is false in tagOn, lines with that
 	// tag are hidden. Initial state: all on. The overlay panel toggled
 	// via `t` lets the user pick which streams to show.
-	tagMode   bool
 	tagOn     map[string]bool
 	tagOrder  []string
 	tagCursor int
@@ -131,13 +139,17 @@ func (m *logModel) matchVisible(tag, ln string) bool {
 }
 
 // pumpLines is the tea.Cmd that reads from the channel.
-func pumpLines(ch chan logLineMsg) tea.Cmd {
+func pumpLines(ch <-chan logLineMsg, done <-chan struct{}) tea.Cmd {
 	return func() tea.Msg {
-		msg, ok := <-ch
-		if !ok {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return logEOFMsg{}
+			}
+			return msg
+		case <-done:
 			return logEOFMsg{}
 		}
-		return msg
 	}
 }
 
@@ -145,7 +157,7 @@ func (m *logModel) Init() tea.Cmd {
 	for _, p := range m.files {
 		go tailFileToChan(p, m.incoming, m.done)
 	}
-	return tea.Batch(pumpLines(m.incoming), tea.RequestBackgroundColor)
+	return tea.Batch(pumpLines(m.incoming, m.done), tea.RequestBackgroundColor)
 }
 
 // trySend attempts to send msg on ch but bails out if done closes first.
@@ -214,7 +226,18 @@ func tailFileToChan(path string, ch chan<- logLineMsg, done <-chan struct{}) {
 	}
 }
 
+func (m *logModel) stop() {
+	if m.mode == logModeClosed {
+		return
+	}
+	m.mode = logModeClosed
+	close(m.done)
+}
+
 func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.mode == logModeClosed {
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
 		ApplyTheme(msg.IsDark(), &m.help)
@@ -227,11 +250,15 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetHeight(msg.Height - 6) // header + borders + path line + footer
 		m.filterInput.SetWidth(msg.Width - 12)
 	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			m.stop()
+			return m, tea.Quit
+		}
 		// Tag-picker overlay owns input when open.
-		if m.tagMode {
+		if m.mode == logModeTags {
 			switch msg.String() {
 			case "esc", "enter", "t":
-				m.tagMode = false
+				m.mode = logModeBrowse
 				return m, nil
 			case "up", "k":
 				if m.tagCursor > 0 {
@@ -267,10 +294,10 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Filter-editing mode owns most key input.
-		if m.filterMode {
+		if m.mode == logModeSearch {
 			switch msg.Code {
 			case tea.KeyEsc:
-				m.filterMode = false
+				m.mode = logModeBrowse
 				m.filterInput.Blur()
 				if m.pattern != "" {
 					m.pattern = ""
@@ -279,7 +306,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case tea.KeyEnter:
-				m.filterMode = false
+				m.mode = logModeBrowse
 				m.filterInput.Blur()
 				return m, nil
 			}
@@ -297,7 +324,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case key.Matches(msg, m.keys.Quit), msg.String() == "ctrl+c":
-			close(m.done) // signal tail goroutines to exit
+			m.stop()
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Follow):
 			m.follow = !m.follow
@@ -305,12 +332,12 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 			}
 		case key.Matches(msg, m.keys.Filter):
-			m.filterMode = true
+			m.mode = logModeSearch
 			m.filterInput.SetValue(m.pattern)
 			m.filterInput.Focus()
 			return m, textinput.Blink
 		case key.Matches(msg, m.keys.Tags):
-			m.tagMode = true
+			m.mode = logModeTags
 			return m, nil
 		case msg.String() == "?":
 			m.help.ShowAll = !m.help.ShowAll
@@ -338,7 +365,7 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.follow {
 			m.viewport.GotoBottom()
 		}
-		return m, pumpLines(m.incoming)
+		return m, pumpLines(m.incoming, m.done)
 	}
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -395,7 +422,7 @@ func (m *logModel) View() tea.View {
 		follow = StyleOK.Render("auto-scroll: on")
 	}
 	header += "  " + follow + "  " + StyleDim.Render(fmt.Sprintf("%d lines", len(m.lines)))
-	if m.pattern != "" && !m.filterMode {
+	if m.pattern != "" && m.mode != logModeSearch {
 		header += "  " + StyleWarn.Render("search: "+m.pattern)
 	}
 	if hidden := m.hiddenTagCount(); hidden > 0 {
@@ -404,9 +431,9 @@ func (m *logModel) View() tea.View {
 
 	var footer string
 	switch {
-	case m.tagMode:
+	case m.mode == logModeTags:
 		footer = m.viewTagPanel()
-	case m.filterMode:
+	case m.mode == logModeSearch:
 		footer = StyleHi.Render("search: ") + m.filterInput.View() +
 			"\n" + StyleDim.Render("enter: apply · esc: clear")
 	default:
@@ -499,6 +526,7 @@ func RunLogTUI(worktree string) error {
 		}
 	}
 
+	defer m.stop()
 	_, runErr := tea.NewProgram(m).Run()
 	return runErr
 }

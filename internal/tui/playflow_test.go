@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -65,5 +66,44 @@ func TestPlayOffersWorkerReplaceAfterSharedBrokerSkip(t *testing.T) {
 	}
 	if len(m.plan.Services) != 2 || len(m.runOrder) != 3 {
 		t.Fatalf("rerun services=%v, listed=%v; want only workers rerun, all listed", m.plan.Services, m.runOrder)
+	}
+}
+
+func TestPlayPreparationFreezesSelectionAndRejectsDuplicateSubmit(t *testing.T) {
+	t.Setenv("KIT_STATE_DIR", t.TempDir())
+	layout := liftoff.Layout{Root: t.TempDir(), Master: t.TempDir()}
+	built, err := NewPlayModel(layout, PlayConfig{Name: "master", Only: []liftoff.Service{liftoff.SvcApp}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := built.(*playModel)
+	_, prepare := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.stage != playStagePreparing || prepare == nil {
+		t.Fatal("setup did not enter preparing state")
+	}
+	_, duplicate := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if duplicate != nil {
+		t.Fatal("duplicate submit launched a second setup")
+	}
+	m.toggleOn[liftoff.SvcApp] = false
+	m.chosen.name = "changed"
+	msg, ok := prepare().(playReadyMsg)
+	if !ok || msg.plan.Worktree != "master" || len(msg.plan.Services) != 1 || msg.plan.Services[0] != liftoff.SvcApp {
+		t.Fatalf("setup read mutable selection: %+v", msg)
+	}
+}
+
+func TestPlayIgnoresSetupResultsAfterAbort(t *testing.T) {
+	built, err := NewPlayModel(liftoff.Layout{Master: t.TempDir()}, PlayConfig{Name: "master"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := built.(*playModel)
+	m.stage = playStageAborted
+	for _, msg := range []tea.Msg{playReadyMsg{}, playCeleryConflictMsg{}, playAdoptPromptMsg{}, playAdoptedMsg{}, playSetupErrMsg{errors.New("late error")}} {
+		_, command := m.Update(msg)
+		if command != nil || m.stage != playStageAborted {
+			t.Fatalf("late %T changed aborted state", msg)
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 )
 
 // OrphanCandidate is a config record with no matching Git worktree. The
@@ -119,7 +120,9 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 				return nil, fmt.Errorf("check saved worktree %s: %w", meta.Path, err)
 			}
 		}
-		orphanNames = append(orphanNames, name)
+		if meta.Cleanup == nil || meta.Cleanup.DropDB {
+			orphanNames = append(orphanNames, name)
+		}
 		orphans = append(orphans, orphanMeta{meta: meta, name: name, cleanupPending: meta.CleanupPending, gitPath: gitPath})
 	}
 	var dbMap map[string]bool
@@ -140,7 +143,7 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 			Slot:           o.meta.Slot,
 			CleanupPending: o.cleanupPending,
 			HasDB:          dbMap[o.name],
-			HasGtab:        l.HasGtab(o.name),
+			HasGtab:        (o.meta.Cleanup == nil || o.meta.Cleanup.RemoveGtab) && l.HasGtab(o.name),
 			HasRunDir:      runErr == nil,
 			HasHerdr:       o.meta.HerdrID != "" || o.meta.HerdrSpace != "",
 			HasRex:         o.meta.RexID != "",
@@ -199,16 +202,24 @@ func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error 
 	}
 	meta := cfg.Worktrees[candidate.Name]
 	ports := PortsForSlot(meta.Slot)
-	for _, svc := range AllServices {
-		if !StatusOf(candidate.Name, svc, ports).Alive {
-			continue
-		}
-		if err := StopService(candidate.Name, svc); err != nil {
-			return fmt.Errorf("stop %s: %w", svc.Label(), err)
-		}
-		if onLine != nil {
-			onLine("stopped " + svc.Label())
-		}
+	stops := make([]error, len(AllServices))
+	snap := SnapshotProcs(candidate.Name, AllServices)
+	var stopping sync.WaitGroup
+	for i, svc := range AllServices {
+		stopping.Add(1)
+		go func() {
+			defer stopping.Done()
+			if !StatusOf(candidate.Name, svc, ports).Alive {
+				return
+			}
+			if err := snap.Stop(candidate.Name, svc); err != nil {
+				stops[i] = fmt.Errorf("stop %s: %w", svc.Label(), err)
+			}
+		}()
+	}
+	stopping.Wait()
+	if err := errors.Join(stops...); err != nil {
+		return err
 	}
 
 	var errs []error

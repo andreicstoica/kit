@@ -61,6 +61,9 @@ func TestFakeRexCLI(t *testing.T) {
 	}
 	save := func() { data, _ := json.Marshal(state); _ = os.WriteFile(os.Getenv("KIT_REX_TEST_STATE"), data, 0600) }
 	switch args[0] {
+	case "ls":
+		data, _ := json.Marshal(state)
+		_, _ = os.Stdout.Write(append(data, '\n'))
 	case "client":
 		_, _ = os.Stdout.WriteString(`{"clients":[{"client_id":"client:test-app","info":{"kind":"app"}}]}`)
 	case "do":
@@ -285,7 +288,7 @@ func TestOpenRexCreatesKitCommandTabsAndReusesWithoutRemovingManualTabs(t *testi
 	if opened.SessionID != "session:test-feature-a" {
 		t.Fatalf("reopened session = %+v", opened)
 	}
-	if len(fake.calls(t)) != before+1 {
+	if len(fake.calls(t)) != before+2 {
 		t.Fatalf("reopen should only inspect; calls = %q", fake.calls(t)[before:])
 	}
 	if got := fake.state(t).Sessions[0].Windows; len(got) != 3 || got[2].Label != "manual" {
@@ -525,17 +528,39 @@ func TestFocusRexClientFallsBackToFirstWindow(t *testing.T) {
 	}
 }
 
-func TestReadRexStateUsesLuaSnapshotThroughCLI(t *testing.T) {
-	fake := installFakeRex(t, RexState{})
+func TestReadRexStateUsesExplicitSessionForSnapshot(t *testing.T) {
+	fake := installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:one"}, {SessionID: "session:two"}}})
 	state, err := ReadRexState()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(state.Sessions) != 0 {
-		t.Fatalf("empty snapshot = %+v", state)
+	if len(state.Sessions) != 2 {
+		t.Fatalf("snapshot = %+v", state)
 	}
-	if !strings.Contains(strings.Join(fake.calls(t), "\n"), "do -e") || !strings.Contains(rexSnapshotLua, "session.list") {
-		t.Fatalf("no Lua snapshot request: %q", fake.calls(t))
+	if !containsRexCall(fake.calls(t), "do -s session:one -e") {
+		t.Fatalf("snapshot has no explicit target: %q", fake.calls(t))
+	}
+}
+
+func TestReadRexStructureSkipsMissingSession(t *testing.T) {
+	fake := installFakeRex(t, RexState{Sessions: []RexSession{{SessionID: "session:other"}}})
+	state, err := readRexStructure("session:gone")
+	if err != nil || len(state.Sessions) != 0 {
+		t.Fatalf("missing session = %+v, %v", state, err)
+	}
+	if containsRexCall(fake.calls(t), "do ") {
+		t.Fatalf("queried missing session: %q", fake.calls(t))
+	}
+}
+
+func TestReadRexStateWithoutSessions(t *testing.T) {
+	fake := installFakeRex(t, RexState{})
+	state, err := ReadRexState()
+	if err != nil || len(state.Sessions) != 0 {
+		t.Fatalf("empty snapshot = %+v, %v", state, err)
+	}
+	if containsRexCall(fake.calls(t), "do ") {
+		t.Fatalf("queried without a session: %q", fake.calls(t))
 	}
 }
 

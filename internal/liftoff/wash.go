@@ -251,6 +251,7 @@ func markCleanupPending(p WashPlan) error {
 	return WithConfigLock(func(c *Config) error {
 		meta := c.Worktrees[p.Name]
 		meta.CleanupPending = true
+		meta.Cleanup = &CleanupIntent{DropDB: p.DropDB, RemoveGtab: p.RemoveGtab}
 		if meta.Branch == "" {
 			meta.Branch = p.Branch
 		}

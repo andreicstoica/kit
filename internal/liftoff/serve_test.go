@@ -2,6 +2,7 @@ package liftoff
 
 import (
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -121,5 +122,38 @@ func TestServicePort(t *testing.T) {
 		if got := ServicePort(c.svc, p); got != c.want {
 			t.Errorf("ServicePort(%s) = %d, want %d", c.svc, got, c.want)
 		}
+	}
+}
+
+func TestConcurrentStartKeepsOneServicePID(t *testing.T) {
+	setStateDir(t)
+	setRunDir(t)
+	name := uniqueWorktree(t)
+	spec := LaunchSpec{Worktree: name, Service: SvcApp, Cwd: t.TempDir(), Argv: []string{"sleep", "30"}}
+	var wg sync.WaitGroup
+	pids := make([]int, 4)
+	errs := make([]error, len(pids))
+	for i := range pids {
+		wg.Add(1)
+		go func() { defer wg.Done(); pids[i], errs[i] = StartService(spec) }()
+	}
+	wg.Wait()
+	defer func() {
+		for _, pid := range pids {
+			if pid > 0 {
+				_ = KillGroup(pid)
+			}
+		}
+	}()
+	for i, pid := range pids {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+		if pid == 0 || pid != pids[0] {
+			t.Fatalf("concurrent starts created different processes: %v", pids)
+		}
+	}
+	if got := ReadPID(name, string(SvcApp)); got != pids[0] {
+		t.Fatalf("recorded pid=%d, starts=%v", got, pids)
 	}
 }

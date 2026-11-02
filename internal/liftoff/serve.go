@@ -229,8 +229,23 @@ func baseSpec(worktree, worktreePath string, svc Service, p Ports) LaunchSpec {
 }
 
 // StartService spawns the service detached, writes pid+log+cmd files,
-// and returns the new PID. Does not wait for readiness; use WaitForPort/WaitForPID.
+// and returns its PID. Concurrent starts reuse the recorded live process.
+// Does not wait for readiness; use WaitForPort/WaitForPID.
 func StartService(spec LaunchSpec) (int, error) {
+	var pid int
+	err := withWorkspaceLock("start:"+spec.Worktree+":"+string(spec.Service), func() error {
+		if current := ReadPID(spec.Worktree, string(spec.Service)); IsAlive(current) {
+			pid = current
+			return nil
+		}
+		var err error
+		pid, err = startService(spec)
+		return err
+	})
+	return pid, err
+}
+
+func startService(spec LaunchSpec) (int, error) {
 	// Make sure the run dir exists before we open the log file in it.
 	if _, err := RunDir(spec.Worktree); err != nil {
 		return 0, err
