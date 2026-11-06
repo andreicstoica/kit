@@ -89,13 +89,14 @@ func (w *RexWindow) UnmarshalJSON(data []byte) error {
 }
 
 type RexBlock struct {
-	BlockID       string           `json:"block_id"`
-	Label         string           `json:"label"`
-	Creator       string           `json:"creator_name"`
-	Flavor        string           `json:"flavor"`
-	Placement     string           `json:"placement"`
-	Status        string           `json:"status"`
-	ProgramStatus RexProgramStatus `json:"program_status"`
+	BlockID       string             `json:"block_id"`
+	Label         string             `json:"label"`
+	Creator       string             `json:"creator_name"`
+	Flavor        string             `json:"flavor"`
+	Placement     string             `json:"placement"`
+	Status        string             `json:"status"`
+	ProgramStatus RexProgramStatus   `json:"program_status"`
+	Process       RexTerminalProcess `json:"process"`
 }
 
 func rexArray(raw json.RawMessage) ([]byte, error) {
@@ -589,4 +590,15 @@ func RexOpenWorkspaces() (map[string]bool, error) {
 		}
 	}
 	return open, nil
+}
+
+// Rex exposes process identity and cwd without command arguments or environment.
+type RexProcess struct {
+	PID  int    `json:"pid"`
+	Name string `json:"name"`
+	Cwd  string `json:"cwd"`
+}
+type RexTerminalProcess struct {
+	Foreground *RexProcess `json:"foreground"`
+	Child      *RexProcess `json:"child"`
 }

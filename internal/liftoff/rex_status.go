@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type RexProgramStatus struct {
@@ -11,11 +12,13 @@ type RexProgramStatus struct {
 }
 
 type RexProgramRecord struct {
-	State        string `json:"state"`
-	Kind         string `json:"kind"`
-	App          string `json:"app"`
-	EffectiveApp string `json:"effective_app"`
-	Message      string `json:"msg"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+	Owner        *RexProcess `json:"owner"`
+	State        string      `json:"state"`
+	Kind         string      `json:"kind"`
+	App          string      `json:"app"`
+	EffectiveApp string      `json:"effective_app"`
+	Message      string      `json:"msg"`
 }
 
 func (s *RexProgramStatus) UnmarshalJSON(data []byte) error {

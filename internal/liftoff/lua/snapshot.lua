@@ -35,6 +35,7 @@ for _, s in ipairs(list.sessions or {}) do
       local by_window = {}
       for _, block in ipairs(b.blocks or {}) do
         if a.status and block.creator_name == "com.superlogical.terminal" then
+          block.process = rex.block.call(block.creator_name, "process", {session_id=s.session_id, block_id=block.block_id})
           block.program_status = rex.block.call(block.creator_name, "program_status", {session_id=s.session_id, block_id=block.block_id})
         end
         if block.window_id then
@@ -49,7 +50,7 @@ for _, s in ipairs(list.sessions or {}) do
         for _, block in ipairs(by_window[w.window_id] or {}) do
           block.status = "unknown"
           if a.status and block.creator_name and block.block_id then
-            local process = rex.block.call(block.creator_name, "process", {session_id=s.session_id, block_id=block.block_id})
+            local process = block.process or rex.block.call(block.creator_name, "process", {session_id=s.session_id, block_id=block.block_id})
             if process then
               if process.foreground then block.status = program_name(process.foreground)
               elseif process.child then block.status = program_name(process.child)

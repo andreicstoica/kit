@@ -665,6 +665,33 @@ failure (CI-friendly).
 
 Interactive bootstrap. `--dry-run` walks the flow without changing anything.
 
+## Idle auto-pause
+
+```sh
+kit idle                         # dry run: show each workspace's pause blockers
+kit idle enable --after 2h        # opt in; macOS checks every five minutes
+kit idle disable                 # remove the monitor; leave services running
+kit play <name>                  # restart a paused stack
+```
+
+The monitor requires a full two-hour observation window. Kit use, code changes,
+service restarts, and agent activity reset it. Sleep or a gap of more than ten
+minutes also resets the window. Enabling it does not immediately stop old stacks.
+
+Working or blocked agents, foreground jobs, editors, browser connections, active
+Celery tasks, and unknown activity prevent pausing. Rex must be available. Agents
+must report their status through OSC 7501; an unknown or stale owner is not idle.
+An open browser connection can keep an otherwise unused stack running.
+
+Only Kit-owned worktree services receive a graceful stop. A worker can finish its
+current task; the monitor never escalates to SIGKILL. Master, shared PostgreSQL,
+Valkey/Redis, and RabbitMQ stay running. No files, databases, or terminal sessions
+are removed. `kit idle --json` exposes the observations for inspection. For a
+custom scheduler, `kit idle --apply --after 2h` performs one observation pass.
+
+The macOS LaunchAgent is `com.andreicstoica.kit.idle`. Its log under
+`~/.config/kit/run/idle-monitor/` rotates at 1 MiB and keeps one previous file.
+
 ## Log retention
 
 `kit play` passively prunes `~/.config/kit/run/<name>/` dirs whose newest
