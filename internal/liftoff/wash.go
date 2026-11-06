@@ -72,7 +72,7 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 						}
 						washDB, skipDB = db, skip
 					}
-					st, _ := LoadState()
+					st, _ := LoadConfig()
 					var slot int
 					if st != nil {
 						if meta, ok := st.Worktrees[p.Name]; ok {

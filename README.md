@@ -301,7 +301,7 @@ Leading `liftoff-` in your input is stripped.
 `kit play [name]`:
 
 1. **Picker** — if no name, pick from worktrees (sorted by slot)
-2. **Service toggle** — defaults: `app frontend, admin frontend, app backend, admin backend, celery worker` (MCP off). Each row shows current running state.
+2. **Service toggle** — defaults: `app frontend, app backend, celery worker` (admin frontend, admin backend, and MCP off). Turn admin on when you need it, or pass `--only app,admin,api,admin_be`. Each row shows current running state.
 3. **Celery prompt** — only when this worktree's worker would share a broker with another worktree's (no private vhost); confirm kill-and-replace
 4. **Adopt prompt** — if the worktree isn't in `config.toml` yet, confirm before allocating
 5. **Live progress** — services start in parallel, ✓ when port responds

@@ -492,9 +492,6 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 	return offerNextSteps(layout, answers.name)
 }
 
-// RunDressTUI is kept as a back-compat alias.
-func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout, "") }
-
 // PickGtabLayout prompts for the Ghostty workspace layout. When
 // includeSkip is true, adds a "Skip" option that returns
 // liftoff.GtabLayout(""). Used by `kit design` (with skip) and
@@ -553,7 +550,7 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	// hunting back here to answer.
 	wantPlay, err := RunConfirm(ConfirmConfig{
 		Title:       "Start the app now?",
-		Description: "Starts the website, admin, API, and background worker for this workspace. You can also do this later with `kit play`.",
+		Description: "Starts the website, API, and background worker for this workspace. You can also do this later with `kit play`.",
 		Affirmative: "Start",
 		Negative:    "Not now",
 		Default:     true,

@@ -29,7 +29,7 @@ func TestWorktreeScanBoundsConcurrencyAndJoins(t *testing.T) {
 		})
 		close(done)
 	}()
-	for i := 0; i < 8; i++ {
+	for i := 0; i < scanWorkers; i++ {
 		select {
 		case <-started:
 		case <-time.After(3 * time.Second):
@@ -38,7 +38,7 @@ func TestWorktreeScanBoundsConcurrencyAndJoins(t *testing.T) {
 	}
 	select {
 	case <-started:
-		t.Fatal("more than eight probes started")
+		t.Fatal("more than scanWorkers probes started")
 	case <-done:
 		t.Fatal("scan returned before joining probes")
 	default:
@@ -51,7 +51,7 @@ func TestWorktreeScanBoundsConcurrencyAndJoins(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("scan did not finish")
 	}
-	if peak.Load() > 8 || visited.Load() != int32(len(worktrees)) {
+	if peak.Load() > scanWorkers || visited.Load() != int32(len(worktrees)) {
 		t.Fatalf("peak=%d visited=%d", peak.Load(), visited.Load())
 	}
 }

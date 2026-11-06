@@ -18,21 +18,16 @@ func (l Layout) GtTrack(worktree string, onLine LineFn) error {
 	return RunStream(worktree, "gt", []string{"track", "--parent", l.MainBranch}, onLine)
 }
 
-// GtParentOf returns the Graphite-tracked parent branch for the branch
-// currently checked out in worktreePath. Returns "" if the branch is
-// untracked (or `gt` isn't installed). Non-zero exit from `gt parent`
-// is the untracked signal.
-func (l Layout) GtParentOf(worktreePath string) string {
-	if !HasGraphite() {
-		return ""
+// ParentOfStack returns the branch directly below the current branch in
+// stack, or "" if the current branch is the trunk or stack is empty. gt ls -s
+// already carries the parent, so callers need no second gt invocation.
+func ParentOfStack(stack []StackEntry) string {
+	for i, e := range stack {
+		if e.Current && i > 0 {
+			return stack[i-1].Branch
+		}
 	}
-	cmd := exec.Command("gt", "parent")
-	cmd.Dir = worktreePath
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return ""
 }
 
 // StackEntry is one row from `gt ls -s` parsed into its parts.

@@ -37,6 +37,37 @@ func TestNewPlayModelOnlyCeleryCarriesBeat(t *testing.T) {
 	}
 }
 
+// Admin (frontend + backend) is opt-in: the defaults leave it off so a plain
+// `kit play` does not pay for two services most sessions never open. It stays
+// reachable through the toggle screen and --only.
+func TestPlayDefaultsSkipAdmin(t *testing.T) {
+	t.Setenv("KIT_STATE_DIR", t.TempDir())
+	layout := liftoff.Layout{Root: t.TempDir(), Master: t.TempDir()}
+
+	m, err := NewPlayModel(layout, PlayConfig{Name: "master"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pm := m.(*playModel)
+	for _, svc := range liftoff.AllServices {
+		want := svc == liftoff.SvcApp || svc == liftoff.SvcAPI || svc == liftoff.SvcCelery || svc == liftoff.SvcBeat
+		if pm.toggleOn[svc] != want {
+			t.Errorf("toggleOn[%s] = %v, want %v", svc, pm.toggleOn[svc], want)
+		}
+	}
+
+	m, err = NewPlayModel(layout, PlayConfig{Name: "master", Only: []liftoff.Service{liftoff.SvcAdmin, liftoff.SvcAdminBE}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pm = m.(*playModel)
+	for _, svc := range []liftoff.Service{liftoff.SvcAdmin, liftoff.SvcAdminBE} {
+		if !pm.toggleOn[svc] {
+			t.Errorf("--only should still enable %s", svc)
+		}
+	}
+}
+
 // A shared-broker worker holds celery and beat back. After the run, the model
 // offers to replace it; "no" ends the run and "yes" reruns only the workers.
 func TestPlayOffersWorkerReplaceAfterSharedBrokerSkip(t *testing.T) {

@@ -74,8 +74,15 @@ func NewPauseModel(layout liftoff.Layout, cfg PauseConfig) (tea.Model, error) {
 		if err != nil {
 			return nil, err
 		}
-		m.chosen = playWtItem{name: name, path: path, emoji: liftoff.EmojiFor(name)}
-		m.running = m.discoverRunning(name)
+		slot, err := slotFor(name)
+		if err != nil {
+			return nil, err
+		}
+		m.chosen = playWtItem{name: name, path: path, slot: slot, emoji: liftoff.EmojiFor(name)}
+		m.running, err = m.discoverRunning(name)
+		if err != nil {
+			return nil, err
+		}
 		if len(m.running) == 0 {
 			return nil, fmt.Errorf("no services running for %s", name)
 		}
@@ -96,25 +103,27 @@ func NewPauseModel(layout liftoff.Layout, cfg PauseConfig) (tea.Model, error) {
 	return m, nil
 }
 
-// slotFor resolves a worktree's port slot from saved state (0 if unknown).
-// discoverRunning and updateConfirm must agree on the slot, so both use this.
-func slotFor(name string) int {
-	st, _ := liftoff.LoadState()
-	if st != nil {
-		if meta, ok := st.Worktrees[name]; ok {
-			return meta.Slot
-		}
+// slotFor resolves a worktree's port slot. Unadopted feature worktrees have
+// no slot: probing slot 0 would target master's services, so this errors.
+func slotFor(name string) (int, error) {
+	cfg, err := liftoff.LoadConfig()
+	if err != nil {
+		return 0, err
 	}
-	return 0
+	return cfg.SlotFor(name)
 }
 
-func (m *pauseModel) discoverRunning(name string) []liftoff.Service {
+func (m *pauseModel) discoverRunning(name string) ([]liftoff.Service, error) {
 	return runningServices(name, m.onlyServices)
 }
 
 // runningServices returns name's live services, narrowed to only when given.
-func runningServices(name string, only []liftoff.Service) []liftoff.Service {
-	ports := liftoff.PortsForSlot(slotFor(name))
+func runningServices(name string, only []liftoff.Service) ([]liftoff.Service, error) {
+	slot, err := slotFor(name)
+	if err != nil {
+		return nil, err
+	}
+	ports := liftoff.PortsForSlot(slot)
 	var out []liftoff.Service
 	for _, svc := range liftoff.AllServices {
 		if liftoff.IsServiceAlive(name, svc, ports) {
@@ -138,7 +147,7 @@ func runningServices(name string, only []liftoff.Service) []liftoff.Service {
 		}
 		out = trimmed
 	}
-	return out
+	return out, nil
 }
 
 func buildPauseItems(layout liftoff.Layout) ([]list.Item, error) {
@@ -191,9 +200,12 @@ func (m *pauseModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		if item, handled := m.shortcuts.update(k, &m.picker); handled {
 			if it, ok := item.(playWtItem); ok {
-				m.chosen = it
-				m.running = m.discoverRunning(it.name)
-				m.stage = pauseStageConfirm
+				running, err := m.discoverRunning(it.name)
+				if err == nil {
+					m.chosen = it
+					m.running = running
+					m.stage = pauseStageConfirm
+				}
 			}
 			return m, nil
 		}
@@ -205,9 +217,12 @@ func (m *pauseModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch k.String() {
 		case "enter":
 			if it, ok := m.picker.SelectedItem().(playWtItem); ok {
-				m.chosen = it
-				m.running = m.discoverRunning(it.name)
-				m.stage = pauseStageConfirm
+				running, err := m.discoverRunning(it.name)
+				if err == nil {
+					m.chosen = it
+					m.running = running
+					m.stage = pauseStageConfirm
+				}
 				return m, nil
 			}
 		case "esc":
@@ -227,7 +242,7 @@ func (m *pauseModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			plan := liftoff.PausePlan{
 				Worktree: m.chosen.name,
 				Services: m.running,
-				Ports:    liftoff.PortsForSlot(slotFor(m.chosen.name)),
+				Ports:    liftoff.PortsForSlot(m.chosen.slot),
 			}
 			m.updates = m.layout.RunPause(plan)
 			m.stage = pauseStageRun
@@ -342,7 +357,7 @@ func RunPauseTUI(layout liftoff.Layout, cfg PauseConfig) error {
 // PauseAll stops every service across every worktree, printing progress
 // as plain text (no TUI). Used by `kit pause --all`.
 func PauseAll(layout liftoff.Layout) error {
-	st, err := liftoff.LoadState()
+	st, err := liftoff.LoadConfig()
 	if err != nil {
 		return err
 	}

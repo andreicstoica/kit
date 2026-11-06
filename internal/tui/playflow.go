@@ -187,7 +187,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 		if err != nil {
 			return nil, err
 		}
-		st, _ := liftoff.LoadState()
+		st, _ := liftoff.LoadConfig()
 		var slot int
 		if st != nil {
 			if meta, ok := st.Worktrees[name]; ok {
@@ -205,7 +205,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	}
 
 	// Build picker.
-	items, err := buildPlayItems(layout)
+	items, err := collectPlayWtItems(layout, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -217,10 +217,6 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	m.picker = pl
 
 	return m, nil
-}
-
-func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
-	return collectPlayWtItems(layout, nil)
 }
 
 // playWtItemFilter, when non-nil, drops items that return false.
@@ -236,7 +232,7 @@ func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.It
 	if err != nil {
 		return nil, err
 	}
-	st, _ := liftoff.LoadState()
+	st, _ := liftoff.LoadConfig()
 	if st == nil {
 		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
@@ -368,6 +364,20 @@ type playCeleryConflictMsg struct {
 }
 type playSetupErrMsg struct{ err error }
 type playAdoptedMsg struct{}
+type playProbeMsg struct{ running map[liftoff.Service]bool }
+
+func (m *playModel) probeRunning() tea.Cmd {
+	name, slot, svcs := m.chosen.name, m.chosen.slot, m.toggleSvcs
+	return func() tea.Msg {
+		ports := liftoff.PortsForSlot(slot)
+		running := make(map[liftoff.Service]bool, len(svcs))
+		for _, svc := range svcs {
+			running[svc] = liftoff.IsServiceAlive(name, svc, ports)
+		}
+		return playProbeMsg{running: running}
+	}
+}
+
 type playUpdMsg struct {
 	upd liftoff.PlayUpdate
 	ok  bool
@@ -383,6 +393,9 @@ func playNext(ch <-chan liftoff.PlayUpdate) tea.Cmd {
 func (m *playModel) Init() tea.Cmd {
 	if m.skipToggle {
 		return tea.Batch(m.spinner.Tick, m.transitionAfterToggle(), tea.RequestBackgroundColor)
+	}
+	if m.stage == playStageToggle {
+		return tea.Batch(m.spinner.Tick, m.probeRunning(), tea.RequestBackgroundColor)
 	}
 	return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor)
 }
@@ -447,13 +460,16 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adoptPath = msg.path
 		m.stage = playStageAdoptPrompt
 		return m, nil
+	case playProbeMsg:
+		m.running = msg.running
+		return m, nil
 	case playAdoptedMsg:
 		if m.stage != playStageAdopting {
 			return m, nil
 		}
 		m.stage = playStageToggle
-		m.running = nil // re-probe: services may have changed
-		return m, m.transitionAfterToggle()
+		m.running = nil
+		return m, tea.Batch(m.probeRunning(), m.transitionAfterToggle())
 	}
 
 	switch m.stage {
@@ -486,6 +502,7 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chosen = it
 				m.stage = playStageToggle
 				m.running = nil
+				return m, m.probeRunning()
 			}
 			return m, nil
 		}
@@ -495,8 +512,8 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if it, ok := m.picker.SelectedItem().(playWtItem); ok {
 					m.chosen = it
 					m.stage = playStageToggle
-					m.running = nil // re-probe: services may have changed
-					return m, nil
+					m.running = nil
+					return m, m.probeRunning()
 				}
 			case "esc":
 				m.stage = playStageAborted
@@ -716,21 +733,14 @@ func (m *playModel) View() tea.View {
 func (m *playModel) viewToggle() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit play — "+m.chosen.name) + "\n\n")
+	ports := liftoff.PortsForSlot(m.chosen.slot)
 	if m.chosen.slot > 0 {
 		b.WriteString(StyleDim.Render(fmt.Sprintf("local slot %d · website %d · admin %d · API %d · admin API %d\n", m.chosen.slot,
-			3000+m.chosen.slot*10, 3001+m.chosen.slot*10,
-			9000+m.chosen.slot*10, 9001+m.chosen.slot*10)))
+			ports.App, ports.Admin, ports.API, ports.AdminBE)))
 	} else {
 		b.WriteString(StyleDim.Render("kit will reserve local ports when you continue\n"))
 	}
 	b.WriteString("\n")
-	ports := liftoff.PortsForSlot(m.chosen.slot)
-	if m.running == nil {
-		m.running = make(map[liftoff.Service]bool, len(m.toggleSvcs))
-		for _, svc := range m.toggleSvcs {
-			m.running[svc] = liftoff.IsServiceAlive(m.chosen.name, svc, ports)
-		}
-	}
 	for i, svc := range m.toggleSvcs {
 		cursor := "  "
 		if i == m.toggleCursor {

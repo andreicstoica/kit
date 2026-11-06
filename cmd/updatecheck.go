@@ -27,6 +27,11 @@ var commandsThatSkipUpdateNudge = map[string]bool{
 	"__completeNoDesc": true,
 	"help":             true,
 	"man":              true,
+	"rex":              true,
+	"slots":            true,
+	"links":            true,
+	"doctor":           true,
+	"setup":            true,
 }
 
 type updateCheckCache struct {
@@ -58,12 +63,14 @@ func maybeNudgeUpdate(cmd *cobra.Command) {
 
 	cache := readUpdateCache()
 	if time.Since(cache.Checked) > updateCheckInterval {
-		ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
-		if latest, err := latestRemoteTagCtx(ctx); err == nil {
-			cache = updateCheckCache{Checked: time.Now(), Latest: latest}
-			writeUpdateCache(cache)
-		}
+		ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+		latest, err := latestRemoteTagCtx(ctx)
 		cancel()
+		cache.Checked = time.Now()
+		if err == nil {
+			cache.Latest = latest
+		}
+		writeUpdateCache(cache)
 	}
 
 	// Only nag when the remote tag is strictly NEWER than what we're running.

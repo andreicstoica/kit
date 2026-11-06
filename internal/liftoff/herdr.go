@@ -51,14 +51,6 @@ type HerdrPane struct {
 
 const defaultHerdrSession = "default"
 
-// BuiltinHerdrLayouts are the Kit-owned layouts. The first two preserve the
-// existing Ghostty workflow: simple is the emoji/worktree shell tab + logs,
-// detailed is the old five-tab frontend/backend/celery/logs layout. AI is a
-// forward-looking layout that keeps each agent in its own durable tab.
-func BuiltinHerdrLayouts() map[string]HerdrLayout {
-	return BuiltinWorkspaceLayouts()
-}
-
 // HerdrShellTabLabel is the stable root-tab label shared by Herdr and the
 // legacy Ghostty workspace. The worktree name identifies the workspace; the
 // emoji makes the root tab recognizable when several workspaces are attached.
@@ -479,14 +471,6 @@ func appleScriptQuote(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
 	return `"` + s + `"`
-}
-
-// FocusHerdrClient focuses a workspace in an already-running Herdr client.
-func FocusHerdrClient(workspaceID string) error {
-	if _, err := runHerdr("workspace", "focus", workspaceID); err != nil {
-		return err
-	}
-	return nil
 }
 
 // EnsureHerdrServer starts a headless Herdr server when no server is

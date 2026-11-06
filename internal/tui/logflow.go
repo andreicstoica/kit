@@ -64,6 +64,12 @@ type logLineMsg struct {
 // logEOFMsg fires when a tail goroutine exits.
 type logEOFMsg struct{ tag string }
 
+type logFlushMsg struct{}
+
+func logFlushCmd() tea.Cmd {
+	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return logFlushMsg{} })
+}
+
 type logMode int
 
 const (
@@ -104,8 +110,9 @@ type logModel struct {
 	tagCursor int
 
 	// channel where tail goroutines push lines, plus a done channel so they exit.
-	incoming chan logLineMsg
-	done     chan struct{}
+	incoming     chan logLineMsg
+	done         chan struct{}
+	flushPending bool
 }
 
 // rebuildBuf reassembles m.buf from m.lines, applying both the active
@@ -361,11 +368,18 @@ func (m *logModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.buf.WriteString(styled)
 		}
+		if m.flushPending {
+			return m, pumpLines(m.incoming, m.done)
+		}
+		m.flushPending = true
+		return m, tea.Batch(pumpLines(m.incoming, m.done), logFlushCmd())
+	case logFlushMsg:
+		m.flushPending = false
 		m.viewport.SetContent(m.buf.String())
 		if m.follow {
 			m.viewport.GotoBottom()
 		}
-		return m, pumpLines(m.incoming, m.done)
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)

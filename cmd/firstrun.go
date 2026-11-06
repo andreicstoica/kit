@@ -13,12 +13,14 @@ import (
 // prompt — running setup itself, asking for help/version, or running
 // diagnostics shouldn't loop back to a setup prompt.
 var commandsThatBypassFirstRun = map[string]bool{
-	"setup":      true,
-	"doctor":     true,
-	"physio":     true,
-	"help":       true,
-	"completion": true,
-	"man":        true,
+	"setup":            true,
+	"doctor":           true,
+	"physio":           true,
+	"help":             true,
+	"completion":       true,
+	"man":              true,
+	"__complete":       true,
+	"__completeNoDesc": true,
 }
 
 // MaybeOfferSetup runs before every other command. If the kit config dir
@@ -34,6 +36,9 @@ func MaybeOfferSetup(cmd *cobra.Command, args []string) error {
 		if commandsThatBypassFirstRun[p.Name()] {
 			return nil
 		}
+	}
+	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
+		return nil
 	}
 	if setupConfigExists() {
 		return nil

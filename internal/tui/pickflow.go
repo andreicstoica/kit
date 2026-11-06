@@ -36,12 +36,6 @@ func PickOpenTarget(candidates []liftoff.EditorCandidate) (*liftoff.EditorCandid
 	return pickEditor(candidates, "kit open — pick where to open")
 }
 
-// PickEditor opens the shared picker showing only installed editors.
-// Prefer PickOpenTarget for the full worktree-open list.
-func PickEditor(editors []liftoff.EditorCandidate) (*liftoff.EditorCandidate, error) {
-	return pickEditor(editors, "kit open — pick an editor")
-}
-
 func pickEditor(editors []liftoff.EditorCandidate, title string) (*liftoff.EditorCandidate, error) {
 	var items []list.Item
 	for _, e := range editors {

@@ -106,10 +106,6 @@ type washModel struct {
 // washScanWorkers bounds concurrent git scans when building the picker.
 const washScanWorkers = 6
 
-func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
-	return NewWashModelFor(layout, "")
-}
-
 // NewWashModelFor builds the wash model. If preselected is non-empty and
 // matches a worktree, the picker stage is skipped and the model jumps
 // straight to the confirm screen for that worktree.
@@ -352,8 +348,8 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				DropDB:       m.dropDB,
 				RemoveGtab:   m.removeGtab,
 			}
-			m.stepTitles = washStepTitles(plan)
-			m.stepStatuses = make([]liftoff.StepStatus, len(m.stepTitles))
+			m.stepTitles = nil
+			m.stepStatuses = nil
 			m.updates = m.layout.RunWash(plan)
 			return m, tea.Batch(m.spinner.Tick, washNextUpdate(m.updates))
 		case "esc":
@@ -365,26 +361,6 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
-}
-
-// washStepTitles must match RunWash's step order 1:1 so StepUpdate.Index lines
-// up with m.stepStatuses. Skipped steps (db/gtab) render via their StepSkipped
-// status, not a title suffix.
-func washStepTitles(p liftoff.WashPlan) []string {
-	branch := p.Branch
-	if branch == "" {
-		branch = p.Name
-	}
-	return []string{
-		"stop running services",
-		"remove service run state",
-		"remove Herdr workspace",
-		"remove worktree " + p.WorktreePath,
-		"delete branch " + branch,
-		"drop database " + liftoff.DBName(p.Name),
-		"remove gtab workspace",
-		"free port slot",
-	}
 }
 
 type washStepMsg struct {
@@ -411,7 +387,14 @@ func (m *washModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		u := msg.upd
-		if u.Index >= 0 && u.Index < len(m.stepStatuses) {
+		if u.Index >= 0 {
+			for len(m.stepStatuses) <= u.Index {
+				m.stepStatuses = append(m.stepStatuses, liftoff.StepPending)
+				m.stepTitles = append(m.stepTitles, u.Title)
+			}
+			if u.Title != "" {
+				m.stepTitles[u.Index] = u.Title
+			}
 			m.stepStatuses[u.Index] = u.Status
 			if u.Line != "" {
 				m.stepLines[u.Index] = append(m.stepLines[u.Index], u.Line)
@@ -552,9 +535,6 @@ func (m *washModel) viewDone() string {
 	b.WriteString("\n" + StyleHelp.Render("press enter to exit"))
 	return b.String()
 }
-
-// RunWashTUI is the cobra entry point — full picker flow.
-func RunWashTUI(layout liftoff.Layout) error { return RunWashTUIFor(layout, "") }
 
 // RunWashTUIFor runs wash with an optional pre-selected worktree. Empty
 // preselected falls back to the picker (the original behavior).

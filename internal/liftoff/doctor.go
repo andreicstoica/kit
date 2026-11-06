@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -585,9 +584,4 @@ func firstWord(s, prefix string) string {
 		s = s[:i]
 	}
 	return strings.TrimSpace(s)
-}
-
-// SortResultsByID is a deterministic ordering used in tests.
-func SortResultsByID(results []CheckResult) {
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
 }

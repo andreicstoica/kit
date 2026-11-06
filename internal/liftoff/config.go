@@ -87,13 +87,29 @@ type Config struct {
 // don't have to change in lockstep. Prefer Config in new code.
 type State = Config
 
+// IsMaster reports whether name is the master worktree, which rides slot 0
+// by convention and never needs adoption.
+func IsMaster(name string) bool { return name == "master" }
+
+// SlotFor returns name's port slot. Master rides slot 0; a feature worktree
+// without an allocated slot is an error, because slot 0 is master's band and
+// probing it would target master's services.
+func (c *Config) SlotFor(name string) (int, error) {
+	if IsMaster(name) {
+		return 0, nil
+	}
+	if c != nil {
+		if meta, ok := c.Worktrees[name]; ok && meta.Slot > 0 {
+			return meta.Slot, nil
+		}
+	}
+	return 0, fmt.Errorf("%s has no slot — run `kit play %s` first", name, name)
+}
+
 // ConfigPath returns ~/.config/kit/config.toml (honoring KIT_STATE_DIR).
 func ConfigPath() string {
 	return filepath.Join(configDir(), configFileName)
 }
-
-// StatePath is the legacy name for ConfigPath.
-func StatePath() string { return ConfigPath() }
 
 func configDir() string {
 	if v := os.Getenv("KIT_STATE_DIR"); v != "" {
@@ -127,9 +143,6 @@ func LoadConfig() (*Config, error) {
 	}
 	return c, nil
 }
-
-// LoadState is the legacy name for LoadConfig.
-func LoadState() (*State, error) { return LoadConfig() }
 
 // Save writes config.toml atomically.
 func (c *Config) Save() error {
