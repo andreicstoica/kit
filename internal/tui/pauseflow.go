@@ -27,9 +27,10 @@ type pauseModel struct {
 	layout liftoff.Layout
 	stage  pauseStage
 
-	picker  list.Model
-	chosen  playWtItem // reuse the play picker item type
-	running []liftoff.Service
+	picker    list.Model
+	shortcuts pickerShortcuts
+	chosen    playWtItem // reuse the play picker item type
+	running   []liftoff.Service
 
 	updates  <-chan liftoff.PlayUpdate
 	statuses map[liftoff.Service]liftoff.StepStatus
@@ -188,6 +189,19 @@ func (m *pauseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *pauseModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if item, handled := m.shortcuts.update(k, &m.picker); handled {
+			if it, ok := item.(playWtItem); ok {
+				m.chosen = it
+				m.running = m.discoverRunning(it.name)
+				m.stage = pauseStageConfirm
+			}
+			return m, nil
+		}
+		if m.picker.FilterState() == list.Filtering {
+			var cmd tea.Cmd
+			m.picker, cmd = m.picker.Update(msg)
+			return m, cmd
+		}
 		switch k.String() {
 		case "enter":
 			if it, ok := m.picker.SelectedItem().(playWtItem); ok {
@@ -199,17 +213,6 @@ func (m *pauseModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.stage = pauseStageAborted
 			return m, tea.Quit
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			idx := int(k.String()[0] - '0' - 1)
-			items := m.picker.VisibleItems()
-			if idx >= 0 && idx < len(items) {
-				if it, ok := items[idx].(playWtItem); ok {
-					m.chosen = it
-					m.running = m.discoverRunning(it.name)
-					m.stage = pauseStageConfirm
-					return m, nil
-				}
-			}
 		}
 	}
 	var cmd tea.Cmd

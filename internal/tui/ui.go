@@ -17,7 +17,7 @@ import (
 //   1. List picker  — choosing one thing from a set that may be long or
 //      filterable (a worktree, an editor, an adopt candidate). Built with
 //      bubbles/list via RunListPicker. Always: accent-highlighted selection,
-//      1-9 numeric quick-pick, esc/ctrl+c cancels, "/" filters when enabled.
+//      a1/b1 shortcut labels, esc/ctrl+c cancels, "/" filters when enabled.
 //
 //   2. Select       — choosing one option from a short, fixed menu
 //      (workspace layout, root menu). A hand-rolled inline bubbletea model
@@ -59,6 +59,7 @@ func StyleList(l *list.Model, title string, filtering bool) {
 	l.Styles.Title = TitleStyle
 	l.SetShowHelp(true)
 	l.SetFilteringEnabled(filtering)
+	shortcutHelp(l, "")
 }
 
 // NewAltView wraps content in a fullscreen alternate-screen view. Flows

@@ -29,7 +29,7 @@ type washItem struct {
 	hasGtab          bool
 	rexOpen          bool // a Rex session for it is open, and wash will close it
 	isLegacy         bool
-	displayIdx       int // 1-based for numeric quick-pick
+	displayIdx       int // 1-based shortcut index
 }
 
 func (w washItem) Title() string {
@@ -37,9 +37,7 @@ func (w washItem) Title() string {
 	if w.emoji != "" {
 		t = w.emoji + " " + t
 	}
-	if w.displayIdx > 0 && w.displayIdx < 10 {
-		t = StyleHi.Render(fmt.Sprintf("%d ", w.displayIdx)) + t
-	}
+	t = shortcutTitle(t, w.displayIdx)
 	if w.isLegacy {
 		t += "  " + StyleDim.Render("(legacy)")
 	}
@@ -69,6 +67,7 @@ func (w washItem) Description() string {
 	return StyleDim.Render(strings.Join(bits, "  ·  "))
 }
 func (w washItem) FilterValue() string { return w.name }
+func (w washItem) shortcut() string    { return shortcutLabel(w.displayIdx) }
 
 type washStage int
 
@@ -84,6 +83,7 @@ type washModel struct {
 	layout        liftoff.Layout
 	stage         washStage
 	list          list.Model
+	shortcuts     pickerShortcuts
 	selected      washItem
 	dropDB        bool
 	removeGtab    bool
@@ -279,6 +279,12 @@ func (m *washModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if item, handled := m.shortcuts.update(k, &m.list); handled {
+			if it, ok := item.(washItem); ok {
+				m.pickWash(it)
+			}
+			return m, nil
+		}
 		if m.list.FilterState() != list.Filtering {
 			switch k.String() {
 			case "enter":
@@ -289,15 +295,6 @@ func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				m.stage = washStageAborted
 				return m, tea.Quit
-			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-				idx := int(k.String()[0] - '0' - 1)
-				items := m.list.VisibleItems()
-				if idx >= 0 && idx < len(items) {
-					if it, ok := items[idx].(washItem); ok {
-						m.pickWash(it)
-						return m, nil
-					}
-				}
 			}
 		}
 	}

@@ -54,8 +54,11 @@ Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
 
 Commands that take a worktree name (`open`, `close`, `focus`, `remote`, `swap`, `play`, `pause`, `restart`,
 `log`, `wash`, `links`, `diff`, `submit`, `adopt`) accept the same three shapes: pass a name,
-omit to auto-pick from cwd, or get a numbered picker (1-9 quick-select)
-otherwise. Master appears in every picker as 🧊 slot 0.
+omit to auto-pick from cwd, or get a picker with keyboard shortcuts
+otherwise. Type the row label, such as `a1`, `a9`, or `b3`, to select it
+without Enter. Labels cover the full list and stay the same when filtering.
+`1` through `9` also select the first nine results. `/` starts filtering;
+Esc clears an unfinished shortcut, then cancels the picker. Master appears in every picker as 🧊 slot 0.
 
 ## Parking work in progress
 

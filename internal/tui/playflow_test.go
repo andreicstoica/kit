@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"charm.land/bubbles/v2/list"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -105,5 +108,26 @@ func TestPlayIgnoresSetupResultsAfterAbort(t *testing.T) {
 		if command != nil || m.stage != playStageAborted {
 			t.Fatalf("late %T changed aborted state", msg)
 		}
+	}
+}
+
+func TestPlayPickerTwoKeyShortcutBeyondNine(t *testing.T) {
+	items := make([]list.Item, 15)
+	for i := range items {
+		items[i] = playWtItem{name: fmt.Sprintf("workspace-%02d", i+1), displayIdx: i + 1}
+	}
+	picker := list.New(items, NewListDelegate(), 100, 60)
+	StyleList(&picker, "workspaces", true)
+	m := &playModel{stage: playStagePicker, picker: picker}
+	if view := m.picker.View(); !strings.Contains(view, "b3") {
+		t.Fatalf("row 12 has no b3 label:\n%s", view)
+	}
+	m.updatePicker(mkKey("b"))
+	if m.stage != playStagePicker {
+		t.Fatal("prefix must not leave the picker")
+	}
+	m.updatePicker(mkKey("3"))
+	if m.stage != playStageToggle || m.chosen.name != "workspace-12" {
+		t.Fatalf("b3 chose %q at stage %v, want workspace-12 at toggle", m.chosen.name, m.stage)
 	}
 }

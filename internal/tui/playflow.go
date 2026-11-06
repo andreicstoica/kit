@@ -39,7 +39,7 @@ type playWtItem struct {
 	slot       int
 	lastUsed   time.Time
 	running    int
-	displayIdx int // 1-based for numeric quick-pick; 0 = no prefix
+	displayIdx int // 1-based shortcut index; 0 = no prefix
 }
 
 func (i playWtItem) Title() string {
@@ -47,9 +47,7 @@ func (i playWtItem) Title() string {
 	if i.emoji != "" {
 		t = i.emoji + " " + t
 	}
-	if i.displayIdx > 0 && i.displayIdx < 10 {
-		t = StyleHi.Render(fmt.Sprintf("%d ", i.displayIdx)) + t
-	}
+	t = shortcutTitle(t, i.displayIdx)
 	if i.slot > 0 {
 		t += StyleDim.Render(fmt.Sprintf("  slot %d", i.slot))
 	}
@@ -62,6 +60,7 @@ func (i playWtItem) Description() string {
 	return StyleDim.Render(i.path)
 }
 func (i playWtItem) FilterValue() string { return i.name }
+func (i playWtItem) shortcut() string    { return shortcutLabel(i.displayIdx) }
 
 type playModel struct {
 	layout liftoff.Layout
@@ -73,8 +72,9 @@ type playModel struct {
 	stage playStage
 
 	// Picker stage
-	picker list.Model
-	chosen playWtItem
+	picker    list.Model
+	shortcuts pickerShortcuts
+	chosen    playWtItem
 
 	// Toggle stage
 	toggleSvcs   []liftoff.Service
@@ -228,7 +228,7 @@ type playWtItemFilter func(playWtItem) bool
 
 // collectPlayWtItems walks every git worktree, builds the canonical
 // playWtItem with running-service count and state metadata, optionally
-// filters, sorts by lineup order, assigns numeric displayIdx, and
+// filters, sorts by lineup order, assigns shortcut displayIdx, and
 // returns a []list.Item ready for bubble list. Master is included
 // (with liftoff.MasterEmoji + name "master").
 func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.Item, error) {
@@ -481,6 +481,14 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if item, handled := m.shortcuts.update(k, &m.picker); handled {
+			if it, ok := item.(playWtItem); ok {
+				m.chosen = it
+				m.stage = playStageToggle
+				m.running = nil
+			}
+			return m, nil
+		}
 		if m.picker.FilterState() != list.Filtering {
 			switch k.String() {
 			case "enter":
@@ -493,17 +501,6 @@ func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				m.stage = playStageAborted
 				return m, tea.Quit
-			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-				idx := int(k.String()[0] - '0' - 1)
-				items := m.picker.VisibleItems()
-				if idx >= 0 && idx < len(items) {
-					if it, ok := items[idx].(playWtItem); ok {
-						m.chosen = it
-						m.stage = playStageToggle
-						m.running = nil // re-probe: services may have changed
-						return m, nil
-					}
-				}
 			}
 		}
 	}
