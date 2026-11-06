@@ -127,11 +127,11 @@ func TestHerdrMetadataAndLayoutsRoundTrip(t *testing.T) {
 }
 
 func TestHerdrTabCommandUsesKitAndPersistentAgents(t *testing.T) {
-	logs := herdrTabCommand("feature-a", "/tmp/feature-a", "logs")
+	logs := workspaceTabCommand("feature-a", "logs")
 	if !strings.Contains(logs, "feature-a") || !strings.Contains(logs, "--wait") {
 		t.Fatalf("logs command = %q", logs)
 	}
-	claude := herdrTabCommand("feature-a", "/tmp/feature-a", "claude")
+	claude := workspaceTabCommand("feature-a", "claude")
 	if !strings.Contains(claude, "exec claude") || !strings.Contains(claude, "${SHELL:-/bin/sh}") {
 		t.Fatalf("claude command should preserve a terminal when unavailable: %q", claude)
 	}

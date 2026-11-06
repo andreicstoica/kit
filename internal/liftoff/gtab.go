@@ -1,9 +1,10 @@
 package liftoff
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
-	"text/template"
+	"strings"
 )
 
 // GtabLayout selects between the simple (default) and detailed gtab
@@ -15,93 +16,6 @@ const (
 	GtabSimple   GtabLayout = "simple"
 	GtabDetailed GtabLayout = "detailed"
 )
-
-// simpleGtabTemplate: 2 tabs — shell at root + combined tail of every .log.
-const simpleGtabTemplate = `tell application "Ghostty"
-    activate
-
-    set cfg1 to new surface configuration
-    set initial working directory of cfg1 to "{{.Worktree}}"
-    set win to new window with configuration cfg1
-    set p1 to focused terminal of selected tab of win
-    perform action "set_tab_title:{{.TabTitle}}" on p1
-
-    set cfg2 to new surface configuration
-    set initial working directory of cfg2 to "{{.Worktree}}"
-    set command of cfg2 to "{{.KitBin}} log {{.Name}} --wait"
-    set wait after command of cfg2 to true
-    set newtab1 to new tab in win with configuration cfg2
-    set p2 to focused terminal of newtab1
-    perform action "set_tab_title:logs" on p2
-end tell
-`
-
-// detailedGtabTemplate: 5 tabs — shell, frontend split (app + admin),
-// backend split (api + admin_be), celery, and a combined logs tail.
-const detailedGtabTemplate = `tell application "Ghostty"
-    activate
-
-    set cfg1 to new surface configuration
-    set initial working directory of cfg1 to "{{.Worktree}}"
-    set win to new window with configuration cfg1
-    set p1 to focused terminal of selected tab of win
-    perform action "set_tab_title:{{.TabTitle}}" on p1
-
-    set cfg2 to new surface configuration
-    set initial working directory of cfg2 to "{{.Worktree}}/frontend/app"
-    set command of cfg2 to "tail -F {{.AppLog}}"
-    set wait after command of cfg2 to true
-    set newtab1 to new tab in win with configuration cfg2
-    set p2 to focused terminal of newtab1
-    perform action "set_tab_title:frontend" on p2
-    set cfgSplit2 to new surface configuration
-    set initial working directory of cfgSplit2 to "{{.Worktree}}/frontend/admin"
-    set command of cfgSplit2 to "tail -F {{.AdminLog}}"
-    set wait after command of cfgSplit2 to true
-    set p2b to split p2 direction right with configuration cfgSplit2
-
-    set cfg3 to new surface configuration
-    set initial working directory of cfg3 to "{{.Worktree}}/backend"
-    set command of cfg3 to "tail -F {{.APILog}}"
-    set wait after command of cfg3 to true
-    set newtab2 to new tab in win with configuration cfg3
-    set p3 to focused terminal of newtab2
-    perform action "set_tab_title:backend" on p3
-    set cfgSplit3 to new surface configuration
-    set initial working directory of cfgSplit3 to "{{.Worktree}}/backend"
-    set command of cfgSplit3 to "tail -F {{.AdminBELog}}"
-    set wait after command of cfgSplit3 to true
-    set p3b to split p3 direction right with configuration cfgSplit3
-
-    set cfg4 to new surface configuration
-    set initial working directory of cfg4 to "{{.Worktree}}/backend"
-    set command of cfg4 to "tail -F {{.CeleryLog}}"
-    set wait after command of cfg4 to true
-    set newtab3 to new tab in win with configuration cfg4
-    set p4 to focused terminal of newtab3
-    perform action "set_tab_title:celery" on p4
-
-    set cfg5 to new surface configuration
-    set initial working directory of cfg5 to "{{.Worktree}}"
-    set command of cfg5 to "{{.KitBin}} log {{.Name}} --wait"
-    set wait after command of cfg5 to true
-    set newtab4 to new tab in win with configuration cfg5
-    set p5 to focused terminal of newtab4
-    perform action "set_tab_title:logs" on p5
-end tell
-`
-
-type gtabData struct {
-	Name       string
-	TabTitle   string // Name with emoji prefix when available
-	Worktree   string
-	KitBin     string // absolute path to the kit binary (gtab shells skip rc files)
-	AppLog     string
-	AdminLog   string
-	APILog     string
-	AdminBELog string
-	CeleryLog  string
-}
 
 // WriteGtab generates the AppleScript file using the simple layout.
 // Use WriteGtabLayout for the detailed variant.
@@ -115,41 +29,67 @@ func (l Layout) WriteGtabLayout(name, worktree string, layout GtabLayout) (strin
 	if err := os.MkdirAll(l.GtabDir, 0o755); err != nil {
 		return "", err
 	}
-	path := l.GtabFile(name)
-	body := simpleGtabTemplate
+	layoutName := "default"
 	if layout == GtabDetailed {
-		body = detailedGtabTemplate
+		layoutName = "detailed"
 	}
-	tmpl, err := template.New("gtab").Parse(body)
+	wsLayout, err := ResolveWorkspaceLayout(layoutName)
 	if err != nil {
 		return "", err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	tabTitle := HerdrShellTabLabel(name)
-	appLog, _ := LogFile(name, string(SvcApp))
-	adminLog, _ := LogFile(name, string(SvcAdmin))
-	apiLog, _ := LogFile(name, string(SvcAPI))
-	adminBELog, _ := LogFile(name, string(SvcAdminBE))
-	celeryLog, _ := LogFile(name, string(SvcCelery))
-	data := gtabData{
-		Name:       name,
-		TabTitle:   tabTitle,
-		Worktree:   worktree,
-		KitBin:     kitBinaryPath(),
-		AppLog:     appLog,
-		AdminLog:   adminLog,
-		APILog:     apiLog,
-		AdminBELog: adminBELog,
-		CeleryLog:  celeryLog,
-	}
-	if err := tmpl.Execute(f, data); err != nil {
+	body := generateGtabScript(name, worktree, wsLayout)
+	path := l.GtabFile(name)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+func appleQuote(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	return "\"" + s + "\""
+}
+
+func generateGtabScript(name, worktree string, wsLayout WorkspaceLayout) string {
+	var b strings.Builder
+	b.WriteString("tell application \"Ghostty\"\n    activate\n\n")
+	b.WriteString("    set cfg1 to new surface configuration\n")
+	fmt.Fprintf(&b, "    set initial working directory of cfg1 to %s\n", appleQuote(worktree))
+	b.WriteString("    set win to new window with configuration cfg1\n")
+	b.WriteString("    set p1 to focused terminal of selected tab of win\n")
+	fmt.Fprintf(&b, "    perform action %s on p1\n\n", appleQuote("set_tab_title:"+HerdrShellTabLabel(name)))
+	for idx, tab := range wsLayout.Tabs {
+		if tab == "shell" && idx == 0 {
+			continue
+		}
+		cfgNum := idx + 1
+		panes := WorkspaceTabPanes(name, worktree, tab)
+		if len(panes) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "    set cfg%d to new surface configuration\n", cfgNum)
+		fmt.Fprintf(&b, "    set initial working directory of cfg%d to %s\n", cfgNum, appleQuote(panes[0].Cwd))
+		if panes[0].Command != "" {
+			fmt.Fprintf(&b, "    set command of cfg%d to %s\n", cfgNum, appleQuote(panes[0].Command))
+			fmt.Fprintf(&b, "    set wait after command of cfg%d to true\n", cfgNum)
+		}
+		fmt.Fprintf(&b, "    set newtab%d to new tab in win with configuration cfg%d\n", idx, cfgNum)
+		fmt.Fprintf(&b, "    set p%d to focused terminal of newtab%d\n", cfgNum, idx)
+		fmt.Fprintf(&b, "    perform action %s on p%d\n", appleQuote("set_tab_title:"+tab), cfgNum)
+		for s := 1; s < len(panes); s++ {
+			fmt.Fprintf(&b, "    set cfgSplit%d to new surface configuration\n", cfgNum)
+			fmt.Fprintf(&b, "    set initial working directory of cfgSplit%d to %s\n", cfgNum, appleQuote(panes[s].Cwd))
+			if panes[s].Command != "" {
+				fmt.Fprintf(&b, "    set command of cfgSplit%d to %s\n", cfgNum, appleQuote(panes[s].Command))
+				fmt.Fprintf(&b, "    set wait after command of cfgSplit%d to true\n", cfgNum)
+			}
+			fmt.Fprintf(&b, "    set p%db to split p%d direction right with configuration cfgSplit%d\n", cfgNum, cfgNum, cfgNum)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("end tell\n")
+	return b.String()
 }
 
 // RemoveGtab deletes both the new-format and legacy AppleScript files (if present).

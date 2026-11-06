@@ -46,6 +46,35 @@ func ResolveWorkspaceLayout(name string) (WorkspaceLayout, error) {
 	return layout, nil
 }
 
+type WorkspacePane struct {
+	Command string
+	Cwd     string
+}
+
+func WorkspaceTabPanes(name, worktree, tabName string) []WorkspacePane {
+	switch tabName {
+	case "frontend":
+		return []WorkspacePane{
+			{Command: herdrTailCommand(name, SvcApp), Cwd: worktree + "/frontend/app"},
+			{Command: herdrTailCommand(name, SvcAdmin), Cwd: worktree + "/frontend/admin"},
+		}
+	case "backend":
+		return []WorkspacePane{
+			{Command: herdrTailCommand(name, SvcAPI), Cwd: worktree + "/backend"},
+			{Command: herdrTailCommand(name, SvcAdminBE), Cwd: worktree + "/backend"},
+		}
+	case "celery":
+		return []WorkspacePane{{Command: herdrTailCommand(name, SvcCelery), Cwd: worktree + "/backend"}}
+	case "shell":
+		return []WorkspacePane{{Cwd: worktree}}
+	default:
+		if cmd := workspaceTabCommand(name, tabName); cmd != "" {
+			return []WorkspacePane{{Command: cmd, Cwd: worktree}}
+		}
+		return nil
+	}
+}
+
 func workspaceTabCommand(name, tabName string) string {
 	switch tabName {
 	case "logs":

@@ -59,9 +59,14 @@ func TestParseTagged(t *testing.T) {
 		"103 python KIT_SERVICE=other/celery",
 		"104 grep xKIT_SERVICE=wt/celery",
 	}, "\n")
-	got := parseTagged(out, "KIT_SERVICE=wt/celery")
-	if !slices.Equal(got, []int{100, 101}) {
-		t.Errorf("parseTagged = %v, want [100 101]", got)
+	got := parseTaggedMulti(out, []string{"KIT_SERVICE=wt/celery"})["KIT_SERVICE=wt/celery"]
+	var gotList []int
+	for pid := range got {
+		gotList = append(gotList, pid)
+	}
+	slices.Sort(gotList)
+	if !slices.Equal(gotList, []int{100, 101}) {
+		t.Errorf("parseTaggedMulti = %v, want [100 101]", gotList)
 	}
 }
 

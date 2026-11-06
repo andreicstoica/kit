@@ -77,30 +77,6 @@ func HerdrSessionName() string {
 	return defaultHerdrSession
 }
 
-// DefaultHerdrLayoutName returns the configured default layout, falling back
-// to the simple layout that mirrors the old Ghostty workspace.
-func DefaultHerdrLayoutName() string {
-	return DefaultWorkspaceLayoutName()
-}
-
-func DefaultWorkspaceLayoutName() string {
-	if v := os.Getenv("KIT_WORKSPACE_LAYOUT"); v != "" {
-		return v
-	}
-	if v := os.Getenv("KIT_HERDR_LAYOUT"); v != "" {
-		return v
-	}
-	if c, err := LoadConfig(); err == nil {
-		if c.Settings.WorkspaceLayout != "" {
-			return c.Settings.WorkspaceLayout
-		}
-		if c.Settings.HerdrLayout != "" {
-			return c.Settings.HerdrLayout
-		}
-	}
-	return "default"
-}
-
 // ResolveHerdrLayout merges user-defined layouts over Kit's built-ins. This
 // lets config.toml contain, for example:
 //
@@ -258,9 +234,6 @@ func TruncateHerdrStatus(status string, max int) string {
 func OpenHerdr(name, path, layoutName string) (HerdrWorkspace, error) {
 	if !HerdrAvailable() {
 		return HerdrWorkspace{}, fmt.Errorf("Herdr is not installed; install it with `brew install herdr`")
-	}
-	if layoutName == "" {
-		layoutName = DefaultHerdrLayoutName()
 	}
 	if _, err := ResolveHerdrLayout(layoutName); err != nil {
 		return HerdrWorkspace{}, err
@@ -588,21 +561,14 @@ func materializeHerdrLayout(name, path, workspaceID, layoutName string, state He
 }
 
 func herdrTabPaneCommands(name, tabName string) []string {
-	switch tabName {
-	case "frontend":
-		return []string{herdrTailCommand(name, SvcApp), herdrTailCommand(name, SvcAdmin)}
-	case "backend":
-		return []string{herdrTailCommand(name, SvcAPI), herdrTailCommand(name, SvcAdminBE)}
-	default:
-		if command := herdrTabCommand(name, "", tabName); command != "" {
-			return []string{command}
+	panes := WorkspaceTabPanes(name, "", tabName)
+	cmds := make([]string, 0, len(panes))
+	for _, p := range panes {
+		if p.Command != "" {
+			cmds = append(cmds, p.Command)
 		}
-		return nil
 	}
-}
-
-func herdrTabCommand(name, path, tabName string) string {
-	return workspaceTabCommand(name, tabName)
+	return cmds
 }
 
 func herdrTailCommand(name string, service Service) string {
