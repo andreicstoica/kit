@@ -239,9 +239,6 @@ func openRex(name, path, layoutName string) (RexSession, error) {
 	if !RexAvailable() {
 		return RexSession{}, fmt.Errorf("Rex is unavailable: `rex` was not found on PATH and no supported Rex app bundle was found")
 	}
-	if layoutName == "" {
-		layoutName = DefaultWorkspaceLayoutName()
-	}
 	layout, err := ResolveWorkspaceLayout(layoutName)
 	if err != nil {
 		return RexSession{}, err

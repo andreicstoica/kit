@@ -150,13 +150,7 @@ func snapshotProcs(tags ...string) (map[int]procInfo, map[string]map[int]bool, e
 		// macOS ps -E appends each process's environment to its command line.
 		// If it fails, kit still stops the recorded tree.
 		if envOut, err := exec.Command("ps", "-E", "-ww", "-axo", "pid=,command=").Output(); err == nil {
-			for _, tag := range tags {
-				ids := map[int]bool{}
-				for _, pid := range parseTagged(string(envOut), tag) {
-					ids[pid] = true
-				}
-				tagged[tag] = ids
-			}
+			tagged = parseTaggedMulti(string(envOut), tags)
 		}
 	}
 	return procs, tagged, nil
@@ -181,9 +175,11 @@ func parsePS(out string) map[int]procInfo {
 	return procs
 }
 
-// parseTagged returns the pids whose `ps -E` line has tag as a whole word.
-func parseTagged(out, tag string) []int {
-	var pids []int
+func parseTaggedMulti(out string, tags []string) map[string]map[int]bool {
+	tagged := make(map[string]map[int]bool, len(tags))
+	for _, tag := range tags {
+		tagged[tag] = map[int]bool{}
+	}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
 		if len(f) < 2 {
@@ -194,13 +190,12 @@ func parseTagged(out, tag string) []int {
 			continue
 		}
 		for _, w := range f[1:] {
-			if w == tag {
-				pids = append(pids, pid)
-				break
+			if _, ok := tagged[w]; ok {
+				tagged[w][pid] = true
 			}
 		}
 	}
-	return pids
+	return tagged
 }
 
 // serviceTree returns the live pids to stop and the process groups to signal.
@@ -305,12 +300,16 @@ func terminate(pids, groups []int) error {
 // ones still alive at the deadline.
 func waitGone(pids []int, timeout time.Duration) []int {
 	deadline := time.Now().Add(timeout)
+	interval := 50 * time.Millisecond
 	for {
 		live := livePIDs(pids)
 		if len(live) == 0 || time.Now().After(deadline) {
 			return live
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(interval)
+		if interval < 250*time.Millisecond {
+			interval *= 2
+		}
 	}
 }
 

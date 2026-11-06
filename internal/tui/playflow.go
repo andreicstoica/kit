@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -291,64 +290,19 @@ func (m *playModel) transitionAfterToggle() tea.Cmd {
 		}
 	}
 	return func() tea.Msg {
-		st, err := liftoff.LoadConfig()
+		res, err := buildPlayPlan(layout, chosen.name, chosen.path, selected)
 		if err != nil {
 			return playSetupErrMsg{err}
 		}
-		meta, ok := st.Worktrees[chosen.name]
-		// Master is special: slot 0 is its assigned slot (master defaults),
-		// never needs adoption. Adopt prompt only fires for unknown
-		// feature worktrees.
-		needsAdopt := false
-		if chosen.name != "master" {
-			needsAdopt = !ok || meta.Slot == 0
+		if res.needsAdopt {
+			return playAdoptPromptMsg{branch: res.adoptBranch, path: res.adoptPath}
 		}
-		if needsAdopt {
-			// Unadopted — bail to a confirm prompt. The user explicitly approves
-			// before kit allocates a slot + writes metadata.
-			branch, path := findBranchAndPath(layout, chosen.name)
-			return playAdoptPromptMsg{branch: branch, path: path}
+		chosen.slot = res.plan.Slot
+		if res.celeryBlocked {
+			return playCeleryConflictMsg{victim: res.celeryVictim, pid: res.celeryPID, plan: res.plan}
 		}
-		_ = liftoff.WithConfigLock(func(c *liftoff.Config) error {
-			c.TouchLastUsed(chosen.name)
-			return nil
-		})
-		chosen.slot = meta.Slot
-
-		ports := liftoff.PortsForSlot(chosen.slot)
-		plan := liftoff.PlayPlan{
-			Worktree:     chosen.name,
-			WorktreePath: chosen.path,
-			Slot:         chosen.slot,
-			Ports:        ports,
-			Services:     selected,
-		}
-
-		// Detect celery owner conflict.
-		if (slices.Contains(selected, liftoff.SvcCelery) || slices.Contains(selected, liftoff.SvcBeat)) && liftoff.WorkerSharesBroker(chosen.path) {
-			owner, pid := liftoff.FindSharedCeleryOwner(chosen.name)
-			if owner != "" {
-				return playCeleryConflictMsg{victim: owner, pid: pid, plan: plan}
-			}
-		}
-		return playReadyMsg{plan: plan}
+		return playReadyMsg{plan: res.plan}
 	}
-}
-
-func findBranchAndPath(layout liftoff.Layout, name string) (string, string) {
-	wts, err := layout.ListWorktrees()
-	if err != nil {
-		return "", ""
-	}
-	for _, w := range wts {
-		if w.IsMaster(layout) || w.Bare {
-			continue
-		}
-		if w.Name() == name {
-			return w.Branch, w.Path
-		}
-	}
-	return "", ""
 }
 
 // Messages

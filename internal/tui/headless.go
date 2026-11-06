@@ -48,29 +48,7 @@ func RunPlayHeadless(layout liftoff.Layout, cfg PlayConfig, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	conf, err := liftoff.LoadConfig()
-	if err != nil {
-		return err
-	}
-	slot, err := conf.SlotFor(name)
-	if err != nil {
-		return fmt.Errorf("%s has no kit slot yet; run `kit adopt %s` first", name, name)
-	}
-	_ = liftoff.WithConfigLock(func(c *liftoff.Config) error {
-		c.TouchLastUsed(name)
-		return nil
-	})
-
 	on := initialToggles(cfg)
-	if (on[liftoff.SvcCelery] || on[liftoff.SvcBeat]) && liftoff.WorkerSharesBroker(path) {
-		if owner, pid := liftoff.FindSharedCeleryOwner(name); owner != "" {
-			fmt.Fprintln(w, StyleWarn.Render(fmt.Sprintf(
-				"  ! celery skipped: %s runs the worker (pid %d); run `kit pause %s --only celery` first",
-				owner, pid, owner)))
-			on[liftoff.SvcCelery] = false
-			on[liftoff.SvcBeat] = false
-		}
-	}
 	var selected []liftoff.Service
 	for _, s := range liftoff.AllServices {
 		if on[s] {
@@ -80,13 +58,32 @@ func RunPlayHeadless(layout liftoff.Layout, cfg PlayConfig, w io.Writer) error {
 	if len(selected) == 0 {
 		return errors.New("nothing left to start")
 	}
-	plan := liftoff.PlayPlan{
-		Worktree:     name,
-		WorktreePath: path,
-		Slot:         slot,
-		Ports:        liftoff.PortsForSlot(slot),
-		Services:     selected,
+	res, err := buildPlayPlan(layout, name, path, selected)
+	if err != nil {
+		return err
 	}
+	if res.needsAdopt {
+		return fmt.Errorf("%s has no kit slot yet; run `kit adopt %s` first", name, name)
+	}
+	if res.celeryBlocked {
+		fmt.Fprintln(w, StyleWarn.Render(fmt.Sprintf(
+			"  ! celery skipped: %s runs the worker (pid %d); run `kit pause %s --only celery` first",
+			res.celeryVictim, res.celeryPID, res.celeryVictim)))
+		filtered := selected[:0]
+		for _, s := range selected {
+			if s != liftoff.SvcCelery && s != liftoff.SvcBeat {
+				filtered = append(filtered, s)
+			}
+		}
+		if len(filtered) == 0 {
+			return errors.New("nothing left to start")
+		}
+		res, err = buildPlayPlan(layout, name, path, filtered)
+		if err != nil {
+			return err
+		}
+	}
+	plan := res.plan
 	failed := PrintPlayUpdates(w, layout.RunPlay(plan))
 	fmt.Fprintln(w, StyleDim.Render("logs: "+liftoff.RunDirPath(name)))
 	if failed {

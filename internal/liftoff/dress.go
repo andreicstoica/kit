@@ -63,11 +63,21 @@ type StepUpdate struct {
 	AllocatedSlot int
 }
 
-// step is one executable unit.
+type stepPhase int
+
+const (
+	phasePrefix stepPhase = iota
+	phaseDB
+	phaseParallel
+	phaseTail
+)
+
 type step struct {
 	title string
 	skip  bool
 	run   func(emit func(string)) error
+	phase stepPhase
+	kind  string
 }
 
 // PlanSteps returns the ordered step list, including skipped ones (for display).
@@ -77,18 +87,21 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 	return []step{
 		{
 			title: "fetch origin/" + l.MainBranch,
+			phase: phasePrefix,
 			run: func(emit func(string)) error {
 				return l.FetchMain(emit)
 			},
 		},
 		{
 			title: fmt.Sprintf("worktree add %s -b %s %s", p.Worktree, p.Name, l.MainBranch),
+			phase: phasePrefix, kind: "worktree",
 			run: func(emit func(string)) error {
 				return l.AddWorktree(p.Name, p.Worktree, emit)
 			},
 		},
 		{
 			title: "copy env files (root, backend, frontend/app, frontend/admin)",
+			phase: phasePrefix,
 			run: func(emit func(string)) error {
 				_, _, err := l.CopyEnvFiles(l.Master, p.Worktree, p.OverwriteEnvs, emit)
 				return err
@@ -96,6 +109,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "create database " + dbName + " (template copy of liftoff when possible)",
+			phase: phaseDB, kind: "db-create",
 			skip:  !p.CloneDB,
 			run: func(emit func(string)) error {
 				if cloneByTemplate {
@@ -113,6 +127,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "clone database liftoff -> " + dbName,
+			phase: phaseDB,
 			skip:  !p.CloneDB,
 			run: func(emit func(string)) error {
 				if templated {
@@ -124,6 +139,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "update backend/.env SQLALCHEMY_DATABASE_NAME=" + dbName,
+			phase: phaseDB,
 			skip:  !p.CloneDB,
 			run: func(emit func(string)) error {
 				return l.UpdateBackendDBName(p.Worktree, dbName)
@@ -131,6 +147,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "uv install backend",
+			phase: phaseParallel,
 			skip:  !p.BackendDeps,
 			run: func(emit func(string)) error {
 				return InstallBackend(p.Worktree, emit)
@@ -138,6 +155,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "symlink frontend node_modules from master",
+			phase: phaseParallel,
 			skip:  !p.SymlinkFrontend,
 			run: func(emit func(string)) error {
 				_, err := LinkNodeModules(l.Master, p.Worktree, emit)
@@ -146,6 +164,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "gt track --parent " + l.MainBranch,
+			phase: phaseParallel,
 			skip:  !p.GraphiteTrack,
 			run: func(emit func(string)) error {
 				return l.GtTrack(p.Worktree, emit)
@@ -153,6 +172,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "write gtab workspace",
+			phase: phaseParallel, kind: "gtab",
 			skip:  !p.Gtab,
 			run: func(emit func(string)) error {
 				path, err := l.WriteGtab(p.Name, p.Worktree)
@@ -165,6 +185,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		},
 		{
 			title: "allocate port slot",
+			phase: phaseTail, kind: "slot",
 			run: func(emit func(string)) error {
 				// Pre-probe candidate slots outside the flock to minimize lock
 				// hold time. The probe is best-effort; re-check inside the lock.
@@ -282,16 +303,22 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 3; i <= 5; i++ {
+			var dbSteps []int
+			for i, s := range steps {
+				if s.phase == phaseDB {
+					dbSteps = append(dbSteps, i)
+				}
+			}
+			for pos, i := range dbSteps {
 				s := steps[i]
 				if s.skip {
 					ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 					continue
 				}
-				if i < 5 && abort.Load() {
-					return // checkout steps failed; do not start more database work
+				if pos < len(dbSteps)-1 && abort.Load() {
+					return
 				}
-				if i == 5 {
+				if pos == len(dbSteps)-1 {
 					<-prefixDone
 					if !prefixOK {
 						return
@@ -300,7 +327,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
 				start := time.Now()
 				err := s.run(func(line string) { ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line} })
-				if err == nil && i == 3 {
+				if err == nil && s.kind == "db-create" {
 					dbCreated = true
 					err = persistDressDatabase(p)
 				}
@@ -314,9 +341,10 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 			}
 		}()
 
-		// Fetch, create the checkout, and copy env files before the checkout-only work.
-		for i := 0; i <= 2 && i < len(steps); i++ {
-			s := steps[i]
+		for i, s := range steps {
+			if s.phase != phasePrefix {
+				continue
+			}
 			if s.skip {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 				continue
@@ -328,7 +356,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 			}
 			err := s.run(emit)
 			elapsed := time.Since(start)
-			if err == nil && i == 1 {
+			if err == nil && s.kind == "worktree" {
 				worktreeAdded = true
 				err = persistDressCheckout(p)
 			}
@@ -342,7 +370,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				})
 				return
 			}
-			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed, AllocatedSlot: slot}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed}
 		}
 		prefixOK = true
 		close(prefixDone)
@@ -351,15 +379,15 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		// the checkout. Run them alongside the rest of the DB chain, then join
 		// every branch before rollback or slot allocation. No rollback may
 		// delete files a sibling is still using.
-		parallelStart := 6
-		parallelEnd := 9
-		if parallelEnd >= len(steps) {
-			parallelEnd = len(steps) - 1
+		var parallelIdx []int
+		for i, s := range steps {
+			if s.phase == phaseParallel {
+				parallelIdx = append(parallelIdx, i)
+			}
 		}
-		results := make([]pResult, parallelEnd-parallelStart+1)
-		for i := parallelStart; i <= parallelEnd; i++ {
+		results := make([]pResult, len(parallelIdx))
+		for idx, i := range parallelIdx {
 			s := steps[i]
-			idx := i - parallelStart
 			if s.skip {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 				results[idx] = pResult{index: i}
@@ -389,7 +417,7 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 		// same batch (notably a written gtab file), not abort on the first
 		// error in index order and leak the later success.
 		for _, r := range results {
-			if r.err == nil && !steps[r.index].skip && r.index == 9 {
+			if r.err == nil && !steps[r.index].skip && steps[r.index].kind == "gtab" {
 				gtabWritten = true
 			}
 		}
@@ -409,9 +437,10 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 			}
 		}
 
-		// Run remaining sequential steps (10+: allocate port slot).
-		for i := parallelEnd + 1; i < len(steps); i++ {
-			s := steps[i]
+		for i, s := range steps {
+			if s.phase != phaseTail {
+				continue
+			}
 			if s.skip {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 				continue
