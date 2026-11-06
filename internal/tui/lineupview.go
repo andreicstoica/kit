@@ -35,7 +35,7 @@ func renderLineup(layout liftoff.Layout, parked bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	state, _ := liftoff.LoadState()
+	state, _ := liftoff.LoadConfig()
 	if state == nil {
 		state = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}

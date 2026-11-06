@@ -59,7 +59,7 @@ func renderLineupTree(layout liftoff.Layout, parked bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	state, _ := liftoff.LoadState()
+	state, _ := liftoff.LoadConfig()
 	if state == nil {
 		state = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
@@ -101,7 +101,7 @@ func renderLineupTree(layout liftoff.Layout, parked bool) (string, error) {
 			dbs, _ = liftoff.HasDBs(names)
 		}
 	}()
-	sem := make(chan struct{}, 8)
+	sem := make(chan struct{}, scanWorkers)
 	for i, in := range inputs {
 		i, in := i, in
 		wg.Add(1)
@@ -146,10 +146,10 @@ func renderLineupTree(layout liftoff.Layout, parked bool) (string, error) {
 				n.services = svcRows
 			}
 			if hasGt {
-				n.gtParent = layout.GtParentOf(in.w.Path)
+				n.gtStack = layout.GtStackOf(in.w.Path)
+				n.gtParent = liftoff.ParentOfStack(n.gtStack)
 				if n.gtParent != "" {
 					n.needsRestack = layout.NeedsRestack(in.w.Path, n.gtParent)
-					n.gtStack = layout.GtStackOf(in.w.Path)
 				}
 			}
 			if name != "master" {

@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"charm.land/bubbles/v2/list"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -30,6 +33,37 @@ func TestNewPlayModelOnlyCeleryCarriesBeat(t *testing.T) {
 		want := svc == liftoff.SvcCelery || svc == liftoff.SvcBeat
 		if pm.toggleOn[svc] != want {
 			t.Errorf("toggleOn[%s] = %v, want %v", svc, pm.toggleOn[svc], want)
+		}
+	}
+}
+
+// Admin (frontend + backend) is opt-in: the defaults leave it off so a plain
+// `kit play` does not pay for two services most sessions never open. It stays
+// reachable through the toggle screen and --only.
+func TestPlayDefaultsSkipAdmin(t *testing.T) {
+	t.Setenv("KIT_STATE_DIR", t.TempDir())
+	layout := liftoff.Layout{Root: t.TempDir(), Master: t.TempDir()}
+
+	m, err := NewPlayModel(layout, PlayConfig{Name: "master"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pm := m.(*playModel)
+	for _, svc := range liftoff.AllServices {
+		want := svc == liftoff.SvcApp || svc == liftoff.SvcAPI || svc == liftoff.SvcCelery || svc == liftoff.SvcBeat
+		if pm.toggleOn[svc] != want {
+			t.Errorf("toggleOn[%s] = %v, want %v", svc, pm.toggleOn[svc], want)
+		}
+	}
+
+	m, err = NewPlayModel(layout, PlayConfig{Name: "master", Only: []liftoff.Service{liftoff.SvcAdmin, liftoff.SvcAdminBE}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pm = m.(*playModel)
+	for _, svc := range []liftoff.Service{liftoff.SvcAdmin, liftoff.SvcAdminBE} {
+		if !pm.toggleOn[svc] {
+			t.Errorf("--only should still enable %s", svc)
 		}
 	}
 }
@@ -105,5 +139,26 @@ func TestPlayIgnoresSetupResultsAfterAbort(t *testing.T) {
 		if command != nil || m.stage != playStageAborted {
 			t.Fatalf("late %T changed aborted state", msg)
 		}
+	}
+}
+
+func TestPlayPickerTwoKeyShortcutBeyondNine(t *testing.T) {
+	items := make([]list.Item, 15)
+	for i := range items {
+		items[i] = playWtItem{name: fmt.Sprintf("workspace-%02d", i+1), displayIdx: i + 1}
+	}
+	picker := list.New(items, NewListDelegate(), 100, 60)
+	StyleList(&picker, "workspaces", true)
+	m := &playModel{stage: playStagePicker, picker: picker}
+	if view := m.picker.View(); !strings.Contains(view, "b3") {
+		t.Fatalf("row 12 has no b3 label:\n%s", view)
+	}
+	m.updatePicker(mkKey("b"))
+	if m.stage != playStagePicker {
+		t.Fatal("prefix must not leave the picker")
+	}
+	m.updatePicker(mkKey("3"))
+	if m.stage != playStageToggle || m.chosen.name != "workspace-12" {
+		t.Fatalf("b3 chose %q at stage %v, want workspace-12 at toggle", m.chosen.name, m.stage)
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
-	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/stopwatch"
 	tea "charm.land/bubbletea/v2"
@@ -146,10 +145,10 @@ type designModel struct {
 	answers  *designAnswers
 	worktree string
 
-	spinner       spinner.Model
-	stopwatch     stopwatch.Model
-	progress      progress.Model
-	anim          Animation
+	spinner         spinner.Model
+	stopwatch       stopwatch.Model
+	progressPercent int
+	anim            Animation
 	keys          KeyMap
 	help          help.Model
 	updates       <-chan liftoff.StepUpdate
@@ -217,7 +216,6 @@ func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.help.SetWidth(msg.Width)
-		m.progress.SetWidth(max(20, msg.Width-50))
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -283,15 +281,10 @@ func (m *designModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				total++
 			}
 		}
-		var pcmd tea.Cmd
 		if total > 0 {
-			pcmd = m.progress.SetPercent(float64(completed) / float64(total))
+			m.progressPercent = completed * 100 / total
 		}
-		return m, tea.Batch(designNext(m.updates), pcmd)
-	case progress.FrameMsg:
-		var cmd tea.Cmd
-		m.progress, cmd = m.progress.Update(msg)
-		return m, cmd
+		return m, designNext(m.updates)
 	}
 	return m, nil
 }
@@ -305,7 +298,7 @@ func (m *designModel) View() tea.View {
 	}
 	left.WriteString(StyleTitle.Render(titlePrefix+m.answers.name) + "\n\n")
 
-	left.WriteString(m.progress.View() + "  " + StyleDim.Render(m.stopwatch.View()) + "\n\n")
+	left.WriteString(StyleDim.Render(m.stopwatch.View()) + "\n\n")
 
 	for i, title := range m.stepTitles {
 		if m.stepStatuses[i] == liftoff.StepSkipped {
@@ -383,7 +376,21 @@ func (m *designModel) View() tea.View {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, orbView)
 	}
 	footer := "\n" + m.help.View(m.keys)
-	return NewAltView(body + footer)
+	status := workingStatus("kit design", m.answers.name)
+	if m.done {
+		if m.failed {
+			status = errorStatus("kit design", m.answers.name)
+		} else {
+			status = doneStatus("kit design", m.answers.name)
+		}
+	}
+	v := NewAltViewWithStatus(body+footer, status)
+	state := tea.ProgressBarDefault
+	if m.failed {
+		state = tea.ProgressBarError
+	}
+	v.ProgressBar = tea.NewProgressBar(state, m.progressPercent)
+	return v
 }
 
 func truncate(s string, w int) string {
@@ -461,9 +468,6 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorAccent)
 
-	pb := progress.New(progress.WithDefaultBlend(), progress.WithoutPercentage())
-	pb.SetWidth(30)
-
 	sw := stopwatch.New(stopwatch.WithInterval(time.Second))
 
 	m := &designModel{
@@ -471,7 +475,6 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 		answers:   answers,
 		worktree:  layout.WorktreePath(answers.name),
 		spinner:   sp,
-		progress:  pb,
 		stopwatch: sw,
 		anim:      NewAnimation(),
 		keys:      DefaultKeymap,
@@ -491,9 +494,6 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 	// instead of having to remember three more commands.
 	return offerNextSteps(layout, answers.name)
 }
-
-// RunDressTUI is kept as a back-compat alias.
-func RunDressTUI(layout liftoff.Layout) error { return RunDesignTUI(layout, "") }
 
 // PickGtabLayout prompts for the Ghostty workspace layout. When
 // includeSkip is true, adds a "Skip" option that returns
@@ -553,7 +553,7 @@ func offerNextSteps(layout liftoff.Layout, name string) error {
 	// hunting back here to answer.
 	wantPlay, err := RunConfirm(ConfirmConfig{
 		Title:       "Start the app now?",
-		Description: "Starts the website, admin, API, and background worker for this workspace. You can also do this later with `kit play`.",
+		Description: "Starts the website, API, and background worker for this workspace. You can also do this later with `kit play`.",
 		Affirmative: "Start",
 		Negative:    "Not now",
 		Default:     true,

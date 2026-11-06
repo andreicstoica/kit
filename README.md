@@ -54,8 +54,11 @@ Aliases: `new` (design), `ls`/`list` (lineup), `start` (play), `stop` (pause),
 
 Commands that take a worktree name (`open`, `close`, `focus`, `remote`, `swap`, `play`, `pause`, `restart`,
 `log`, `wash`, `links`, `diff`, `submit`, `adopt`) accept the same three shapes: pass a name,
-omit to auto-pick from cwd, or get a numbered picker (1-9 quick-select)
-otherwise. Master appears in every picker as 🧊 slot 0.
+omit to auto-pick from cwd, or get a picker with keyboard shortcuts
+otherwise. Type the row label, such as `a1`, `a9`, or `b3`, to select it
+without Enter. Labels cover the full list and stay the same when filtering.
+`1` through `9` also select the first nine results. `/` starts filtering;
+Esc clears an unfinished shortcut, then cancels the picker. Master appears in every picker as 🧊 slot 0.
 
 ## Parking work in progress
 
@@ -298,7 +301,7 @@ Leading `liftoff-` in your input is stripped.
 `kit play [name]`:
 
 1. **Picker** — if no name, pick from worktrees (sorted by slot)
-2. **Service toggle** — defaults: `app frontend, admin frontend, app backend, admin backend, celery worker` (MCP off). Each row shows current running state.
+2. **Service toggle** — defaults: `app frontend, app backend, celery worker` (admin frontend, admin backend, and MCP off). Turn admin on when you need it, or pass `--only app,admin,api,admin_be`. Each row shows current running state.
 3. **Celery prompt** — only when this worktree's worker would share a broker with another worktree's (no private vhost); confirm kill-and-replace
 4. **Adopt prompt** — if the worktree isn't in `config.toml` yet, confirm before allocating
 5. **Live progress** — services start in parallel, ✓ when port responds

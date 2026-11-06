@@ -39,7 +39,7 @@ type playWtItem struct {
 	slot       int
 	lastUsed   time.Time
 	running    int
-	displayIdx int // 1-based for numeric quick-pick; 0 = no prefix
+	displayIdx int // 1-based shortcut index; 0 = no prefix
 }
 
 func (i playWtItem) Title() string {
@@ -47,9 +47,7 @@ func (i playWtItem) Title() string {
 	if i.emoji != "" {
 		t = i.emoji + " " + t
 	}
-	if i.displayIdx > 0 && i.displayIdx < 10 {
-		t = StyleHi.Render(fmt.Sprintf("%d ", i.displayIdx)) + t
-	}
+	t = shortcutTitle(t, i.displayIdx)
 	if i.slot > 0 {
 		t += StyleDim.Render(fmt.Sprintf("  slot %d", i.slot))
 	}
@@ -62,6 +60,7 @@ func (i playWtItem) Description() string {
 	return StyleDim.Render(i.path)
 }
 func (i playWtItem) FilterValue() string { return i.name }
+func (i playWtItem) shortcut() string    { return shortcutLabel(i.displayIdx) }
 
 type playModel struct {
 	layout liftoff.Layout
@@ -73,8 +72,9 @@ type playModel struct {
 	stage playStage
 
 	// Picker stage
-	picker list.Model
-	chosen playWtItem
+	picker    list.Model
+	shortcuts pickerShortcuts
+	chosen    playWtItem
 
 	// Toggle stage
 	toggleSvcs   []liftoff.Service
@@ -187,7 +187,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 		if err != nil {
 			return nil, err
 		}
-		st, _ := liftoff.LoadState()
+		st, _ := liftoff.LoadConfig()
 		var slot int
 		if st != nil {
 			if meta, ok := st.Worktrees[name]; ok {
@@ -205,7 +205,7 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	}
 
 	// Build picker.
-	items, err := buildPlayItems(layout)
+	items, err := collectPlayWtItems(layout, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -219,16 +219,12 @@ func NewPlayModel(layout liftoff.Layout, cfg PlayConfig) (tea.Model, error) {
 	return m, nil
 }
 
-func buildPlayItems(layout liftoff.Layout) ([]list.Item, error) {
-	return collectPlayWtItems(layout, nil)
-}
-
 // playWtItemFilter, when non-nil, drops items that return false.
 type playWtItemFilter func(playWtItem) bool
 
 // collectPlayWtItems walks every git worktree, builds the canonical
 // playWtItem with running-service count and state metadata, optionally
-// filters, sorts by lineup order, assigns numeric displayIdx, and
+// filters, sorts by lineup order, assigns shortcut displayIdx, and
 // returns a []list.Item ready for bubble list. Master is included
 // (with liftoff.MasterEmoji + name "master").
 func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.Item, error) {
@@ -236,7 +232,7 @@ func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.It
 	if err != nil {
 		return nil, err
 	}
-	st, _ := liftoff.LoadState()
+	st, _ := liftoff.LoadConfig()
 	if st == nil {
 		st = &liftoff.State{Worktrees: map[string]liftoff.WorktreeMeta{}}
 	}
@@ -368,6 +364,20 @@ type playCeleryConflictMsg struct {
 }
 type playSetupErrMsg struct{ err error }
 type playAdoptedMsg struct{}
+type playProbeMsg struct{ running map[liftoff.Service]bool }
+
+func (m *playModel) probeRunning() tea.Cmd {
+	name, slot, svcs := m.chosen.name, m.chosen.slot, m.toggleSvcs
+	return func() tea.Msg {
+		ports := liftoff.PortsForSlot(slot)
+		running := make(map[liftoff.Service]bool, len(svcs))
+		for _, svc := range svcs {
+			running[svc] = liftoff.IsServiceAlive(name, svc, ports)
+		}
+		return playProbeMsg{running: running}
+	}
+}
+
 type playUpdMsg struct {
 	upd liftoff.PlayUpdate
 	ok  bool
@@ -383,6 +393,9 @@ func playNext(ch <-chan liftoff.PlayUpdate) tea.Cmd {
 func (m *playModel) Init() tea.Cmd {
 	if m.skipToggle {
 		return tea.Batch(m.spinner.Tick, m.transitionAfterToggle(), tea.RequestBackgroundColor)
+	}
+	if m.stage == playStageToggle {
+		return tea.Batch(m.spinner.Tick, m.probeRunning(), tea.RequestBackgroundColor)
 	}
 	return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor)
 }
@@ -447,13 +460,16 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adoptPath = msg.path
 		m.stage = playStageAdoptPrompt
 		return m, nil
+	case playProbeMsg:
+		m.running = msg.running
+		return m, nil
 	case playAdoptedMsg:
 		if m.stage != playStageAdopting {
 			return m, nil
 		}
 		m.stage = playStageToggle
-		m.running = nil // re-probe: services may have changed
-		return m, m.transitionAfterToggle()
+		m.running = nil
+		return m, tea.Batch(m.probeRunning(), m.transitionAfterToggle())
 	}
 
 	switch m.stage {
@@ -481,29 +497,27 @@ func (m *playModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *playModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if item, handled := m.shortcuts.update(k, &m.picker); handled {
+			if it, ok := item.(playWtItem); ok {
+				m.chosen = it
+				m.stage = playStageToggle
+				m.running = nil
+				return m, m.probeRunning()
+			}
+			return m, nil
+		}
 		if m.picker.FilterState() != list.Filtering {
 			switch k.String() {
 			case "enter":
 				if it, ok := m.picker.SelectedItem().(playWtItem); ok {
 					m.chosen = it
 					m.stage = playStageToggle
-					m.running = nil // re-probe: services may have changed
-					return m, nil
+					m.running = nil
+					return m, m.probeRunning()
 				}
 			case "esc":
 				m.stage = playStageAborted
 				return m, tea.Quit
-			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-				idx := int(k.String()[0] - '0' - 1)
-				items := m.picker.VisibleItems()
-				if idx >= 0 && idx < len(items) {
-					if it, ok := items[idx].(playWtItem); ok {
-						m.chosen = it
-						m.stage = playStageToggle
-						m.running = nil // re-probe: services may have changed
-						return m, nil
-					}
-				}
 			}
 		}
 	}
@@ -710,30 +724,34 @@ func (m *playModel) View() tea.View {
 	case playStageDone:
 		body = m.viewDone()
 	case playStageAborted:
-		return NewAltView(StyleWarn.Render("cancelled.\n"))
+		return NewAltViewWithStatus(StyleWarn.Render("cancelled.\n"), idleStatus("kit play", "cancelled"))
 	}
 	footer := "\n" + m.help.View(m.keys)
-	return NewAltView(body + footer)
+	status := blockedStatus("kit play", m.chosen.name)
+	switch m.stage {
+	case playStagePreparing, playStageAdopting, playStageRun:
+		status = workingStatus("kit play", m.chosen.name)
+	case playStageDone:
+		if m.failed {
+			status = errorStatus("kit play", m.chosen.name)
+		} else {
+			status = doneStatus("kit play", m.chosen.name)
+		}
+	}
+	return NewAltViewWithStatus(body+footer, status)
 }
 
 func (m *playModel) viewToggle() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit play — "+m.chosen.name) + "\n\n")
+	ports := liftoff.PortsForSlot(m.chosen.slot)
 	if m.chosen.slot > 0 {
 		b.WriteString(StyleDim.Render(fmt.Sprintf("local slot %d · website %d · admin %d · API %d · admin API %d\n", m.chosen.slot,
-			3000+m.chosen.slot*10, 3001+m.chosen.slot*10,
-			9000+m.chosen.slot*10, 9001+m.chosen.slot*10)))
+			ports.App, ports.Admin, ports.API, ports.AdminBE)))
 	} else {
 		b.WriteString(StyleDim.Render("kit will reserve local ports when you continue\n"))
 	}
 	b.WriteString("\n")
-	ports := liftoff.PortsForSlot(m.chosen.slot)
-	if m.running == nil {
-		m.running = make(map[liftoff.Service]bool, len(m.toggleSvcs))
-		for _, svc := range m.toggleSvcs {
-			m.running[svc] = liftoff.IsServiceAlive(m.chosen.name, svc, ports)
-		}
-	}
 	for i, svc := range m.toggleSvcs {
 		cursor := "  "
 		if i == m.toggleCursor {

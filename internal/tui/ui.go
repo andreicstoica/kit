@@ -17,7 +17,7 @@ import (
 //   1. List picker  — choosing one thing from a set that may be long or
 //      filterable (a worktree, an editor, an adopt candidate). Built with
 //      bubbles/list via RunListPicker. Always: accent-highlighted selection,
-//      1-9 numeric quick-pick, esc/ctrl+c cancels, "/" filters when enabled.
+//      a1/b1 shortcut labels, esc/ctrl+c cancels, "/" filters when enabled.
 //
 //   2. Select       — choosing one option from a short, fixed menu
 //      (workspace layout, root menu). A hand-rolled inline bubbletea model
@@ -59,15 +59,46 @@ func StyleList(l *list.Model, title string, filtering bool) {
 	l.Styles.Title = TitleStyle
 	l.SetShowHelp(true)
 	l.SetFilteringEnabled(filtering)
+	shortcutHelp(l, "")
 }
 
 // NewAltView wraps content in a fullscreen alternate-screen view. Flows
 // whose program previously passed tea.WithAltScreen set this on every
 // View return instead (Bubble Tea v2 moved screen mode into the view).
 func NewAltView(content string) tea.View {
+	return NewAltViewWithStatus(content, nil)
+}
+
+func NewAltViewWithStatus(content string, status *tea.ProgramStatus) tea.View {
 	v := tea.NewView(content)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	v.ProgramStatus = status
 	return v
+}
+
+func programStatus(state tea.ProgramState, kind tea.ProgramStatusKind, title, msg string) *tea.ProgramStatus {
+	return &tea.ProgramStatus{State: state, Kind: kind, App: "kit", Title: title, Message: msg}
+}
+
+func workingStatus(title, msg string) *tea.ProgramStatus {
+	return programStatus(tea.ProgramStateWorking, "", title, msg)
+}
+
+func blockedStatus(title, msg string) *tea.ProgramStatus {
+	return programStatus(tea.ProgramStateBlocked, tea.ProgramStatusKindQuestion, title, msg)
+}
+
+func doneStatus(title, msg string) *tea.ProgramStatus {
+	return programStatus(tea.ProgramStateDone, "", title, msg)
+}
+
+func errorStatus(title, msg string) *tea.ProgramStatus {
+	return programStatus(tea.ProgramStateError, "", title, msg)
+}
+
+func idleStatus(title, msg string) *tea.ProgramStatus {
+	return programStatus(tea.ProgramStateIdle, "", title, msg)
 }
 
 // RestyleList reapplies kit's list chrome for the current theme.

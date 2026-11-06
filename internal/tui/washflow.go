@@ -29,7 +29,7 @@ type washItem struct {
 	hasGtab          bool
 	rexOpen          bool // a Rex session for it is open, and wash will close it
 	isLegacy         bool
-	displayIdx       int // 1-based for numeric quick-pick
+	displayIdx       int // 1-based shortcut index
 }
 
 func (w washItem) Title() string {
@@ -37,9 +37,7 @@ func (w washItem) Title() string {
 	if w.emoji != "" {
 		t = w.emoji + " " + t
 	}
-	if w.displayIdx > 0 && w.displayIdx < 10 {
-		t = StyleHi.Render(fmt.Sprintf("%d ", w.displayIdx)) + t
-	}
+	t = shortcutTitle(t, w.displayIdx)
 	if w.isLegacy {
 		t += "  " + StyleDim.Render("(legacy)")
 	}
@@ -69,6 +67,7 @@ func (w washItem) Description() string {
 	return StyleDim.Render(strings.Join(bits, "  ·  "))
 }
 func (w washItem) FilterValue() string { return w.name }
+func (w washItem) shortcut() string    { return shortcutLabel(w.displayIdx) }
 
 type washStage int
 
@@ -84,6 +83,7 @@ type washModel struct {
 	layout        liftoff.Layout
 	stage         washStage
 	list          list.Model
+	shortcuts     pickerShortcuts
 	selected      washItem
 	dropDB        bool
 	removeGtab    bool
@@ -105,10 +105,6 @@ type washModel struct {
 
 // washScanWorkers bounds concurrent git scans when building the picker.
 const washScanWorkers = 6
-
-func NewWashModel(layout liftoff.Layout) (tea.Model, error) {
-	return NewWashModelFor(layout, "")
-}
 
 // NewWashModelFor builds the wash model. If preselected is non-empty and
 // matches a worktree, the picker stage is skipped and the model jumps
@@ -279,6 +275,12 @@ func (m *washModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if item, handled := m.shortcuts.update(k, &m.list); handled {
+			if it, ok := item.(washItem); ok {
+				m.pickWash(it)
+			}
+			return m, nil
+		}
 		if m.list.FilterState() != list.Filtering {
 			switch k.String() {
 			case "enter":
@@ -289,15 +291,6 @@ func (m *washModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				m.stage = washStageAborted
 				return m, tea.Quit
-			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-				idx := int(k.String()[0] - '0' - 1)
-				items := m.list.VisibleItems()
-				if idx >= 0 && idx < len(items) {
-					if it, ok := items[idx].(washItem); ok {
-						m.pickWash(it)
-						return m, nil
-					}
-				}
 			}
 		}
 	}
@@ -355,8 +348,8 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				DropDB:       m.dropDB,
 				RemoveGtab:   m.removeGtab,
 			}
-			m.stepTitles = washStepTitles(plan)
-			m.stepStatuses = make([]liftoff.StepStatus, len(m.stepTitles))
+			m.stepTitles = nil
+			m.stepStatuses = nil
 			m.updates = m.layout.RunWash(plan)
 			return m, tea.Batch(m.spinner.Tick, washNextUpdate(m.updates))
 		case "esc":
@@ -368,26 +361,6 @@ func (m *washModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
-}
-
-// washStepTitles must match RunWash's step order 1:1 so StepUpdate.Index lines
-// up with m.stepStatuses. Skipped steps (db/gtab) render via their StepSkipped
-// status, not a title suffix.
-func washStepTitles(p liftoff.WashPlan) []string {
-	branch := p.Branch
-	if branch == "" {
-		branch = p.Name
-	}
-	return []string{
-		"stop running services",
-		"remove service run state",
-		"remove Herdr workspace",
-		"remove worktree " + p.WorktreePath,
-		"delete branch " + branch,
-		"drop database " + liftoff.DBName(p.Name),
-		"remove gtab workspace",
-		"free port slot",
-	}
 }
 
 type washStepMsg struct {
@@ -414,7 +387,14 @@ func (m *washModel) updateRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		u := msg.upd
-		if u.Index >= 0 && u.Index < len(m.stepStatuses) {
+		if u.Index >= 0 {
+			for len(m.stepStatuses) <= u.Index {
+				m.stepStatuses = append(m.stepStatuses, liftoff.StepPending)
+				m.stepTitles = append(m.stepTitles, u.Title)
+			}
+			if u.Title != "" {
+				m.stepTitles[u.Index] = u.Title
+			}
 			m.stepStatuses[u.Index] = u.Status
 			if u.Line != "" {
 				m.stepLines[u.Index] = append(m.stepLines[u.Index], u.Line)
@@ -441,9 +421,20 @@ func (m *washModel) View() tea.View {
 	case washStageDone:
 		body = m.viewDone()
 	case washStageAborted:
-		return NewAltView(StyleWarn.Render("cancelled.\n"))
+		return NewAltViewWithStatus(StyleWarn.Render("cancelled.\n"), idleStatus("kit wash", "cancelled"))
 	}
-	return NewAltView(body + "\n" + m.help.View(m.keys))
+	status := blockedStatus("kit wash", m.selected.name)
+	switch m.stage {
+	case washStageRunning:
+		status = workingStatus("kit wash", m.selected.name)
+	case washStageDone:
+		if m.failed {
+			status = errorStatus("kit wash", m.selected.name)
+		} else {
+			status = doneStatus("kit wash", m.selected.name)
+		}
+	}
+	return NewAltViewWithStatus(body+"\n"+m.help.View(m.keys), status)
 }
 
 // visibleToggles returns the toggle ids ("db", "gtab") that should
@@ -555,9 +546,6 @@ func (m *washModel) viewDone() string {
 	b.WriteString("\n" + StyleHelp.Render("press enter to exit"))
 	return b.String()
 }
-
-// RunWashTUI is the cobra entry point — full picker flow.
-func RunWashTUI(layout liftoff.Layout) error { return RunWashTUIFor(layout, "") }
 
 // RunWashTUIFor runs wash with an optional pre-selected worktree. Empty
 // preselected falls back to the picker (the original behavior).

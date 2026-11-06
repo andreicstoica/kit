@@ -199,11 +199,6 @@ func (l Layout) HasGtab(name string) bool {
 	return false
 }
 
-// EnsureGtabDir is a no-op convenience to make the dir.
-func (l Layout) EnsureGtabDir() error {
-	return os.MkdirAll(l.GtabDir, 0o755)
-}
-
 // kitBinaryPath returns an absolute path to the current kit binary,
 // suitable for embedding in AppleScript. Ghostty launches gtab tabs
 // without sourcing ~/.zshrc / .bashrc, so a bare `kit` invocation

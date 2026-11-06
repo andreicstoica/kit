@@ -123,21 +123,6 @@ func (l Layout) AheadBehind(worktreePath string) (ahead, behind int) {
 	return
 }
 
-// HasDB returns true if a postgres DB named DBName(name) exists locally.
-// Connects to the maintenance "postgres" database so psql doesn't fail
-// when the user's $USER database doesn't exist.
-func HasDB(name string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), psqlTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "psql", "-d", "postgres", "-Atc",
-		"SELECT 1 FROM pg_database WHERE datname='"+DBName(name)+"'")
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(out)) == "1"
-}
-
 // HasDBs returns, for each name, whether the corresponding database exists.
 // A single psql invocation replaces N individual HasDB calls. An empty successful
 // result means no matches; query failure is unknown state, never proof of absence.

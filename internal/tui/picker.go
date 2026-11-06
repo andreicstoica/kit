@@ -5,20 +5,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// listPicker is the single, shared single-select list model behind every
-// standalone picker in kit (worktree, editor, adopt candidate). It replaces
-// three near-identical models that each re-implemented the same keybindings,
-// quick-pick, and styling.
-//
-// Keybindings (consistent everywhere):
-//   - enter        select the highlighted item
-//   - 1-9          quick-pick the Nth visible (filter-aware) item
-//   - esc / ctrl+c cancel
-//   - "/"          filter (when the list has filtering enabled)
+// listPicker handles standalone worktree, editor, and adopt selection.
 type listPicker struct {
-	list   list.Model
-	chosen list.Item
-	cancel bool
+	list      list.Model
+	shortcuts pickerShortcuts
+	chosen    list.Item
+	cancel    bool
 }
 
 func (m *listPicker) Init() tea.Cmd { return nil }
@@ -30,8 +22,17 @@ func (m *listPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BackgroundColorMsg:
 		ApplyTheme(msg.IsDark(), nil, &m.list)
 	case tea.KeyPressMsg:
-		// While filtering, keystrokes belong to the filter input — don't
-		// hijack digits as quick-pick or esc as cancel-the-program.
+		if msg.String() == "ctrl+c" {
+			m.cancel = true
+			return m, tea.Quit
+		}
+		if item, handled := m.shortcuts.update(msg, &m.list); handled {
+			if item != nil {
+				m.chosen = item
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.list.FilterState() == list.Filtering {
 			break
 		}
@@ -42,15 +43,6 @@ func (m *listPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if it := m.list.SelectedItem(); it != nil {
 				m.chosen = it
-				return m, tea.Quit
-			}
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			// Numeric quick-pick: jump to the Nth item in the current
-			// (possibly filtered) view.
-			idx := int(msg.String()[0] - '0' - 1)
-			items := m.list.VisibleItems()
-			if idx >= 0 && idx < len(items) {
-				m.chosen = items[idx]
 				return m, tea.Quit
 			}
 		}

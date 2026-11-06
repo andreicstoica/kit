@@ -72,7 +72,7 @@ func TestWorkspaceAgentSummary(t *testing.T) {
 }
 
 func TestBuiltinHerdrLayouts(t *testing.T) {
-	layouts := BuiltinHerdrLayouts()
+	layouts := BuiltinWorkspaceLayouts()
 	if got := layouts["default"].Tabs; strings.Join(got, ",") != "shell,logs" {
 		t.Fatalf("default layout = %v", got)
 	}

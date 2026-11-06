@@ -30,7 +30,7 @@ var playCmd = &cobra.Command{
 	Short:   "Start a workspace",
 	Long: `play starts the app for a workspace:
 
-  website, admin, API, admin API, background worker
+  website, API, background worker (admin is opt-in)
 
 Each workspace gets its own local ports so multiple features can run at once.
 

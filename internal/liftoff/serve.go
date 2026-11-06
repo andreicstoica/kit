@@ -26,8 +26,10 @@ const (
 // AllServices in canonical start order.
 var AllServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcMCP, SvcCelery, SvcBeat}
 
-// DefaultServices are the ones turned on by `kit play` defaults.
-var DefaultServices = []Service{SvcApp, SvcAdmin, SvcAPI, SvcAdminBE, SvcCelery, SvcBeat}
+// DefaultServices are the ones turned on by `kit play` defaults. Admin (both
+// halves) is opt-in: it is rarely needed while working on the app, and its
+// Vite dev server plus uvicorn are the expensive pair to keep warm.
+var DefaultServices = []Service{SvcApp, SvcAPI, SvcCelery, SvcBeat}
 
 // Label is the user-facing service name shown in pickers, lineup, and tree.
 func (s Service) Label() string {
@@ -352,7 +354,7 @@ func liveCeleryWorkers() []celeryWorker {
 			out = append(out, celeryWorker{name, p})
 		}
 	}
-	if st, err := LoadState(); err == nil {
+	if st, err := LoadConfig(); err == nil {
 		for name := range st.Worktrees {
 			add(name)
 		}
@@ -375,7 +377,7 @@ func liveCeleryWorkers() []celeryWorker {
 // FindCeleryOwner scans every worktree's celery.pid and returns the worktree
 // name + pid of the live celery, if any. Returns "" if nothing is running.
 func FindCeleryOwner() (owner string, pid int) {
-	st, err := LoadState()
+	st, err := LoadConfig()
 	if err != nil {
 		return "", 0
 	}

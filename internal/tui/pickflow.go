@@ -24,23 +24,16 @@ type editorItem struct {
 
 func (e editorItem) Title() string {
 	t := e.c.Name
-	if e.displayIdx > 0 && e.displayIdx < 10 {
-		t = StyleHi.Render(fmt.Sprintf("%d ", e.displayIdx)) + t
-	}
+	t = shortcutTitle(t, e.displayIdx)
 	return t
 }
 func (e editorItem) Description() string { return StyleDim.Render(e.c.Desc) }
 func (e editorItem) FilterValue() string { return e.c.Name }
+func (e editorItem) shortcut() string    { return shortcutLabel(e.displayIdx) }
 
 // PickOpenTarget opens the shared picker for worktree-open destinations.
 func PickOpenTarget(candidates []liftoff.EditorCandidate) (*liftoff.EditorCandidate, error) {
 	return pickEditor(candidates, "kit open — pick where to open")
-}
-
-// PickEditor opens the shared picker showing only installed editors.
-// Prefer PickOpenTarget for the full worktree-open list.
-func PickEditor(editors []liftoff.EditorCandidate) (*liftoff.EditorCandidate, error) {
-	return pickEditor(editors, "kit open — pick an editor")
 }
 
 func pickEditor(editors []liftoff.EditorCandidate, title string) (*liftoff.EditorCandidate, error) {
@@ -76,9 +69,7 @@ type adoptPickItem struct {
 
 func (a adoptPickItem) Title() string {
 	t := a.name
-	if a.displayIdx > 0 && a.displayIdx < 10 {
-		t = StyleHi.Render(fmt.Sprintf("%d ", a.displayIdx)) + t
-	}
+	t = shortcutTitle(t, a.displayIdx)
 	return t
 }
 func (a adoptPickItem) Description() string {
@@ -88,8 +79,9 @@ func (a adoptPickItem) Description() string {
 	return StyleDim.Render(a.path)
 }
 func (a adoptPickItem) FilterValue() string { return a.name }
+func (a adoptPickItem) shortcut() string    { return shortcutLabel(a.displayIdx) }
 
-// PickAdoptCandidate opens a numbered picker over a slice of name/branch
+// PickAdoptCandidate opens a labeled picker over a slice of name/branch
 // pairs. Returns the chosen name, "" on cancel.
 func PickAdoptCandidate(cands []liftoff.AdoptCandidate) (string, error) {
 	if len(cands) == 0 {

@@ -5,11 +5,13 @@ import (
 	"sync"
 )
 
-// Bound subprocess pressure when a machine has many worktrees.
+const scanWorkers = 16
+
 func scanWorktrees(worktrees []liftoff.Worktree, visit func(int, liftoff.Worktree)) {
 	var wg sync.WaitGroup
-	slots := make(chan struct{}, 8)
+	slots := make(chan struct{}, scanWorkers)
 	for i, wt := range worktrees {
+		i, wt := i, wt
 		slots <- struct{}{}
 		wg.Add(1)
 		go func() {

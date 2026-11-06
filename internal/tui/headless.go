@@ -52,8 +52,8 @@ func RunPlayHeadless(layout liftoff.Layout, cfg PlayConfig, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	meta, ok := conf.Worktrees[name]
-	if name != "master" && (!ok || meta.Slot == 0) {
+	slot, err := conf.SlotFor(name)
+	if err != nil {
 		return fmt.Errorf("%s has no kit slot yet; run `kit adopt %s` first", name, name)
 	}
 	_ = liftoff.WithConfigLock(func(c *liftoff.Config) error {
@@ -83,8 +83,8 @@ func RunPlayHeadless(layout liftoff.Layout, cfg PlayConfig, w io.Writer) error {
 	plan := liftoff.PlayPlan{
 		Worktree:     name,
 		WorktreePath: path,
-		Slot:         meta.Slot,
-		Ports:        liftoff.PortsForSlot(meta.Slot),
+		Slot:         slot,
+		Ports:        liftoff.PortsForSlot(slot),
 		Services:     selected,
 	}
 	failed := PrintPlayUpdates(w, layout.RunPlay(plan))
@@ -105,7 +105,14 @@ func RunPauseHeadless(layout liftoff.Layout, cfg PauseConfig, w io.Writer) error
 	if _, err := layout.ResolveWorktreePath(name); err != nil {
 		return err
 	}
-	svcs := runningServices(name, cfg.Only)
+	slot, err := slotFor(name)
+	if err != nil {
+		return err
+	}
+	svcs, err := runningServices(name, cfg.Only)
+	if err != nil {
+		return err
+	}
 	if len(svcs) == 0 {
 		fmt.Fprintf(w, "no services running for %s\n", name)
 		return nil
@@ -113,7 +120,7 @@ func RunPauseHeadless(layout liftoff.Layout, cfg PauseConfig, w io.Writer) error
 	plan := liftoff.PausePlan{
 		Worktree: name,
 		Services: svcs,
-		Ports:    liftoff.PortsForSlot(slotFor(name)),
+		Ports:    liftoff.PortsForSlot(slot),
 	}
 	if PrintPlayUpdates(w, layout.RunPause(plan)) {
 		return fmt.Errorf("kit pause %s: a service did not stop", name)

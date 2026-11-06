@@ -68,8 +68,6 @@ type step struct {
 	title string
 	skip  bool
 	run   func(emit func(string)) error
-	// extras can be filled by the step itself when emitting the final StepDone.
-	extras func() (slot int)
 }
 
 // PlanSteps returns the ordered step list, including skipped ones (for display).

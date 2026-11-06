@@ -65,7 +65,7 @@ func TestWithConfigLock_ConcurrentAllocateDistinctSlots(t *testing.T) {
 
 func TestLoadState_Empty(t *testing.T) {
 	setStateDir(t)
-	s, err := LoadState()
+	s, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestLoadState_Empty(t *testing.T) {
 
 func TestState_RoundTrip(t *testing.T) {
 	dir := setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	now := time.Now().UTC().Truncate(time.Second)
 	s.Worktrees["voice-agent"] = WorktreeMeta{Slot: 1, Created: now, LastUsed: now}
 	if err := s.Save(); err != nil {
@@ -88,7 +88,7 @@ func TestState_RoundTrip(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "config.toml")); err != nil {
 		t.Fatalf("config.toml not written: %v", err)
 	}
-	s2, err := LoadState()
+	s2, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestState_RoundTrip(t *testing.T) {
 
 func TestState_AllocateSlot_Sequential(t *testing.T) {
 	setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	a, err := s.AllocateSlot("a", nil)
 	if err != nil || a != 1 {
 		t.Errorf("first alloc = %d, %v; want 1, nil", a, err)
@@ -123,7 +123,7 @@ func TestState_AllocateSlot_Sequential(t *testing.T) {
 
 func TestState_AllocateSlot_FillGap(t *testing.T) {
 	setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	_, _ = s.AllocateSlot("a", nil)
 	_, _ = s.AllocateSlot("b", nil)
 	_, _ = s.AllocateSlot("c", nil)
@@ -139,7 +139,7 @@ func TestState_AllocateSlot_FillGap(t *testing.T) {
 
 func TestState_AllocateSlot_Idempotent(t *testing.T) {
 	setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	a, _ := s.AllocateSlot("voice-agent", nil)
 	again, err := s.AllocateSlot("voice-agent", nil)
 	if err != nil {
@@ -152,7 +152,7 @@ func TestState_AllocateSlot_Idempotent(t *testing.T) {
 
 func TestState_AllocateSlot_PortsFreeBumps(t *testing.T) {
 	setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	// Slot 1 reports busy; slot 2 free.
 	got, err := s.AllocateSlot("a", func(slot int) bool { return slot >= 2 })
 	if err != nil {
@@ -165,7 +165,7 @@ func TestState_AllocateSlot_PortsFreeBumps(t *testing.T) {
 
 func TestState_TouchLastUsed(t *testing.T) {
 	setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	_, _ = s.AllocateSlot("a", nil)
 	old := s.Worktrees["a"].LastUsed
 	time.Sleep(20 * time.Millisecond)
@@ -177,7 +177,7 @@ func TestState_TouchLastUsed(t *testing.T) {
 
 func TestState_TouchLastUsed_Missing(t *testing.T) {
 	setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	s.TouchLastUsed("nope") // should not panic
 }
 
@@ -223,7 +223,7 @@ func TestConfig_SettingsRoundTrip(t *testing.T) {
 
 func TestState_SortedNames_RecencyFirst(t *testing.T) {
 	setStateDir(t)
-	s, _ := LoadState()
+	s, _ := LoadConfig()
 	now := time.Now().UTC()
 	s.Worktrees["old"] = WorktreeMeta{Slot: 1, LastUsed: now.Add(-2 * time.Hour)}
 	s.Worktrees["new"] = WorktreeMeta{Slot: 2, LastUsed: now}
