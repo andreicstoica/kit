@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
@@ -21,13 +20,10 @@ func mkDesignModel(width int) *designModel {
 	for i := range st {
 		st[i] = liftoff.StepDone
 	}
-	pb := progress.New(progress.WithDefaultBlend(), progress.WithoutPercentage())
-	pb.SetWidth(30)
 	return &designModel{
 		answers:       &designAnswers{name: "user-prof-intro-preferences"},
 		worktree:      "/Users/acs/liftoff/user-prof-intro-preferences",
 		spinner:       spinner.New(),
-		progress:      pb,
 		anim:          NewAnimation(),
 		keys:          DefaultKeymap,
 		help:          NewHelp(),

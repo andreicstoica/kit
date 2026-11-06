@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -106,12 +107,17 @@ func runLinks(cmd *cobra.Command, args []string) error {
 		}).
 		Headers("SERVICE", "URL", "STATE")
 
+	clickable := isTerminal(os.Stdout)
 	for _, r := range rows {
 		state := "stopped"
 		if r.live {
 			state = "● running"
 		}
-		tbl.Row(r.Svc, r.URL, state)
+		url := r.URL
+		if clickable && r.live {
+			url = hyperlink(r.URL, r.URL)
+		}
+		tbl.Row(r.Svc, url, state)
 	}
 
 	fmt.Println(tbl.Render())
@@ -125,6 +131,10 @@ func runLinks(cmd *cobra.Command, args []string) error {
 		"kit open " + name,
 	}, " · ")))
 	return nil
+}
+
+func hyperlink(url, text string) string {
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
 }
 
 func urlFor(port int, suffix string) string {

@@ -724,10 +724,21 @@ func (m *playModel) View() tea.View {
 	case playStageDone:
 		body = m.viewDone()
 	case playStageAborted:
-		return NewAltView(StyleWarn.Render("cancelled.\n"))
+		return NewAltViewWithStatus(StyleWarn.Render("cancelled.\n"), idleStatus("kit play", "cancelled"))
 	}
 	footer := "\n" + m.help.View(m.keys)
-	return NewAltView(body + footer)
+	status := blockedStatus("kit play", m.chosen.name)
+	switch m.stage {
+	case playStagePreparing, playStageAdopting, playStageRun:
+		status = workingStatus("kit play", m.chosen.name)
+	case playStageDone:
+		if m.failed {
+			status = errorStatus("kit play", m.chosen.name)
+		} else {
+			status = doneStatus("kit play", m.chosen.name)
+		}
+	}
+	return NewAltViewWithStatus(body+footer, status)
 }
 
 func (m *playModel) viewToggle() string {

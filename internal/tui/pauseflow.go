@@ -292,9 +292,20 @@ func (m *pauseModel) View() tea.View {
 	case pauseStageDone:
 		body = m.viewDone()
 	case pauseStageAborted:
-		return NewAltView(StyleWarn.Render("cancelled.\n"))
+		return NewAltViewWithStatus(StyleWarn.Render("cancelled.\n"), idleStatus("kit pause", "cancelled"))
 	}
-	return NewAltView(body + "\n" + m.help.View(m.keys))
+	status := blockedStatus("kit pause", m.chosen.name)
+	switch m.stage {
+	case pauseStageRun:
+		status = workingStatus("kit pause", m.chosen.name)
+	case pauseStageDone:
+		if m.failed {
+			status = errorStatus("kit pause", m.chosen.name)
+		} else {
+			status = doneStatus("kit pause", m.chosen.name)
+		}
+	}
+	return NewAltViewWithStatus(body+"\n"+m.help.View(m.keys), status)
 }
 
 func (m *pauseModel) viewConfirm() string {

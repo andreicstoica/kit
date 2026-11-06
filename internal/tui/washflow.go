@@ -421,9 +421,20 @@ func (m *washModel) View() tea.View {
 	case washStageDone:
 		body = m.viewDone()
 	case washStageAborted:
-		return NewAltView(StyleWarn.Render("cancelled.\n"))
+		return NewAltViewWithStatus(StyleWarn.Render("cancelled.\n"), idleStatus("kit wash", "cancelled"))
 	}
-	return NewAltView(body + "\n" + m.help.View(m.keys))
+	status := blockedStatus("kit wash", m.selected.name)
+	switch m.stage {
+	case washStageRunning:
+		status = workingStatus("kit wash", m.selected.name)
+	case washStageDone:
+		if m.failed {
+			status = errorStatus("kit wash", m.selected.name)
+		} else {
+			status = doneStatus("kit wash", m.selected.name)
+		}
+	}
+	return NewAltViewWithStatus(body+"\n"+m.help.View(m.keys), status)
 }
 
 // visibleToggles returns the toggle ids ("db", "gtab") that should

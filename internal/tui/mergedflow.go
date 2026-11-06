@@ -222,9 +222,15 @@ func (m *mergedModel) View() tea.View {
 	case mergedStageDone:
 		body = m.viewDone()
 	case mergedStageAborted:
-		return NewAltView(StyleWarn.Render("cancelled.\n"))
+		return NewAltViewWithStatus(StyleWarn.Render("cancelled.\n"), idleStatus("kit wash", "cancelled"))
 	}
-	return NewAltView(body + "\n" + m.help.View(m.keys))
+	status := blockedStatus("kit wash", "merged")
+	if m.stage == mergedStageRun {
+		status = workingStatus("kit wash", "merged")
+	} else if m.stage == mergedStageDone {
+		status = doneStatus("kit wash", "merged")
+	}
+	return NewAltViewWithStatus(body+"\n"+m.help.View(m.keys), status)
 }
 
 func (m *mergedModel) viewSelect() string {
