@@ -32,7 +32,7 @@ func RexWorkspaceName(sessionID string) (string, error) {
 	checkout := imports.Checkouts[sessionID]
 	if checkout != "" {
 		layout := DefaultLayout()
-		if cleanPath(checkout) == cleanPath(layout.Master) {
+		if pathKey(checkout) == pathKey(layout.Master) {
 			return "master", nil
 		}
 		for name, meta := range cfg.Worktrees {
@@ -40,7 +40,7 @@ func RexWorkspaceName(sessionID string) (string, error) {
 			if path == "" {
 				path = layout.WorktreePath(name)
 			}
-			if cleanPath(path) == cleanPath(checkout) {
+			if pathKey(path) == pathKey(checkout) {
 				names = append(names, name)
 			}
 		}

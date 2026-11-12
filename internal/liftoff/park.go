@@ -37,7 +37,7 @@ func (l Layout) Resume(name string) error {
 
 func (l Layout) validateParkRecord(cfg *Config, name string) error {
 	meta, ok := cfg.Worktrees[name]
-	if name == "master" || (meta.Path != "" && cleanPath(meta.Path) == cleanPath(l.Master)) {
+	if name == "master" || (meta.Path != "" && pathKey(meta.Path) == pathKey(l.Master)) {
 		return errors.New("master cannot be parked or resumed")
 	}
 	if !ok {

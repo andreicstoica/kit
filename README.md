@@ -602,14 +602,21 @@ to remove only Herdr terminal state while keeping the Git worktree.
 
 `kit wash --merged` is the bulk mode: scans for worktrees whose branch is
 merged into master or whose PR is MERGED/CLOSED, then multi-select → washes
-each.
+each. Locally merged branches are compared against both the local trunk and
+`origin/master`, so a merge that landed upstream is found even when local trunk
+is stale.
 
-PR lookup checks all pages for each branch. Open PRs protect a branch from
-bulk cleanup. A merged or closed PR qualifies only when its head commit
-matches the worktree; newer local commits are retained. Lookup failures stop
-the scan. Without `gh`, only local Git merge evidence is used. Dirty worktrees
-and closed PRs are not selected by default. Changes to a selected branch or
-clean checkout stop the wash. Failed bulk cleanup returns a nonzero exit code.
+PR lookup checks all pages for each branch. Open PRs protect a branch from bulk
+cleanup. A merged PR qualifies when the checkout's content is already in trunk,
+which covers squash merges and merge queues that rewrite the commits; local
+commits not in trunk are listed but never selected by default. A closed PR
+qualifies only when its head commit matches the worktree. Lookup failures keep
+the scan going with the branches they could read, and print a warning. Without
+`gh`, only local Git merge evidence is used. Dirty worktrees, closed PRs, and
+worktrees with local-only content are not selected by default. Changes to a
+selected branch or clean checkout stop the wash. Failed bulk cleanup returns a
+nonzero exit code. When `kit sync`'s `gt sync` fails (for example after a
+merge through Linear), sync still fetches trunk and runs this scan.
 
 ### `kit open [name]` — attach to a persistent Herdr space
 

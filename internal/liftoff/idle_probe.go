@@ -65,7 +65,7 @@ func (l Layout) observeIdle() ([]IdleObservation, error) {
 			continue
 		}
 		path, err := l.ResolveWorktreePath(name)
-		if err != nil || cleanPath(path) == cleanPath(l.Master) {
+		if err != nil || pathKey(path) == pathKey(l.Master) {
 			o.Blocked = "workspace path is unknown or protected"
 			results = append(results, o)
 			continue

@@ -21,7 +21,6 @@ type PRStatus struct {
 	State   string
 	HeadOID string
 	Draft   bool
-	Err     error
 }
 
 // RemotePRStatuses queries only the requested branches, including all pages
@@ -71,7 +70,7 @@ func (l Layout) RemotePRStatuses(branches []string) (map[string]PRStatus, error)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				status = PRStatus{State: "UNKNOWN", Err: err}
+				status = PRStatus{State: "UNKNOWN"}
 				errs = append(errs, fmt.Errorf("%s: %w", branch, err))
 			}
 			result[branch] = status

@@ -28,13 +28,12 @@ func printRemotePRsForVisibility(out io.Writer, layout liftoff.Layout, parked bo
 	}
 	var rows []row
 	var branches []string
-	seenNames := map[string]bool{}
-	seenBranches := map[string]bool{}
-	seenPaths := map[string]bool{}
+	var live []liftoff.Worktree
 	for _, wt := range wts {
 		if wt.IsMaster(layout) || wt.Bare {
 			continue
 		}
+		live = append(live, wt)
 		if cfg.Worktrees[wt.Name()].Parked != parked {
 			continue
 		}
@@ -47,15 +46,13 @@ func printRemotePRsForVisibility(out io.Writer, layout liftoff.Layout, parked bo
 		}
 		rows = append(rows, row{wt.Name(), wt.Branch, checkout})
 		branches = append(branches, wt.Branch)
-		seenNames[wt.Name()] = true
-		seenBranches[wt.Branch] = true
-		seenPaths[wt.Path] = true
 	}
+	set := liftoff.NewWorktreeSet(live)
 	for name, meta := range cfg.Worktrees {
-		if meta.Parked != parked {
+		if meta.Parked != parked || name == "master" {
 			continue
 		}
-		if name == "master" || seenNames[name] || (meta.Branch != "" && seenBranches[meta.Branch]) || seenPaths[meta.Path] {
+		if _, live := set.Find(name, meta.Branch, meta.Path); live {
 			continue
 		}
 		checkout := "missing"

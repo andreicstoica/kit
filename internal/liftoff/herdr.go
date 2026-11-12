@@ -146,10 +146,10 @@ func FindHerdrWorkspace(state HerdrState, savedID, name, path string) *HerdrWork
 			}
 		}
 	}
-	path = cleanPath(path)
+	path = pathKey(path)
 	for i := range state.Workspaces {
 		w := &state.Workspaces[i]
-		if w.Worktree != nil && cleanPath(w.Worktree.CheckoutPath) == path {
+		if w.Worktree != nil && pathKey(w.Worktree.CheckoutPath) == path {
 			return w
 		}
 	}
@@ -358,7 +358,7 @@ func closeHerdrWorkspace(name, herdrID, path string) error {
 			}
 			continue // A stale ID never authorizes closing a same-label session.
 		}
-		if path != "" && ((w.Worktree != nil && cleanPath(w.Worktree.CheckoutPath) == cleanPath(path)) || workspaceHasPath(state, w.WorkspaceID, cleanPath(path))) {
+		if path != "" && ((w.Worktree != nil && pathKey(w.Worktree.CheckoutPath) == pathKey(path)) || workspaceHasPath(state, w.WorkspaceID, pathKey(path))) {
 			if workspace != nil {
 				return fmt.Errorf("multiple Herdr workspaces match checkout %q; map an explicit ID before closing", path)
 			}
@@ -625,7 +625,7 @@ func workspaceHasPath(state HerdrState, workspaceID, path string) bool {
 		if pane.WorkspaceID != workspaceID || pane.CWD == nil {
 			continue
 		}
-		if cleanPath(*pane.CWD) == path || isPathInside(*pane.CWD, path) {
+		if pathKey(*pane.CWD) == path || isPathInside(*pane.CWD, path) {
 			return true
 		}
 	}
@@ -636,19 +636,8 @@ func herdrLabelMatches(label, name string) bool {
 	return label == name || strings.HasSuffix(label, " "+name)
 }
 
-func cleanPath(path string) string {
-	if path == "" {
-		return ""
-	}
-	abs, err := filepath.Abs(path)
-	if err == nil {
-		path = abs
-	}
-	return filepath.Clean(path)
-}
-
 func isPathInside(path, root string) bool {
-	path, root = cleanPath(path), cleanPath(root)
+	path, root = pathKey(path), pathKey(root)
 	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
 }
 

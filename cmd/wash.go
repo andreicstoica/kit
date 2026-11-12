@@ -20,9 +20,10 @@ keeping the Git worktree.
 Pass a name to skip the picker; omit to pick from a list (or auto-resolve
 from cwd when run from inside a workspace).
 
---merged switches to bulk mode: finds old workspaces whose branch
-is merged into master or whose PR (via gh) is MERGED/CLOSED, and lets you
-multi-select which to wash.`,
+--merged switches to bulk mode: finds old workspaces whose branch is
+merged into trunk or whose PR (via gh) is MERGED/CLOSED, including merges
+that landed through Linear or a merge queue with a rewritten head. A merged
+PR that still has local commits is listed but never selected by default.`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeWorktreeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {

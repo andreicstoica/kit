@@ -23,6 +23,7 @@ var syncCmd = &cobra.Command{
 		"1. Runs `gt sync` inside the master repo (pulls trunk, restacks, prunes merged local branches).\n" +
 		"2. When master is on the trunk branch, checks the liftoff DB against Alembic head and runs `alembic upgrade head` if migrations are pending.\n" +
 		"3. Scans worktrees for merged/closed PR branches; if any remain, prompts to run `kit wash --merged` (multi-select wash).\n\n" +
+		"A failed `gt sync` still fetches and fast-forwards trunk so the merged scan runs; the Graphite error is reported at the end.\n\n" +
 		"Requires `gt` (Graphite). Pass `--no-tear` to skip the post-sync merged-wash, `--no-migrate` to skip the Alembic upgrade.",
 	RunE: runSync,
 }
@@ -73,8 +74,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 	gt.Stdin = os.Stdin
 	gt.Stdout = os.Stdout
 	gt.Stderr = os.Stderr
-	if err := gt.Run(); err != nil {
-		return fmt.Errorf("gt sync failed: %w", err)
+	gtErr := gt.Run()
+	var retErr error
+	if gtErr != nil {
+		// A merge outside Graphite (for example through Linear) can leave gt's
+		// stack state unhappy. Keep the scan useful by refreshing trunk
+		// directly, and report the Graphite failure at the end.
+		retErr = fmt.Errorf("gt sync failed: %w", gtErr)
+		refreshTrunkAfterFailedSync(layout)
 	}
 
 	migrate := migrateResult{status: migrateSkippedNoMigrate}
@@ -82,28 +89,53 @@ func runSync(cmd *cobra.Command, args []string) error {
 		migrate = runMasterMigrate(layout, oldHead)
 	}
 
-	var retErr error
 	if migrate.err != nil {
-		retErr = fmt.Errorf("master DB migration failed: %w", migrate.err)
+		retErr = errors.Join(retErr, fmt.Errorf("master DB migration failed: %w", migrate.err))
 	}
 	if syncSkipTear {
 		printMigrateSummary(layout, migrate)
 		return retErr
 	}
 
-	cands, err := layout.FindMergedWorktrees()
-	if err != nil {
-		return errors.Join(retErr, err)
+	retErr = errors.Join(retErr, offerMergedWash(layout))
+	printMigrateSummary(layout, migrate)
+	return retErr
+}
+
+// refreshTrunkAfterFailedSync keeps the merged scan useful when Graphite is
+// stuck: fetch the real trunk and fast-forward it when safe.
+func refreshTrunkAfterFailedSync(layout liftoff.Layout) {
+	fmt.Println(tui.StyleWarn.Render("! gt sync failed — continuing with a plain trunk refresh"))
+	if err := layout.FetchMain(nil); err != nil {
+		fmt.Println(tui.StyleWarn.Render("! trunk fetch failed: " + err.Error()))
+		return
 	}
-	if len(cands) == 0 {
-		printMigrateSummary(layout, migrate)
+	ran, err := layout.FastForwardTrunk(nil)
+	if err != nil {
+		fmt.Println(tui.StyleWarn.Render("! trunk fast-forward failed: " + err.Error()))
+	} else if ran {
+		fmt.Println(tui.StyleDim.Render("  fast-forwarded " + layout.MainBranch + " to origin/" + layout.MainBranch))
+	}
+}
+
+// offerMergedWash scans for old workspaces and offers the bulk wash. Orphan
+// records are offered afterward, except when the user declines the wash.
+func offerMergedWash(layout liftoff.Layout) error {
+	scan, err := layout.ScanMergedWorktrees()
+	if err != nil {
+		return err
+	}
+	for _, warning := range scan.Warnings {
+		fmt.Println(tui.StyleWarn.Render("! " + warning))
+	}
+	if len(scan.Candidates) == 0 {
 		fmt.Println(tui.StyleOK.Render("✓ no merged worktrees to wash."))
-		return errors.Join(retErr, offerOrphanReconcile(layout, false))
+		return offerOrphanReconcile(layout, false)
 	}
 
 	fmt.Println()
-	fmt.Println(tui.StyleTitle.Render(fmt.Sprintf("found %d merged/closed worktree(s)", len(cands))))
-	for _, c := range cands {
+	fmt.Println(tui.StyleTitle.Render(fmt.Sprintf("found %d merged/closed worktree(s)", len(scan.Candidates))))
+	for _, c := range scan.Candidates {
 		fmt.Printf("  %s  %s\n", c.Name, tui.StyleDim.Render("("+c.Reason+")"))
 	}
 	fmt.Println()
@@ -113,17 +145,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 		Negative: "Skip",
 		Default:  true,
 	})
-	if err != nil {
-		return errors.Join(retErr, err)
+	if err != nil || !accept {
+		return err
 	}
-	if !accept {
-		printMigrateSummary(layout, migrate)
-		return retErr
-	}
-	retErr = errors.Join(retErr, tui.RunMergedWashTUI(layout))
-	retErr = errors.Join(retErr, offerOrphanReconcile(layout, false))
-	printMigrateSummary(layout, migrate)
-	return retErr
+	return errors.Join(tui.RunMergedWashTUI(layout), offerOrphanReconcile(layout, false))
 }
 
 func printMigrateSummary(layout liftoff.Layout, migrate migrateResult) {

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 )
@@ -62,9 +61,7 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 	if err != nil {
 		return nil, err
 	}
-	liveNames := map[string]bool{}
-	liveBranches := map[string]bool{}
-	livePaths := map[string]bool{}
+	var live []Worktree
 	var missing []Worktree
 	for _, wt := range wts {
 		if wt.IsMaster(l) || wt.Bare {
@@ -81,12 +78,10 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 				continue
 			}
 		}
-		liveNames[wt.Name()] = true
-		if wt.Branch != "" {
-			liveBranches[wt.Branch] = true
-		}
-		livePaths[filepath.Clean(wt.Path)] = true
+		live = append(live, wt)
 	}
+	set := NewWorktreeSet(live)
+	missingSet := NewWorktreeSet(missing)
 
 	hasPostgres := HasPostgres()
 
@@ -100,18 +95,15 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 	}
 	var orphans []orphanMeta
 	for name, meta := range cfg.Worktrees {
-		if name == "master" || liveNames[name] ||
-			(meta.Branch != "" && liveBranches[meta.Branch]) ||
-			(meta.Path != "" && livePaths[filepath.Clean(meta.Path)]) {
+		if name == "master" {
+			continue
+		}
+		if _, ok := set.Find(name, meta.Branch, meta.Path); ok {
 			continue
 		}
 		gitPath := ""
-		for _, wt := range missing {
-			if wt.Name() == name || (meta.Branch != "" && wt.Branch == meta.Branch) ||
-				(meta.Path != "" && filepath.Clean(meta.Path) == filepath.Clean(wt.Path)) {
-				gitPath = wt.Path
-				break
-			}
+		if wt, ok := missingSet.Find(name, meta.Branch, meta.Path); ok {
+			gitPath = wt.Path
 		}
 		if meta.Path != "" {
 			if _, err := os.Stat(meta.Path); err == nil {

@@ -81,13 +81,12 @@ func TestRunWash_RefusesForeignWorktreePath(t *testing.T) {
 	l := newMasterRepo(t)
 	setStateDir(t)
 	t.Setenv("KIT_RUN_DIR", t.TempDir())
-	pathA := addWorktree(t, l, "keep-a")
+	addWorktree(t, l, "keep-a")
 	pathB := addWorktree(t, l, "keep-b")
 	writeFile(t, pathB, "precious.txt", "do not delete")
 	if err := l.RunWashBlocking(WashPlan{Name: "keep-a", Branch: "keep-a", WorktreePath: pathB}); err == nil {
 		t.Fatal("wash accepted a worktree path owned by another worktree")
 	}
-	_ = pathA
 	if _, err := os.Stat(filepath.Join(pathB, "precious.txt")); err != nil {
 		t.Fatalf("foreign checkout was removed: %v", err)
 	}
@@ -310,6 +309,43 @@ func TestRunWash_SkipsDropWhenEnvPointsElsewhere(t *testing.T) {
 	}
 	if _, ok := cfg.Worktrees["plain"]; ok {
 		t.Fatal("successful wash must free the slot")
+	}
+}
+
+// A failed worktree removal is a safety stop: the database, saved layout and
+// port slot must survive so a retry can finish the wash.
+func TestRunWash_WorktreeRemovalFailureKeepsLaterResources(t *testing.T) {
+	l := newMasterRepo(t)
+	setStateDir(t)
+	t.Setenv("KIT_RUN_DIR", t.TempDir())
+	capture := filepath.Join(t.TempDir(), "dropped")
+	fakeDropdb(t, capture)
+	foreign := addWorktree(t, l, "keep-b")
+	if err := WithConfigLock(func(c *Config) error {
+		c.Worktrees["keep-a"] = WorktreeMeta{
+			Slot: 4, Branch: "keep-a", Path: filepath.Join(filepath.Dir(l.Master), "keep-a"),
+			DatabaseName: "liftoff_keep_a",
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := l.RunWashBlocking(WashPlan{
+		Name: "keep-a", Branch: "keep-a", WorktreePath: foreign, DropDB: true,
+	})
+	if err == nil {
+		t.Fatal("wash removed another worktree's checkout")
+	}
+	if got := readCapture(t, capture); got != "" {
+		t.Fatalf("database was dropped after failed worktree removal: %q", got)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, ok := cfg.Worktrees["keep-a"]
+	if !ok || !meta.CleanupPending || meta.Slot != 4 {
+		t.Fatalf("failed removal must retain the record, pending flag, and slot: %+v exists=%v", meta, ok)
 	}
 }
 

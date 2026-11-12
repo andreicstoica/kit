@@ -150,17 +150,15 @@ func (l Layout) verifyWorktreeOwnership(path, name string) error {
 	if branch == "" {
 		branch = name
 	}
-	for _, wt := range wts {
-		if cleanPath(wt.Path) != cleanPath(path) {
-			continue
-		}
-		if wt.IsMaster(l) {
-			return fmt.Errorf("refusing to remove the master checkout %s", path)
-		}
-		if wt.Name() == name || (wt.Branch != "" && wt.Branch == branch) {
-			return nil
-		}
-		return fmt.Errorf("worktree path %s belongs to %q; not removing it with %q", path, wt.Name(), name)
+	wt, found := NewWorktreeSet(wts).At(path)
+	if !found {
+		return nil
 	}
-	return nil
+	if wt.IsMaster(l) {
+		return fmt.Errorf("refusing to remove the master checkout %s", path)
+	}
+	if wt.Name() == name || (wt.Branch != "" && wt.Branch == branch) {
+		return nil
+	}
+	return fmt.Errorf("worktree path %s belongs to %q; not removing it with %q", path, wt.Name(), name)
 }

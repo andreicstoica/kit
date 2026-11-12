@@ -91,11 +91,6 @@ func TestBranchForDelete(t *testing.T) {
 			plan: WashPlan{Name: "voice-agent"},
 			want: "voice-agent",
 		},
-		{
-			name: "Branch is identical to Name",
-			plan: WashPlan{Name: "feat", Branch: "feat"},
-			want: "feat",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

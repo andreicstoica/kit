@@ -3,7 +3,6 @@ package liftoff
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -117,48 +116,16 @@ func (l Layout) ResolveWorktreePath(name string) (string, error) {
 	return "", fmt.Errorf("worktree not found: %s", path)
 }
 
-// worktreeEntry is one record from `git worktree list --porcelain`.
-type worktreeEntry struct {
-	Path   string
-	Branch string // short branch name ("" for detached HEAD)
-}
-
-// parseWorktreePorcelain parses `git worktree list --porcelain` output into
-// entries. Records are separated by blank lines; each has a "worktree <path>"
-// line and, unless detached, a "branch refs/heads/<name>" line.
-func parseWorktreePorcelain(out string) []worktreeEntry {
-	var entries []worktreeEntry
-	var cur worktreeEntry
-	flush := func() {
-		if cur.Path != "" {
-			entries = append(entries, cur)
-		}
-		cur = worktreeEntry{}
-	}
-	for _, line := range strings.Split(out, "\n") {
-		switch {
-		case strings.HasPrefix(line, "worktree "):
-			flush()
-			cur.Path = strings.TrimPrefix(line, "worktree ")
-		case strings.HasPrefix(line, "branch "):
-			cur.Branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
-		}
-	}
-	flush()
-	return entries
-}
-
 // gitWorktreePath asks git which checkout corresponds to `name`, to recover a
 // worktree moved or renamed out from under kit's canonical layout. Matches, in
 // order: a checkout whose directory basename equals name, one whose branch
 // equals name, then one whose branch equals the branch kit recorded for name.
 // Returns "" when git can't help (not a repo, git missing, or no live match).
 func (l Layout) gitWorktreePath(name string) string {
-	out, err := exec.Command("git", "-C", l.Master, "worktree", "list", "--porcelain").Output()
+	wts, err := l.ListWorktrees()
 	if err != nil {
 		return ""
 	}
-	entries := parseWorktreePorcelain(string(out))
 	exists := func(p string) bool {
 		if p == "" {
 			return false
@@ -166,22 +133,14 @@ func (l Layout) gitWorktreePath(name string) string {
 		_, err := os.Stat(p)
 		return err == nil
 	}
-	for _, e := range entries {
-		if filepath.Base(e.Path) == name && exists(e.Path) {
-			return e.Path
-		}
-	}
-	for _, e := range entries {
-		if e.Branch == name && exists(e.Path) {
-			return e.Path
-		}
+	set := NewWorktreeSet(wts)
+	if wt, ok := set.Find(name, name, ""); ok && exists(wt.Path) {
+		return wt.Path
 	}
 	if cfg, err := LoadConfig(); err == nil {
 		if m, ok := cfg.Worktrees[name]; ok && m.Branch != "" {
-			for _, e := range entries {
-				if e.Branch == m.Branch && exists(e.Path) {
-					return e.Path
-				}
+			if wt, ok := set.Find("", m.Branch, ""); ok && exists(wt.Path) {
+				return wt.Path
 			}
 		}
 	}

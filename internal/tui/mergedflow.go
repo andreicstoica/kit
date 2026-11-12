@@ -26,6 +26,7 @@ type mergedModel struct {
 	layout     liftoff.Layout
 	stage      mergedStage
 	candidates []liftoff.MergedCandidate
+	warnings   []string
 	selected   map[int]bool
 	cursor     int
 
@@ -41,18 +42,21 @@ type mergedModel struct {
 
 // newMergedModel constructs the merged-wash flow.
 func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
-	cands, err := layout.FindMergedWorktrees()
+	scan, err := layout.ScanMergedWorktrees()
 	if err != nil {
 		return nil, err
 	}
-	if len(cands) == 0 {
+	if len(scan.Candidates) == 0 {
+		if len(scan.Warnings) > 0 {
+			return nil, fmt.Errorf("no old workspaces found (%s)", strings.Join(scan.Warnings, "; "))
+		}
 		return nil, errors.New("no old workspaces found")
 	}
 	sel := map[int]bool{}
-	for i, c := range cands {
-		// Closed PRs can still hold unmerged commits; both they and dirty
-		// checkouts require an explicit selection before permanent deletion.
-		sel[i] = !c.Dirty && c.Reason != "PR CLOSED"
+	for i, c := range scan.Candidates {
+		// Only a candidate with landed work and a clean checkout is safe to
+		// wash by default; anything else needs an explicit selection.
+		sel[i] = c.Safe()
 	}
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -60,7 +64,8 @@ func newMergedModel(layout liftoff.Layout) (tea.Model, error) {
 	return &mergedModel{
 		layout:     layout,
 		stage:      mergedStageSelect,
-		candidates: cands,
+		candidates: scan.Candidates,
+		warnings:   scan.Warnings,
 		selected:   sel,
 		results:    map[string]string{},
 		spinner:    sp,
@@ -236,6 +241,12 @@ func (m *mergedModel) View() tea.View {
 func (m *mergedModel) viewSelect() string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Render("kit wash --merged — pick old workspaces") + "\n\n")
+	for _, warning := range m.warnings {
+		b.WriteString(StyleWarn.Render("! "+warning) + "\n")
+	}
+	if len(m.warnings) > 0 {
+		b.WriteString("\n")
+	}
 	for i, c := range m.candidates {
 		cursor := "  "
 		if i == m.cursor {
@@ -250,11 +261,8 @@ func (m *mergedModel) viewSelect() string {
 			emoji += " "
 		}
 		line := fmt.Sprintf("%s%s %s%s  %s", cursor, box, emoji, c.Name, StyleDim.Render("("+c.Reason+")"))
-		if c.Dirty {
-			line += "  " + StyleWarn.Render("● dirty — uncommitted changes")
-		}
-		if c.Reason == "PR CLOSED" {
-			line += "  " + StyleWarn.Render("closed without merge")
+		for _, blocker := range c.Blockers() {
+			line += "  " + StyleWarn.Render("● "+blocker)
 		}
 		b.WriteString(line + "\n")
 	}
@@ -274,10 +282,9 @@ func (m *mergedModel) viewConfirm() string {
 		line := "  " + StyleErr.Render("✗") + " " + c.Name + StyleDim.Render(" — "+c.Reason)
 		if c.Dirty {
 			dirtyCount++
-			line += "  " + StyleWarn.Render("● dirty")
 		}
-		if c.Reason == "PR CLOSED" {
-			line += "  " + StyleWarn.Render("unmerged commits may be lost")
+		for _, blocker := range c.Blockers() {
+			line += "  " + StyleWarn.Render("● "+blocker)
 		}
 		b.WriteString(line + "\n")
 	}
