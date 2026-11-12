@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/list"
@@ -18,8 +17,9 @@ func newTestPicker(filter bool, names ...string) *listPicker {
 	items := make([]list.Item, 0, len(names))
 	for i, n := range names {
 		items = append(items, editorItem{
-			c:          liftoff.EditorCandidate{Name: n, Binary: n, Installed: true},
-			displayIdx: i + 1,
+			c:            liftoff.EditorCandidate{Name: n, Binary: n, Installed: true},
+			displayIdx:   i + 1,
+			displayTotal: len(names),
 		})
 	}
 	l := list.New(items, NewListDelegate(), 40, 20)
@@ -119,14 +119,51 @@ func TestPickerTwoKeyShortcutBeyondNine(t *testing.T) {
 func TestPickerShortcutAfterFilterUsesDisplayedLabel(t *testing.T) {
 	m := newTestPicker(true, "Zed", "Cursor", "VS Code")
 	m.list.SetFilterText("Cursor")
-	if got := m.list.VisibleItems()[0].(editorItem).Title(); !strings.Contains(got, "a2") {
-		t.Fatalf("filtered row title = %q, want a2 shortcut", got)
+	if got := m.list.VisibleItems()[0].(editorItem).shortcut(); got != "2" {
+		t.Fatalf("filtered row shortcut = %q, want 2", got)
 	}
-	m.Update(mkKey("a"))
 	m.Update(mkKey("2"))
 	got, ok := m.chosen.(editorItem)
 	if !ok || got.c.Name != "Cursor" {
-		t.Fatalf("a2 chose %+v, want Cursor", m.chosen)
+		t.Fatalf("2 chose %+v, want Cursor", m.chosen)
+	}
+}
+
+func TestPickerShortLabelsUseDigitsUpToTen(t *testing.T) {
+	names := make([]string, 10)
+	for i := range names {
+		names[i] = fmt.Sprintf("workspace-%02d", i+1)
+	}
+	m := newTestPicker(false, names...)
+	want := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}
+	for i, item := range m.list.Items() {
+		if got := item.(editorItem).shortcut(); got != want[i] {
+			t.Fatalf("item %d label = %q, want %q", i+1, got, want[i])
+		}
+	}
+	m.Update(mkKey("0"))
+	got, ok := m.chosen.(editorItem)
+	if !ok || got.c.Name != names[9] {
+		t.Fatalf("0 chose %+v, want %s", m.chosen, names[9])
+	}
+}
+
+func TestPickerGroupedLabelsOnlyAboveTen(t *testing.T) {
+	names := make([]string, 11)
+	for i := range names {
+		names[i] = fmt.Sprintf("workspace-%02d", i+1)
+	}
+	m := newTestPicker(false, names...)
+	for i, want := range map[int]string{0: "a1", 8: "a9", 9: "b1"} {
+		if got := m.list.Items()[i].(editorItem).shortcut(); got != want {
+			t.Fatalf("item %d label = %q, want %q", i+1, got, want)
+		}
+	}
+	m.Update(mkKey("b"))
+	m.Update(mkKey("1"))
+	got, ok := m.chosen.(editorItem)
+	if !ok || got.c.Name != names[9] {
+		t.Fatalf("b1 chose %+v, want %s", m.chosen, names[9])
 	}
 }
 

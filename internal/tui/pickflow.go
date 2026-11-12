@@ -18,18 +18,19 @@ import (
 // in the liftoff domain layer (internal/liftoff/open_targets.go) so detection,
 // launch, and UI all agree on one definition.
 type editorItem struct {
-	c          liftoff.EditorCandidate
-	displayIdx int
+	c            liftoff.EditorCandidate
+	displayIdx   int
+	displayTotal int
 }
 
 func (e editorItem) Title() string {
 	t := e.c.Name
-	t = shortcutTitle(t, e.displayIdx)
+	t = shortcutTitle(t, e.displayIdx, e.displayTotal)
 	return t
 }
 func (e editorItem) Description() string { return StyleDim.Render(e.c.Desc) }
 func (e editorItem) FilterValue() string { return e.c.Name }
-func (e editorItem) shortcut() string    { return shortcutLabel(e.displayIdx) }
+func (e editorItem) shortcut() string    { return shortcutLabel(e.displayIdx, e.displayTotal) }
 
 // PickOpenTarget opens the shared picker for worktree-open destinations.
 func PickOpenTarget(candidates []liftoff.EditorCandidate) (*liftoff.EditorCandidate, error) {
@@ -47,6 +48,11 @@ func pickEditor(editors []liftoff.EditorCandidate, title string) (*liftoff.Edito
 	if len(items) == 0 {
 		return nil, fmt.Errorf("no supported editor found (looked for %s on PATH or in /Applications)", strings.Join(liftoff.EditorNames(), ", "))
 	}
+	for i := range items {
+		item := items[i].(editorItem)
+		item.displayTotal = len(items)
+		items[i] = item
+	}
 	chosen, ok, err := RunListPicker(ListPickerConfig{
 		Title:  title,
 		Items:  items,
@@ -61,15 +67,16 @@ func pickEditor(editors []liftoff.EditorCandidate, title string) (*liftoff.Edito
 
 // adoptPickItem renders one adopt candidate in the bubble list.
 type adoptPickItem struct {
-	name       string
-	branch     string
-	path       string
-	displayIdx int
+	name         string
+	branch       string
+	path         string
+	displayIdx   int
+	displayTotal int
 }
 
 func (a adoptPickItem) Title() string {
 	t := a.name
-	t = shortcutTitle(t, a.displayIdx)
+	t = shortcutTitle(t, a.displayIdx, a.displayTotal)
 	return t
 }
 func (a adoptPickItem) Description() string {
@@ -79,7 +86,7 @@ func (a adoptPickItem) Description() string {
 	return StyleDim.Render(a.path)
 }
 func (a adoptPickItem) FilterValue() string { return a.name }
-func (a adoptPickItem) shortcut() string    { return shortcutLabel(a.displayIdx) }
+func (a adoptPickItem) shortcut() string    { return shortcutLabel(a.displayIdx, a.displayTotal) }
 
 // PickAdoptCandidate opens a labeled picker over a slice of name/branch
 // pairs. Returns the chosen name, "" on cancel.
@@ -90,10 +97,11 @@ func PickAdoptCandidate(cands []liftoff.AdoptCandidate) (string, error) {
 	items := make([]list.Item, 0, len(cands))
 	for i, c := range cands {
 		items = append(items, adoptPickItem{
-			name:       c.Name,
-			branch:     c.Branch,
-			path:       c.Path,
-			displayIdx: i + 1,
+			name:         c.Name,
+			branch:       c.Branch,
+			path:         c.Path,
+			displayIdx:   i + 1,
+			displayTotal: len(cands),
 		})
 	}
 	chosen, ok, err := RunListPicker(ListPickerConfig{

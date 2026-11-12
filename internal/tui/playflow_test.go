@@ -145,7 +145,7 @@ func TestPlayIgnoresSetupResultsAfterAbort(t *testing.T) {
 func TestPlayPickerTwoKeyShortcutBeyondNine(t *testing.T) {
 	items := make([]list.Item, 15)
 	for i := range items {
-		items[i] = playWtItem{name: fmt.Sprintf("workspace-%02d", i+1), displayIdx: i + 1}
+		items[i] = playWtItem{name: fmt.Sprintf("workspace-%02d", i+1), displayIdx: i + 1, displayTotal: len(items)}
 	}
 	picker := list.New(items, NewListDelegate(), 100, 60)
 	StyleList(&picker, "workspaces", true)

@@ -30,6 +30,7 @@ type washItem struct {
 	rexOpen          bool // a Rex session for it is open, and wash will close it
 	isLegacy         bool
 	displayIdx       int // 1-based shortcut index
+	displayTotal     int // number of items in the picker, for label width
 }
 
 func (w washItem) Title() string {
@@ -37,7 +38,7 @@ func (w washItem) Title() string {
 	if w.emoji != "" {
 		t = w.emoji + " " + t
 	}
-	t = shortcutTitle(t, w.displayIdx)
+	t = shortcutTitle(t, w.displayIdx, w.displayTotal)
 	if w.isLegacy {
 		t += "  " + StyleDim.Render("(legacy)")
 	}
@@ -67,7 +68,7 @@ func (w washItem) Description() string {
 	return StyleDim.Render(strings.Join(bits, "  ·  "))
 }
 func (w washItem) FilterValue() string { return w.name }
-func (w washItem) shortcut() string    { return shortcutLabel(w.displayIdx) }
+func (w washItem) shortcut() string    { return shortcutLabel(w.displayIdx, w.displayTotal) }
 
 type washStage int
 
@@ -191,6 +192,7 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 	for i := range scanned {
 		scanned[i].hasDB = hasDB[scanned[i].name]
 		scanned[i].rexOpen = rexOpen[scanned[i].name]
+		scanned[i].displayTotal = len(scanned)
 	}
 	items := make([]list.Item, 0, len(scanned))
 	var preselectedItem *washItem

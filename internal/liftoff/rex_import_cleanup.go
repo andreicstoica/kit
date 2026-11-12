@@ -29,7 +29,7 @@ func closeImportedRexWorkspaces(path string) error {
 		if len(ids) == 0 {
 			return nil
 		}
-		state, err := readRexStructure("")
+		state, err := readRexStructureForCleanup("")
 		if err != nil {
 			return err
 		}
@@ -38,7 +38,7 @@ func closeImportedRexWorkspaces(path string) error {
 			if rexSessionByID(state, id) == nil {
 				continue
 			}
-			if _, err := runRex("kill", id); err != nil {
+			if _, err := runRexAutostart("kill", id); err != nil {
 				errs = append(errs, fmt.Errorf("close imported Rex session %s: %w", id, err))
 			}
 		}

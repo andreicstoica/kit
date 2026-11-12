@@ -32,13 +32,14 @@ const (
 )
 
 type playWtItem struct {
-	name       string
-	path       string
-	emoji      string
-	slot       int
-	lastUsed   time.Time
-	running    int
-	displayIdx int // 1-based shortcut index; 0 = no prefix
+	name         string
+	path         string
+	emoji        string
+	slot         int
+	lastUsed     time.Time
+	running      int
+	displayIdx   int // 1-based shortcut index; 0 = no prefix
+	displayTotal int // number of items in the picker, for label width
 }
 
 func (i playWtItem) Title() string {
@@ -46,7 +47,7 @@ func (i playWtItem) Title() string {
 	if i.emoji != "" {
 		t = i.emoji + " " + t
 	}
-	t = shortcutTitle(t, i.displayIdx)
+	t = shortcutTitle(t, i.displayIdx, i.displayTotal)
 	if i.slot > 0 {
 		t += StyleDim.Render(fmt.Sprintf("  slot %d", i.slot))
 	}
@@ -59,7 +60,7 @@ func (i playWtItem) Description() string {
 	return StyleDim.Render(i.path)
 }
 func (i playWtItem) FilterValue() string { return i.name }
-func (i playWtItem) shortcut() string    { return shortcutLabel(i.displayIdx) }
+func (i playWtItem) shortcut() string    { return shortcutLabel(i.displayIdx, i.displayTotal) }
 
 type playModel struct {
 	layout liftoff.Layout
@@ -261,6 +262,7 @@ func collectPlayWtItems(layout liftoff.Layout, keep playWtItemFilter) ([]list.It
 	out := make([]list.Item, 0, len(items))
 	for i := range items {
 		items[i].displayIdx = i + 1
+		items[i].displayTotal = len(items)
 		out = append(out, items[i])
 	}
 	return out, nil

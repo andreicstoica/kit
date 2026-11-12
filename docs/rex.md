@@ -16,7 +16,8 @@ back to another runtime.
 Session reuse/close require the saved session ID. A matching display label on
 an unmapped session is treated as a collision, never adopted or deleted. Kit
 layout tabs start the same Kit log-following and agent commands used by the
-Herdr adapter; the initial `shell` tab is an interactive shell.
+Herdr adapter; the initial shell tab is an interactive shell that keeps Rex's
+default title instead of a generic `shell` label.
 
 `ReadRexState` is read-only. Rex persists its own terminal and session state;
 Kit stores only the Rex session ID and selected layout in its worktree config.

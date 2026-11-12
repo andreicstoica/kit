@@ -2,6 +2,7 @@ package liftoff
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,35 @@ import (
 	"testing"
 	"time"
 )
+
+func TestRexCLICandidatesCoverCurrentBundleLayouts(t *testing.T) {
+	home := t.TempDir()
+	versions := filepath.Join(home, "Library", "Application Support", "com.superlogical.rex", "RexServer", "Versions")
+	newest := filepath.Join(versions, "1853", "Rex Server.app", "Contents", "MacOS", "rex")
+	if err := os.MkdirAll(filepath.Dir(newest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	paths := rexCLICandidates(home)
+	for _, want := range []string{
+		filepath.Join(versions, "Current", "Rex Server.app", "Contents", "MacOS", "rex"),
+		newest,
+		"/Applications/Rex.app/Contents/Helpers/rex",
+		"/Applications/Rex Beta.app/Contents/Helpers/Rex Server.rex/Contents/MacOS/rex",
+	} {
+		if !contains(paths, want) {
+			t.Fatalf("candidates missing %s: %v", want, paths)
+		}
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
 
 func TestParseRexStateSnapshotAndLuaEmptyTable(t *testing.T) {
 	input := `{"sessions":[{"session_id":"session:one","label":"feature-a","windows":[{"window_id":"window:one","label":"shell","active":true,"blocks":[{"block_id":"block:one","label":"","creator_name":"com.superlogical.terminal","flavor":"com.superlogical.terminal.shell","placement":"placed","status":"running"}]}]}]}`
@@ -85,21 +115,25 @@ func TestFakeRexCLI(t *testing.T) {
 			}
 			id := "session:test-" + strings.ReplaceAll(tabs.Name, "/", "-")
 			session := RexSession{SessionID: id, Label: tabs.Name}
+			var initial []map[string]string
 			for i, tab := range tabs.Tabs {
-				if os.Getenv("KIT_REX_FAIL_TAB") == tab.Label {
+				if failTab := os.Getenv("KIT_REX_FAIL_TAB"); failTab != "" && failTab == tab.Label {
 					_, _ = os.Stderr.WriteString("injected window failure")
 					os.Exit(1)
 				}
-				session.Windows = append(session.Windows, RexWindow{WindowID: "window:" + id + ":" + tab.Label, Label: tab.Label, Active: i == 0})
+				windowID := "window:" + id + ":" + tab.Label + ":" + fmt.Sprint(i)
+				session.Windows = append(session.Windows, RexWindow{WindowID: windowID, Label: tab.Label, Active: i == 0})
+				initial = append(initial, map[string]string{"window_id": windowID})
 			}
 			state.Sessions = append(state.Sessions, session)
 			save()
-			_, _ = os.Stdout.WriteString(`{"session_id":"` + id + `"}`)
+			data, _ := json.Marshal(map[string]any{"session_id": id, "initial_windows": initial})
+			_, _ = os.Stdout.Write(data)
 			os.Exit(0)
 		}
 		if len(tabs.Tabs) > 0 {
 			for _, tab := range tabs.Tabs {
-				if os.Getenv("KIT_REX_FAIL_TAB") == tab.Label {
+				if failTab := os.Getenv("KIT_REX_FAIL_TAB"); failTab != "" && failTab == tab.Label {
 					_, _ = os.Stderr.WriteString("injected window failure")
 					os.Exit(1)
 				}
@@ -268,9 +302,15 @@ func TestOpenRexCreatesKitCommandTabsAndReusesWithoutRemovingManualTabs(t *testi
 	if cfg.Worktrees["feature-a"].RexID != opened.SessionID {
 		t.Fatalf("mapping = %+v", cfg.Worktrees["feature-a"])
 	}
+	if cfg.Worktrees["feature-a"].RexShellWindow == "" {
+		t.Fatalf("shell window was not recorded: %+v", cfg.Worktrees["feature-a"])
+	}
 	calls := fake.calls(t)
 	if !containsRexCall(calls, `"label":"logs"`) || !containsRexCall(calls, " log 'feature-a' --wait") {
 		t.Fatalf("calls did not launch Kit logs command: %q", calls)
+	}
+	if containsRexCall(calls, `"label":"shell"`) {
+		t.Fatalf("shell tab should keep Rex's default title: %q", calls)
 	}
 	for _, call := range calls {
 		if strings.HasPrefix(call, "focus ") || strings.HasPrefix(call, "attach ") {

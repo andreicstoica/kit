@@ -17,7 +17,8 @@ import (
 //   1. List picker  — choosing one thing from a set that may be long or
 //      filterable (a worktree, an editor, an adopt candidate). Built with
 //      bubbles/list via RunListPicker. Always: accent-highlighted selection,
-//      a1/b1 shortcut labels, esc/ctrl+c cancels, "/" filters when enabled.
+//      1-9/0 labels for short lists (a1/b1 groups for long ones), esc/ctrl+c
+//      cancels, "/" filters when enabled.
 //
 //   2. Select       — choosing one option from a short, fixed menu
 //      (workspace layout, root menu). A hand-rolled inline bubbletea model
