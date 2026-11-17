@@ -181,10 +181,15 @@ func designNext(ch <-chan liftoff.StepUpdate) tea.Cmd {
 }
 
 func (m *designModel) plan() liftoff.DressPlan {
+	mode := liftoff.DatabaseModeShared
+	if m.answers.cloneDB {
+		mode = liftoff.DatabaseModeCopy
+	}
 	return liftoff.DressPlan{
 		Name:            m.answers.name,
 		Worktree:        m.worktree,
-		CloneDB:         m.answers.cloneDB,
+		DatabaseMode:    mode,
+		AllowPGDump:     m.answers.cloneDB,
 		BackendDeps:     m.answers.backend,
 		SymlinkFrontend: m.answers.symlink,
 		GraphiteTrack:   m.answers.graphite,

@@ -10,12 +10,21 @@ import (
 	"strings"
 )
 
+func validateCheckoutBackendName(backend string) error {
+	switch backend {
+	case "", "git", "twig":
+		return nil
+	default:
+		return fmt.Errorf("unknown checkout backend %q; use git or twig", backend)
+	}
+}
+
 // ValidateCheckoutBackend checks opt-in tooling before setup can create resources.
 func ValidateCheckoutBackend(backend string) error {
-	switch backend {
-	case "", "git":
-		return nil
-	case "twig":
+	if err := validateCheckoutBackendName(backend); err != nil {
+		return err
+	}
+	if backend == "twig" {
 		out, err := Run("", "git", "twig", "--version")
 		if err != nil {
 			return fmt.Errorf("Twig >=0.4.0 is required; install it with `brew tap leostera/git-twig https://github.com/leostera/git-twig` then `brew install leostera/git-twig/git-twig`: %w", err)
@@ -31,9 +40,8 @@ func ValidateCheckoutBackend(backend string) error {
 			}
 		}
 		return fmt.Errorf("Twig >=0.4.0 (released version) is required; found %q", out)
-	default:
-		return fmt.Errorf("unknown checkout backend %q; use git or twig", backend)
 	}
+	return nil
 }
 
 type twigCreateError struct {

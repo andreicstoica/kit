@@ -30,7 +30,7 @@ ORDER BY d.datname`
 // work without kit-specific knobs. Caller must `createdb dst` first.
 func CloneDB(srcDB, dstDB string, onLine LineFn) error {
 	dump := exec.Command("pg_dump", srcDB)
-	psql := exec.Command("psql", "-d", dstDB)
+	psql := exec.Command("psql", "-X", "-v", "ON_ERROR_STOP=1", "-d", dstDB)
 
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -89,16 +89,7 @@ func CloneDB(srcDB, dstDB string, onLine LineFn) error {
 	return nil
 }
 
-// cloneByTemplate lets design copy the database at file level when possible.
-// Tests turn it off to exercise the pg_dump path.
-var cloneByTemplate = true
-
-// CreateDBFromTemplate creates name as a file-level copy of src, which is far
-// faster than dump and restore for a multi-gigabyte database. Postgres refuses
-// the copy while anyone is connected to src. Any failure returns copied=false
-// with no error so the caller falls back to createdb plus CloneDB; createdb
-// leaves no database behind when it fails.
-func CreateDBFromTemplate(name, src string, onLine LineFn) (copied bool, err error) {
+func createDBByTemplate(name, src string, onLine LineFn) error {
 	var last string
 	capture := func(line string) {
 		if strings.TrimSpace(line) != "" {
@@ -106,15 +97,12 @@ func CreateDBFromTemplate(name, src string, onLine LineFn) (copied bool, err err
 		}
 	}
 	if err := RunStream("", "createdb", []string{name, "--template=" + src, "--strategy=file_copy"}, capture); err != nil {
-		if onLine != nil {
-			onLine("template copy unavailable, using pg_dump: " + strings.TrimSpace(last))
-		}
-		return false, nil
+		return fmt.Errorf("template copy: %w: %s", err, strings.TrimSpace(last))
 	}
 	if onLine != nil {
 		onLine("copied " + src + " by template")
 	}
-	return true, nil
+	return nil
 }
 
 // CreateDB runs `createdb <name>`.

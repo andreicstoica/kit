@@ -142,6 +142,33 @@ func TestPlayIgnoresSetupResultsAfterAbort(t *testing.T) {
 	}
 }
 
+func TestPlayRunFailureWithoutServiceIsNotSuccess(t *testing.T) {
+	t.Setenv("KIT_STATE_DIR", t.TempDir())
+	layout := liftoff.Layout{Root: t.TempDir(), Master: t.TempDir()}
+	built, err := NewPlayModel(layout, PlayConfig{Name: "master"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := built.(*playModel)
+	m.stage = playStageRun
+	failure := errors.New("database is unprovisioned; run kit db feature --mode empty")
+	m.updateRun(playUpdMsg{ok: true, upd: liftoff.PlayUpdate{
+		Status: liftoff.StepFailed, Title: "database not ready", Err: failure,
+	}})
+	m.updateRun(playUpdMsg{ok: false})
+	if !m.failed || !errors.Is(m.failureErr, failure) || m.stage != playStageDone {
+		t.Fatalf("whole-run failure was swallowed: failed=%v err=%v stage=%v", m.failed, m.failureErr, m.stage)
+	}
+	for _, view := range []string{m.viewDone(), renderPlayNotes(m.runNotes)} {
+		if !strings.Contains(view, "kit db feature --mode empty") || strings.Contains(view, " playing") {
+			t.Fatalf("failure view hides recovery or claims success: %s", view)
+		}
+	}
+	if !strings.Contains(m.viewDone(), "failed at setup") {
+		t.Fatalf("missing whole-run failure label: %s", m.viewDone())
+	}
+}
+
 func TestPlayPickerTwoKeyShortcutBeyondNine(t *testing.T) {
 	items := make([]list.Item, 15)
 	for i := range items {

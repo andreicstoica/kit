@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 func TestRunDressBackendInstallOverlapsDatabaseCopy(t *testing.T) {
@@ -34,7 +36,7 @@ exit 1
 	writeExecutable(t, filepath.Join(bin, "uv"), "#!/bin/sh\ntouch \"$BACKEND_MARKER\"\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	path := filepath.Join(filepath.Dir(l.Master), "overlap")
-	if err := runDressBlocking(l, DressPlan{Name: "overlap", Worktree: path, CloneDB: true, BackendDeps: true}); err != nil {
+	if err := runDressBlocking(l, DressPlan{Name: "overlap", Worktree: path, DatabaseMode: DatabaseModeCopy, AllowPGDump: true, BackendDeps: true}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadConfig()
@@ -56,18 +58,15 @@ func runDressBlocking(l Layout, p DressPlan) error {
 	return errors.Join(errs...)
 }
 
-// stubDBBins prepends fakes for createdb/dropdb/psql/pg_dump. pgDump may be
-// nil for a plain success; otherwise it is the script body.
 func stubDBBins(t *testing.T, dropdbBody, pgDumpBody string, createdCapture, dropCapture string) {
 	t.Helper()
-	cloneByTemplate = false // these tests exercise the dump path
-	t.Cleanup(func() { cloneByTemplate = true })
 	bin := t.TempDir()
+	setupFakeDatabaseIdentity(t)
 	if createdCapture != "" {
-		writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$CREATE_CAPTURE\"\n")
+		writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\ncase \"$*\" in *--template=*) exit 1;; esac\nprintf '%s\\n' \"$1\" >> \"$CREATE_CAPTURE\"\nprintf '42\\n' > \"$DB_IDENTITY_DIR/$1\"\n")
 		t.Setenv("CREATE_CAPTURE", createdCapture)
 	} else {
-		writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\nexit 0\n")
+		writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\ncase \"$*\" in *--template=*) exit 1;; esac\nprintf '42\\n' > \"$DB_IDENTITY_DIR/$1\"\nexit 0\n")
 	}
 	if dropdbBody == "" {
 		dropdbBody = "#!/bin/sh\nprintf '%s\\n' \"$2\" >> \"$DROP_CAPTURE\"\n"
@@ -78,7 +77,7 @@ func stubDBBins(t *testing.T, dropdbBody, pgDumpBody string, createdCapture, dro
 		pgDumpBody = "#!/bin/sh\nexit 0\n"
 	}
 	writeExecutable(t, filepath.Join(bin, "pg_dump"), pgDumpBody)
-	writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\ncat >/dev/null\nexit 0\n")
+	writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\n"+fakeDatabaseIdentityPSQL+"cat >/dev/null\nexit 0\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
@@ -105,7 +104,7 @@ cp "$KIT_STATE_DIR/config.toml" "$SNAPSHOT"
 exit 1
 `, created, dropped)
 	path := filepath.Join(filepath.Dir(l.Master), "fdb-a")
-	err := runDressBlocking(l, DressPlan{Name: "fdb-a", Worktree: path, CloneDB: true})
+	err := runDressBlocking(l, DressPlan{Name: "fdb-a", Worktree: path, DatabaseMode: DatabaseModeCopy, AllowPGDump: true})
 	if err == nil {
 		t.Fatal("dress with failing clone should fail")
 	}
@@ -127,8 +126,12 @@ exit 1
 	if snapErr != nil {
 		t.Fatalf("clone-time config snapshot missing: %v", snapErr)
 	}
-	if !strings.Contains(string(snap), "liftoff_fdb_a") || !strings.Contains(string(snap), "database_name") {
-		t.Fatalf("database ownership was not persisted before clone: %s", snap)
+	var snapshotConfig Config
+	if _, err := toml.Decode(string(snap), &snapshotConfig); err != nil {
+		t.Fatal(err)
+	}
+	if meta := snapshotConfig.Worktrees["fdb-a"]; meta.DatabaseName != "liftoff_fdb_a" || !meta.DatabaseDeferred {
+		t.Fatalf("copy began without unready ownership: %+v", meta)
 	}
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -148,7 +151,7 @@ func TestRunDress_FailingDropdb_RetainsRecoveryRecord(t *testing.T) {
 	t.Setenv("KIT_RUN_DIR", t.TempDir())
 	stubDBBins(t, "#!/bin/sh\nexit 1\n", "#!/bin/sh\nexit 1\n", "", filepath.Join(t.TempDir(), "dropped"))
 	path := filepath.Join(filepath.Dir(l.Master), "fdb-b")
-	if err := runDressBlocking(l, DressPlan{Name: "fdb-b", Worktree: path, CloneDB: true}); err == nil {
+	if err := runDressBlocking(l, DressPlan{Name: "fdb-b", Worktree: path, DatabaseMode: DatabaseModeCopy, AllowPGDump: true}); err == nil {
 		t.Fatal("dress with failing clone and failing dropdb should fail")
 	}
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
@@ -264,7 +267,7 @@ exit 1
 `)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	path := filepath.Join(filepath.Dir(l.Master), "joined-rollback")
-	if err := runDressBlocking(l, DressPlan{Name: "joined-rollback", Worktree: path, CloneDB: true, BackendDeps: true, Gtab: true}); err == nil {
+	if err := runDressBlocking(l, DressPlan{Name: "joined-rollback", Worktree: path, DatabaseMode: DatabaseModeCopy, AllowPGDump: true, BackendDeps: true, Gtab: true}); err == nil {
 		t.Fatal("clone failure must be reported")
 	}
 	if _, err := os.Stat(filepath.Join(markers, "install-finished")); err != nil {

@@ -135,9 +135,15 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 		}
 		candidates = matched
 	}
-	names := make([]string, len(candidates))
-	for i, wt := range candidates {
-		names[i] = wt.Name()
+	cfg, err := liftoff.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(candidates))
+	for _, wt := range candidates {
+		if cfg.Worktrees[wt.Name()].DatabaseIdentity == nil {
+			names = append(names, wt.Name())
+		}
 	}
 	var hasDB map[string]bool
 	var dbErr error
@@ -146,7 +152,7 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 	lookups.Add(2)
 	go func() {
 		defer lookups.Done()
-		if liftoff.HasPostgres() {
+		if len(names) > 0 && liftoff.HasPostgres() {
 			hasDB, dbErr = liftoff.HasDBs(names)
 		}
 	}()
@@ -190,7 +196,7 @@ func NewWashModelFor(layout liftoff.Layout, preselected string) (tea.Model, erro
 		return nil, dbErr
 	}
 	for i := range scanned {
-		scanned[i].hasDB = hasDB[scanned[i].name]
+		scanned[i].hasDB = cfg.Worktrees[scanned[i].name].DatabaseIdentity != nil || hasDB[scanned[i].name]
 		scanned[i].rexOpen = rexOpen[scanned[i].name]
 		scanned[i].displayTotal = len(scanned)
 	}

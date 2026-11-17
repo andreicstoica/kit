@@ -43,6 +43,10 @@ func (l Layout) RunPlay(p PlayPlan) <-chan PlayUpdate {
 	ch := make(chan PlayUpdate, 32)
 	go func() {
 		defer close(ch)
+		if err := requireProvisionedDatabase(p.Worktree, p.Services); err != nil {
+			ch <- PlayUpdate{Status: StepFailed, Title: "database not ready", Err: err}
+			return
+		}
 		// Pre-step: replace existing celery if asked. Synchronous so the
 		// new celery doesn't race against the kill.
 		if p.ReplaceCelery && p.ReplaceVictim != "" {

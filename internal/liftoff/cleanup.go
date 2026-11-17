@@ -40,6 +40,15 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 		return "", false, err
 	}
 	meta := cfg.Worktrees[name]
+	if meta.DatabaseCreateIntent != nil {
+		return "", false, uncertainDatabaseCreation(name)
+	}
+	if meta.DatabaseIdentity != nil && meta.DatabaseName == "" {
+		return "", false, fmt.Errorf("incomplete PostgreSQL ownership for %s; refusing cleanup", name)
+	}
+	if meta.DatabaseDeferred && meta.DatabaseName == "" {
+		return "", true, nil
+	}
 	candidate := meta.DatabaseName
 	if candidate == "" {
 		candidate = DBName(name)
@@ -62,7 +71,8 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 				return "", false, fmt.Errorf("database %s belongs to worktree %q; not dropping it with %q", candidate, other, name)
 			}
 		}
-		return candidate, false, nil
+		absent, err := verifyOwnedDatabase(name, candidate, meta)
+		return candidate, absent, err
 	}
 	for other, otherMeta := range cfg.Worktrees {
 		if other == name {
@@ -81,8 +91,8 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 	if worktreePath != "" {
 		envDB, found, envErr := DBNameFromEnv(worktreePath)
 		if envErr == nil && !found {
-			// Kit writes the key only when it clones a database. An env
-			// file without it means the checkout uses the app default.
+			// A legacy env without the key uses the app default, not a
+			// database whose ownership can be inferred from the workspace.
 			if _, statErr := os.Stat(filepath.Join(worktreePath, "backend", ".env")); statErr == nil {
 				return "", true, nil
 			}

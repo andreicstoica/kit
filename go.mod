@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/harmonica v0.2.0
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.43.0
 )
 
@@ -54,6 +55,5 @@ require (
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 )

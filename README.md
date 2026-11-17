@@ -305,6 +305,120 @@ any existing worktrees.
 Interactive, idempotent. Re-run any time. For a read-only report, use
 `kit doctor`.
 
+## Agent kickoff
+
+Install the bundled skill once so an agent can choose the workspace setup from
+your initial task instead of asking you to run the wizard:
+
+```sh
+kit agent install                     # ~/.fx/skills/kit-kickoff/SKILL.md
+kit agent install --path ~/.claude/skills/kit-kickoff
+kit agent                             # print the instructions without installing
+```
+
+The skill inspects the task and repository, chooses a short name, and calls the
+headless command. It does not create a worktree for read-only questions or move
+uncommitted changes out of an existing workspace.
+
+```sh
+kit design login-fix --non-interactive --json --dry-run
+kit design login-fix --non-interactive --json
+```
+
+Headless creation returns one JSON object with the absolute `path`, branch,
+database mode, slot, and ports. Progress goes to stderr. It never opens a window,
+launches another agent, starts services, or installs backend packages unless
+`--backend-deps` is set. Frontend dependencies are reused by default; Graphite
+tracking defaults to whether `gt` is installed. Pass `--graphite=false` or
+`--symlink-frontend=false` when the task needs a different setup. Non-terminal
+calls automatically use this mode and require a name. `--json`, `--dry-run`,
+`--db`, `--allow-pg-dump`, `--backend-deps`, `--symlink-frontend`, and
+`--graphite` also bypass the wizard in a terminal.
+
+| Database mode | Use when | Behavior |
+|---|---|---|
+| `--db none` (default) | Docs, UI, investigation, or code work that needs no running backend | Reserve a private DB target without creating it; refuse backend startup until provisioned |
+| `--db empty` | Tests or development that can create their own fixtures | Create an empty private DB; the agent runs the task's schema and seed setup in that worktree |
+| `--db copy` | Reproducing a bug needs existing local data | Try a file-level template copy; refuse dump fallback unless `--allow-pg-dump` is explicit |
+
+Template copies still copy the whole database and require the source to have no
+active connections. Kit does not disconnect those clients. A failed template
+copy does not silently run a full dump in headless mode. The interactive wizard
+keeps its existing copy-or-share behavior, including the dump fallback.
+
+A task can provision its deferred database later without rebuilding the checkout:
+
+```sh
+kit db login-fix --mode empty
+# Or, only when existing local data is necessary:
+kit db login-fix --mode copy
+```
+
+Creating a private database requires a PostgreSQL role that can create databases
+and execute `pg_catalog.pg_control_system()`. An administrator can grant that
+function to the development role in the `postgres` database. Kit uses the
+cluster identifier and database OID to refuse cleanup on a different cluster or
+against a replacement database.
+
+An empty DB has no schema or fixtures. Run migrations from the new worktree's
+`backend/` with its own environment, not `kit sync` (which migrates master).
+Start only the services the task needs with `kit play login-fix --only app,api`.
+
+### Keep the conversation
+
+Agents can immediately target the returned path in every file operation and
+shell command. A shell `cd` does not change the parent agent's workspace,
+instructions, permissions, or session association.
+
+For an actual fx session move, finish the current turn and exit its original fx
+process first. Then run this from the terminal:
+
+```sh
+kit enter login-fix --session <session-id>
+```
+
+This replaces the foreground kit process with `fx --resume <session-id>` in the
+new directory. It does not spawn a second detached writer. Use fx's `/status` to
+find the session ID. An agent tool can use `--print` to return the quoted handoff
+command without launching anything. Live in-process relocation and transfers
+for other agent clients are not implemented. See the
+[fx session documentation](https://fx.sh/docs/using-fx/sessions.md).
+
+### Launch a fresh agent in Rex
+
+When you want a new thread instead of a transfer, an agent can start one in an
+existing worktree:
+
+```sh
+kit agent launch login-fix --brief /tmp/login-fix-brief.md
+kit agent launch login-fix --harness codex --model gpt-5.4 --prompt 'Check the login redirect tests'
+printf '%s\n' "$BRIEF" | kit agent launch login-fix --harness fx --brief - --json
+```
+
+Kit opens a fresh agent window in the worktree's Rex session and selects it.
+The calling agent keeps running. Claude Code with Opus is the default.
+Choose `--harness claude`, `fx`, `codex`, or `opencode`. fx and Codex use
+their configured model unless you pass `--model`. OpenCode uses its configured
+model and does not accept `--model`. Omit both `--brief` and `--prompt` to open
+an empty thread. JSON output reports the harness and model override; an empty
+`model` means Kit left model selection to the harness.
+
+- The worktree must already exist in Kit and must not be parked, pending
+  cleanup, `master`, or a symlinked path. Launch never creates worktrees,
+  databases, or services; run `kit design` first.
+- A live mapped session is reused without adding layout tabs. Without one, Kit
+  creates the session with the `default` layout, which starts no agent.
+- Kit runs the selected harness directly through Rex (no shell) with an absolute path
+  and never passes a permission-bypass flag.
+- The brief is at most 32 KiB of UTF-8 text, must not start with `-`, and is
+  never printed by Kit, but is visible in process arguments. Do not pass secrets.
+  Control characters other than tab, newline, and carriage
+  return are refused.
+- Exit 0 means the agent window opened. If Rex could not select it, the command
+  still exits 0 with a warning (`"focused": false` in JSON); select the `agent`
+  window in the Rex app. An error that says Kit could not confirm the launch
+  means a window may exist. Check the session before you launch again.
+
 ## What `kit design` does
 
 ![kit design animations](vhs/anim.gif)

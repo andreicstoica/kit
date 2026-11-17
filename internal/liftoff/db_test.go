@@ -10,6 +10,22 @@ import (
 	"time"
 )
 
+func TestCloneDBStopsOnRestoreError(t *testing.T) {
+	bin := t.TempDir()
+	writeExecutable(t, filepath.Join(bin, "pg_dump"), "#!/bin/sh\nprintf 'invalid SQL;\\n'\n")
+	writeExecutable(t, filepath.Join(bin, "psql"), `#!/bin/sh
+while IFS= read -r line; do :; done
+if [ "$1" = "-X" ] && [ "$2" = "-v" ] && [ "$3" = "ON_ERROR_STOP=1" ]; then
+    exit 3
+fi
+exit 0
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := CloneDB("source", "target", nil); err == nil || !strings.Contains(err.Error(), "psql restore: exit status 3") {
+		t.Fatalf("want restore failure, got %v", err)
+	}
+}
+
 func TestDropDBMissingDatabase(t *testing.T) {
 	bin := t.TempDir()
 	writeExecutable(t, filepath.Join(bin, "dropdb"), `#!/bin/sh
@@ -104,33 +120,6 @@ func writeExecutable(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestCreateDBFromTemplateUsesFileCopyAndFallsBackWhenSourceBusy(t *testing.T) {
-	bin := t.TempDir()
-	log := filepath.Join(t.TempDir(), "args")
-	t.Setenv("ARGS_LOG", log)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\necho \"$@\" >> \"$ARGS_LOG\"\nexit 0\n")
-	copied, err := CreateDBFromTemplate("dst", "liftoff", nil)
-	if err != nil || !copied {
-		t.Fatalf("copied=%v err=%v", copied, err)
-	}
-	got, _ := os.ReadFile(log)
-	if strings.TrimSpace(string(got)) != "dst --template=liftoff --strategy=file_copy" {
-		t.Fatalf("createdb args = %q", got)
-	}
-
-	writeExecutable(t, filepath.Join(bin, "createdb"), "#!/bin/sh\necho 'source database \"liftoff\" is being accessed by other users' >&2\nexit 1\n")
-	var lines []string
-	copied, err = CreateDBFromTemplate("dst", "liftoff", func(l string) { lines = append(lines, l) })
-	if err != nil || copied {
-		t.Fatalf("busy source: copied=%v err=%v, want fallback", copied, err)
-	}
-	if len(lines) == 0 || !strings.Contains(lines[len(lines)-1], "being accessed") {
-		t.Fatalf("fallback reason not reported: %q", lines)
 	}
 }
 

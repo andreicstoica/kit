@@ -112,7 +112,7 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 				return nil, fmt.Errorf("check saved worktree %s: %w", meta.Path, err)
 			}
 		}
-		if meta.Cleanup == nil || meta.Cleanup.DropDB {
+		if (meta.Cleanup == nil || meta.Cleanup.DropDB) && meta.DatabaseIdentity == nil && meta.DatabaseCreateIntent == nil {
 			orphanNames = append(orphanNames, name)
 		}
 		orphans = append(orphans, orphanMeta{meta: meta, name: name, cleanupPending: meta.CleanupPending, gitPath: gitPath})
@@ -134,7 +134,7 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 			Branch:         o.meta.Branch,
 			Slot:           o.meta.Slot,
 			CleanupPending: o.cleanupPending,
-			HasDB:          dbMap[o.name],
+			HasDB:          (o.meta.Cleanup == nil || o.meta.Cleanup.DropDB) && (dbMap[o.name] || o.meta.DatabaseIdentity != nil || o.meta.DatabaseCreateIntent != nil),
 			HasGtab:        (o.meta.Cleanup == nil || o.meta.Cleanup.RemoveGtab) && l.HasGtab(o.name),
 			HasRunDir:      runErr == nil,
 			HasHerdr:       o.meta.HerdrID != "" || o.meta.HerdrSpace != "",
@@ -150,6 +150,19 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 // not delete the local branch, which avoids turning an externally removed
 // checkout into permanent loss of unmerged work.
 func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error {
+	return WithWorkspaceLock(databaseLockNamespace+candidate.Name, func() error {
+		return l.reconcileOrphan(candidate, onLine)
+	})
+}
+
+func (l Layout) reconcileOrphan(candidate OrphanCandidate, onLine LineFn) error {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Worktrees[candidate.Name].DatabaseCreateIntent != nil {
+		return uncertainDatabaseCreation(candidate.Name)
+	}
 	current, err := l.FindOrphanedWorktrees()
 	if err != nil {
 		return err
@@ -188,7 +201,7 @@ func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error 
 		}
 	}
 
-	cfg, err := LoadConfig()
+	cfg, err = LoadConfig()
 	if err != nil {
 		return err
 	}
@@ -224,7 +237,7 @@ func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error 
 		errs = append(errs, err)
 	}
 	if candidate.HasDB && candidateDB != "" {
-		if err := DropDB(candidateDB, onLine); err != nil {
+		if err := dropOwnedDatabase(candidate.Name, candidateDB, onLine); err != nil {
 			errs = append(errs, fmt.Errorf("drop database: %w", err))
 		}
 	}

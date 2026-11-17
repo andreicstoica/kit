@@ -82,7 +82,7 @@ func workspaceTabCommand(name, tabName string) string {
 		if err != nil || bin == "" {
 			bin = "kit"
 		}
-		return shellQuote(bin) + " log " + shellQuote(name) + " --wait"
+		return ShellQuote(bin) + " log " + ShellQuote(name) + " --wait"
 	case "frontend":
 		return herdrCombinedTailCommand(name, SvcApp, SvcAdmin)
 	case "backend":

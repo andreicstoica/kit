@@ -200,9 +200,8 @@ func TestResolveCleanupDB_EnvMismatchSkips(t *testing.T) {
 	}
 }
 
-// Kit writes SQLALCHEMY_DATABASE_NAME only when it clones a database, so an
-// env without the key proves the checkout owns no per-worktree database.
-// A missing env proves nothing and must still refuse.
+// A legacy env without a database key uses the app default, not a per-worktree
+// database. A missing env proves nothing and must still refuse.
 func TestResolveCleanupDB_EnvWithoutDBKeySkips(t *testing.T) {
 	setStateDir(t)
 	stubDerivedDB(t, true, nil)
@@ -459,6 +458,12 @@ func TestReconcilePreservesResourcesExcludedFromFailedWash(t *testing.T) {
 	name := "keep-resources"
 	path := addWorktree(t, l, name)
 	if _, err := l.WriteGtab(name, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := WithConfigLock(func(c *Config) error {
+		c.Worktrees[name] = WorktreeMeta{DatabaseName: DBName(name), DatabaseIdentity: &DatabaseIdentity{ClusterID: "12345", OID: 42}}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := markCleanupPending(WashPlan{Name: name, Branch: name, WorktreePath: path}); err != nil {
