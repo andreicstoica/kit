@@ -200,9 +200,8 @@ func TestResolveCleanupDB_EnvMismatchSkips(t *testing.T) {
 	}
 }
 
-// Kit writes SQLALCHEMY_DATABASE_NAME only when it clones a database, so an
-// env without the key proves the checkout owns no per-worktree database.
-// A missing env proves nothing and must still refuse.
+// A legacy env without a database key uses the app default, not a per-worktree
+// database. A missing env proves nothing and must still refuse.
 func TestResolveCleanupDB_EnvWithoutDBKeySkips(t *testing.T) {
 	setStateDir(t)
 	stubDerivedDB(t, true, nil)

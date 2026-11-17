@@ -15,6 +15,8 @@ type DressPlan struct {
 	Name            string
 	Worktree        string
 	CloneDB         bool
+	DatabaseMode    string
+	AllowPGDump     bool
 	BackendDeps     bool
 	SymlinkFrontend bool // symlink frontend node_modules from master
 	GraphiteTrack   bool
@@ -85,6 +87,14 @@ type step struct {
 // PlanSteps returns the ordered step list, including skipped ones (for display).
 func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 	dbName := DBName(p.Name)
+	createDB := p.CloneDB
+	copyDB := p.CloneDB
+	updateDB := p.CloneDB
+	if p.DatabaseMode != "" {
+		createDB = p.DatabaseMode != DatabaseModeNone
+		copyDB = p.DatabaseMode == DatabaseModeCopy
+		updateDB = true
+	}
 	templated := false // set by the create step, read by the clone step that follows it
 	return []step{
 		{
@@ -110,10 +120,15 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			},
 		},
 		{
-			title: "create database " + dbName + " (template copy of liftoff when possible)",
+			title: "create database " + dbName,
 			phase: phaseDB, kind: "db-create",
-			skip: !p.CloneDB,
+			skip: !createDB,
 			run: func(emit func(string)) error {
+				if p.DatabaseMode != "" {
+					var err error
+					templated, err = createDatabase(dbName, p.DatabaseMode, p.AllowPGDump, emit)
+					return err
+				}
 				if cloneByTemplate {
 					copied, err := CreateDBFromTemplate(dbName, "liftoff", emit)
 					if err != nil {
@@ -130,7 +145,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		{
 			title: "clone database liftoff -> " + dbName,
 			phase: phaseDB,
-			skip:  !p.CloneDB,
+			skip:  !copyDB,
 			run: func(emit func(string)) error {
 				if templated {
 					emit("already copied by template")
@@ -142,9 +157,20 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		{
 			title: "update backend/.env SQLALCHEMY_DATABASE_NAME=" + dbName,
 			phase: phaseDB,
-			skip:  !p.CloneDB,
+			skip:  !updateDB,
 			run: func(emit func(string)) error {
-				return l.UpdateBackendDBName(p.Worktree, dbName)
+				if p.DatabaseMode == "" {
+					return l.UpdateBackendDBName(p.Worktree, dbName)
+				}
+				if err := writeIsolatedDatabaseEnv(p.Worktree, dbName); err != nil {
+					return err
+				}
+				return WithConfigLock(func(c *Config) error {
+					meta := c.Worktrees[p.Name]
+					meta.DatabaseDeferred = p.DatabaseMode == DatabaseModeNone
+					c.Worktrees[p.Name] = meta
+					return nil
+				})
 			},
 		},
 		{
@@ -274,6 +300,22 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 	ch := make(chan StepUpdate, 64)
 	go func() {
 		defer close(ch)
+		if err := WithWorkspaceLock("database:"+p.Name, func() error {
+			for update := range l.runDress(p) {
+				ch <- update
+			}
+			return nil
+		}); err != nil {
+			ch <- StepUpdate{Title: "lock workspace database", Status: StepFailed, Err: err}
+		}
+	}()
+	return ch
+}
+
+func (l Layout) runDress(p DressPlan) <-chan StepUpdate {
+	ch := make(chan StepUpdate, 64)
+	go func() {
+		defer close(ch)
 		var slot int
 		worktreeAdded := false
 		dbCreated := false
@@ -286,6 +328,25 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 			priorMeta, hadRecord = cfg.Worktrees[p.Name]
 		}
 		steps := l.planSteps(p, &slot)
+		if err := validateDatabaseOptions(p.DatabaseMode, p.AllowPGDump); err != nil {
+			ch <- StepUpdate{Index: 3, Title: steps[3].title, Status: StepFailed, Err: err}
+			return
+		}
+		if p.DatabaseMode != "" {
+			cfg, err := LoadConfig()
+			if err != nil {
+				ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: err}
+				return
+			}
+			if _, exists := cfg.Worktrees[p.Name]; exists {
+				ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: fmt.Errorf("workspace %s is already registered; refusing to overwrite it", p.Name)}
+				return
+			}
+			if err := validateDatabaseOwner(p.Name); err != nil {
+				ch <- StepUpdate{Index: 3, Title: steps[3].title, Status: StepFailed, Err: err}
+				return
+			}
+		}
 		if err := ValidateCheckoutBackend(p.CheckoutBackend); err != nil {
 			ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: err}
 			return

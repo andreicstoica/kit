@@ -150,6 +150,12 @@ func (l Layout) FindOrphanedWorktrees() ([]OrphanCandidate, error) {
 // not delete the local branch, which avoids turning an externally removed
 // checkout into permanent loss of unmerged work.
 func (l Layout) ReconcileOrphan(candidate OrphanCandidate, onLine LineFn) error {
+	return WithWorkspaceLock("database:"+candidate.Name, func() error {
+		return l.reconcileOrphan(candidate, onLine)
+	})
+}
+
+func (l Layout) reconcileOrphan(candidate OrphanCandidate, onLine LineFn) error {
 	current, err := l.FindOrphanedWorktrees()
 	if err != nil {
 		return err

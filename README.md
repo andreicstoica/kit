@@ -305,6 +305,78 @@ any existing worktrees.
 Interactive, idempotent. Re-run any time. For a read-only report, use
 `kit doctor`.
 
+## Agent kickoff
+
+Install the bundled skill once so an agent can choose the workspace setup from
+your initial task instead of asking you to run the wizard:
+
+```sh
+kit agent install                     # ~/.fx/skills/kit-kickoff/SKILL.md
+kit agent install --path ~/.claude/skills/kit-kickoff
+kit agent                             # print the instructions without installing
+```
+
+The skill inspects the task and repository, chooses a short name, and calls the
+headless command. It does not create a worktree for read-only questions or move
+uncommitted changes out of an existing workspace.
+
+```sh
+kit design login-fix --non-interactive --json --dry-run
+kit design login-fix --non-interactive --json
+```
+
+Headless creation returns one JSON object with the absolute `path`, branch,
+database mode, slot, and ports. Progress goes to stderr. It never opens a window,
+launches another agent, starts services, or installs backend packages unless
+`--backend-deps` is set. Frontend dependencies are reused by default; Graphite
+tracking defaults to whether `gt` is installed. Pass `--graphite=false` or
+`--symlink-frontend=false` when the task needs a different setup. Non-terminal
+calls automatically use this mode and require a name. `--json`, `--dry-run`, or
+explicit setup flags also bypass the wizard in a terminal.
+
+| Database mode | Use when | Behavior |
+|---|---|---|
+| `--db none` (default) | Docs, UI, investigation, or code work that needs no running backend | Reserve a private DB target without creating it; refuse backend startup until provisioned |
+| `--db empty` | Tests or development that can create their own fixtures | Create an empty private DB; the agent runs the task's schema and seed setup in that worktree |
+| `--db copy` | Reproducing a bug needs existing local data | Try a file-level template copy; refuse dump fallback unless `--allow-pg-dump` is explicit |
+
+Template copies still copy the whole database and require the source to have no
+active connections. Kit does not disconnect those clients. A failed template
+copy does not silently run a full dump in headless mode. The interactive wizard
+keeps its existing copy-or-share behavior, including the dump fallback.
+
+A task can provision its deferred database later without rebuilding the checkout:
+
+```sh
+kit db login-fix --mode empty
+# Or, only when existing local data is necessary:
+kit db login-fix --mode copy
+```
+
+An empty DB has no schema or fixtures. Run migrations from the new worktree's
+`backend/` with its own environment, not `kit sync` (which migrates master).
+Start only the services the task needs with `kit play login-fix --only app,api`.
+
+### Keep the conversation
+
+Agents can immediately target the returned path in every file operation and
+shell command. A shell `cd` does not change the parent agent's workspace,
+instructions, permissions, or session association.
+
+For an actual fx session move, finish the current turn and exit its original fx
+process first. Then run this from the terminal:
+
+```sh
+kit enter login-fix --session <session-id>
+```
+
+This replaces the foreground kit process with `fx --resume <session-id>` in the
+new directory. It does not spawn a second detached writer. Use fx's `/status` to
+find the session ID. An agent tool can use `--print` to return the quoted handoff
+command without launching anything. Live in-process relocation and transfers
+for other agent clients are not implemented. See the
+[fx session documentation](https://fx.sh/docs/using-fx/sessions.md).
+
 ## What `kit design` does
 
 ![kit design animations](vhs/anim.gif)

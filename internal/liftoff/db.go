@@ -99,6 +99,16 @@ var cloneByTemplate = true
 // with no error so the caller falls back to createdb plus CloneDB; createdb
 // leaves no database behind when it fails.
 func CreateDBFromTemplate(name, src string, onLine LineFn) (copied bool, err error) {
+	if err := createDBByTemplate(name, src, onLine); err != nil {
+		if onLine != nil {
+			onLine("template copy unavailable, using pg_dump: " + err.Error())
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+func createDBByTemplate(name, src string, onLine LineFn) error {
 	var last string
 	capture := func(line string) {
 		if strings.TrimSpace(line) != "" {
@@ -106,15 +116,12 @@ func CreateDBFromTemplate(name, src string, onLine LineFn) (copied bool, err err
 		}
 	}
 	if err := RunStream("", "createdb", []string{name, "--template=" + src, "--strategy=file_copy"}, capture); err != nil {
-		if onLine != nil {
-			onLine("template copy unavailable, using pg_dump: " + strings.TrimSpace(last))
-		}
-		return false, nil
+		return fmt.Errorf("template copy: %w: %s", err, strings.TrimSpace(last))
 	}
 	if onLine != nil {
 		onLine("copied " + src + " by template")
 	}
-	return true, nil
+	return nil
 }
 
 // CreateDB runs `createdb <name>`.

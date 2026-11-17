@@ -50,6 +50,22 @@ func (l Layout) RunWash(p WashPlan) <-chan StepUpdate {
 	ch := make(chan StepUpdate, 32)
 	go func() {
 		defer close(ch)
+		if err := WithWorkspaceLock("database:"+p.Name, func() error {
+			for update := range l.runWash(p) {
+				ch <- update
+			}
+			return nil
+		}); err != nil {
+			ch <- StepUpdate{Title: "lock workspace database", Status: StepFailed, Err: err}
+		}
+	}()
+	return ch
+}
+
+func (l Layout) runWash(p WashPlan) <-chan StepUpdate {
+	ch := make(chan StepUpdate, 32)
+	go func() {
+		defer close(ch)
 		dbName := DBName(p.Name)
 		// washDB/skipDB are resolved before any destructive step runs (see
 		// the first step): a disputed database must block the worktree

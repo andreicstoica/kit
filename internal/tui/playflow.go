@@ -638,6 +638,14 @@ func (m *playModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if u.SharedOwner != "" {
 			m.sharedOwner, m.sharedPID = u.SharedOwner, u.SharedPID
 		}
+		if u.Status == liftoff.StepFailed {
+			m.failed = true
+			m.failureSvc = u.Service
+			m.failureErr = u.Err
+			if m.failureErr == nil {
+				m.failureErr = errors.New(u.Title)
+			}
+		}
 		if u.Service == "" {
 			m.runNotes = append(m.runNotes, u)
 			return m, playNext(m.runUpdates)
@@ -650,10 +658,7 @@ func (m *playModel) updateRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runPIDs[u.Service] = u.PID
 		}
 		if u.Status == liftoff.StepFailed {
-			m.failed = true
-			m.failureSvc = u.Service
-			m.failureErr = u.Err
-			m.runMessages[u.Service] = u.Err.Error()
+			m.runMessages[u.Service] = m.failureErr.Error()
 		}
 		return m, playNext(m.runUpdates)
 	}
@@ -801,7 +806,12 @@ func (m *playModel) viewRun() string {
 func renderPlayNotes(notes []liftoff.PlayUpdate) string {
 	var b strings.Builder
 	for _, n := range notes {
-		if n.Status == liftoff.StepSkipped {
+		if n.Status == liftoff.StepFailed {
+			b.WriteString(StyleErr.Render("  "+n.Title) + "\n")
+			if n.Err != nil {
+				b.WriteString("  " + n.Err.Error() + "\n")
+			}
+		} else if n.Status == liftoff.StepSkipped {
 			b.WriteString(StyleWarn.Render("  ! "+n.Title) + "\n")
 		} else {
 			b.WriteString(StyleDim.Render("  "+n.Title) + "\n")
@@ -813,7 +823,11 @@ func renderPlayNotes(notes []liftoff.PlayUpdate) string {
 func (m *playModel) viewDone() string {
 	var b strings.Builder
 	if m.failed {
-		b.WriteString(StyleErr.Render("✗ kit play failed at "+m.failureSvc.Label()) + "\n")
+		target := "setup"
+		if m.failureSvc != "" {
+			target = m.failureSvc.Label()
+		}
+		b.WriteString(StyleErr.Render("✗ kit play failed at "+target) + "\n")
 		if m.failureErr != nil {
 			b.WriteString("  " + m.failureErr.Error() + "\n")
 		}
@@ -865,10 +879,14 @@ func RunPlayTUI(layout liftoff.Layout, cfg PlayConfig) error {
 		// Include the log dir in the error so it survives the altscreen
 		// teardown — the in-TUI detail is wiped when the program exits.
 		runDir := liftoff.RunDirPath(pm.chosen.name)
-		if pm.failureErr != nil {
-			return fmt.Errorf("kit play failed at %s: %v — logs: %s", pm.failureSvc.Label(), pm.failureErr, runDir)
+		target := "setup"
+		if pm.failureSvc != "" {
+			target = pm.failureSvc.Label()
 		}
-		return fmt.Errorf("kit play failed at %s — logs: %s", pm.failureSvc.Label(), runDir)
+		if pm.failureErr != nil {
+			return fmt.Errorf("kit play failed at %s: %v — logs: %s", target, pm.failureErr, runDir)
+		}
+		return fmt.Errorf("kit play failed at %s — logs: %s", target, runDir)
 	}
 	return nil
 }
