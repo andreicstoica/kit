@@ -14,6 +14,7 @@ import (
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/andreicstoica/kit/internal/liftoff"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // designAnswers is the form payload from huh.
@@ -141,27 +142,28 @@ const minLeftWidth = 40
 
 // designModel renders the post-form progress display.
 type designModel struct {
-	layout   liftoff.Layout
-	answers  *designAnswers
-	worktree string
+	layout          liftoff.Layout
+	answers         *designAnswers
+	worktree        string
+	checkoutBackend string
 
 	spinner         spinner.Model
 	stopwatch       stopwatch.Model
 	progressPercent int
 	anim            Animation
-	keys          KeyMap
-	help          help.Model
-	updates       <-chan liftoff.StepUpdate
-	stepTitles    []string
-	stepStatuses  []liftoff.StepStatus
-	stepElapsed   []time.Duration
-	currentLines  map[int][]string
-	stepNotes     map[int]string // how a finished step went, shown beside it
-	failed        bool
-	failedAt      int
-	failureErr    error
-	allocatedSlot int
-	done          bool
+	keys            KeyMap
+	help            help.Model
+	updates         <-chan liftoff.StepUpdate
+	stepTitles      []string
+	stepStatuses    []liftoff.StepStatus
+	stepElapsed     []time.Duration
+	currentLines    map[int][]string
+	stepNotes       map[int]string // how a finished step went, shown beside it
+	failed          bool
+	failedAt        int
+	failureErr      error
+	allocatedSlot   int
+	done            bool
 
 	width, height int
 }
@@ -187,6 +189,7 @@ func (m *designModel) plan() liftoff.DressPlan {
 		SymlinkFrontend: m.answers.symlink,
 		GraphiteTrack:   m.answers.graphite,
 		Gtab:            true,
+		CheckoutBackend: m.checkoutBackend,
 	}
 }
 
@@ -353,27 +356,23 @@ func (m *designModel) View() tea.View {
 		left.WriteString("\n" + StyleHelp.Render("press enter to continue"))
 	}
 
-	// Lay the orb panel beside the step list, but never let the (variable-
-	// width) left content push the fixed-width orb past the terminal edge —
-	// that clipped its right border. Cap the left panel to whatever space is
-	// left after reserving the orb's full width; lipgloss MaxWidth truncates
-	// each line so the orb always renders flush inside m.width. When the
-	// terminal is too narrow to hold both side by side, stack the orb below.
+	// The orb is pinned to the right edge, never inline after the widest step
+	// line: step notes and elapsed times appear as the run progresses, so an
+	// inline orb slides sideways every time a line grows. Reserving the orb's
+	// width up front and filling the step column keeps it still and inside
+	// m.width. When the terminal is too narrow for two columns, stack instead.
 	orbView := m.anim.View()
 	orbW := lipgloss.Width(orbView)
-	leftStyle := lipgloss.NewStyle().Padding(0, 2)
 	var body string
 	switch {
 	case m.width <= 0:
 		// Pre-WindowSizeMsg: no size yet, fall back to the natural layout.
-		body = lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(left.String()), orbView)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Padding(0, 2).Render(left.String()), orbView)
 	case m.width < orbW+minLeftWidth:
 		// Too narrow for two columns — stack the orb under the steps.
-		leftPanel := leftStyle.MaxWidth(m.width).Render(left.String())
-		body = lipgloss.JoinVertical(lipgloss.Left, leftPanel, orbView)
+		body = lipgloss.JoinVertical(lipgloss.Left, fixedColumn(left.String(), m.width), orbView)
 	default:
-		leftPanel := leftStyle.MaxWidth(m.width - orbW).Render(left.String())
-		body = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, orbView)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, fixedColumn(left.String(), m.width-orbW), orbView)
 	}
 	footer := "\n" + m.help.View(m.keys)
 	status := workingStatus("kit design", m.answers.name)
@@ -393,6 +392,25 @@ func (m *designModel) View() tea.View {
 	return v
 }
 
+// fixedColumn renders the step column at exactly w cells: a 2-cell gutter on
+// each side, lines truncated with an ellipsis instead of wrapped, and short
+// lines padded out. Pinning the width is what keeps the orb beside it from
+// moving.
+func fixedColumn(content string, w int) string {
+	inner := max(w-4, 1)
+	var b strings.Builder
+	for i, line := range strings.Split(content, "\n") {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		line = ansi.Truncate(line, inner, "…")
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString(strings.Repeat(" ", max(w-2-lipgloss.Width(line), 0)))
+	}
+	return b.String()
+}
+
 func truncate(s string, w int) string {
 	if w <= 0 || len(s) <= w {
 		return s
@@ -407,6 +425,10 @@ func truncate(s string, w int) string {
 // step finished, or "" when the line is ordinary output.
 func designStepNote(line string) string {
 	switch {
+	case strings.HasPrefix(line, "git-twig: stock Git: "):
+		return "Git fallback: " + strings.TrimPrefix(line, "git-twig: stock Git: ")
+	case strings.HasPrefix(line, "git-twig: ") && strings.Contains(line, "CoW:"):
+		return "copy-on-write"
 	case strings.HasPrefix(line, "copied ") && strings.HasSuffix(line, " by template"):
 		return "fast copy"
 	case strings.HasPrefix(line, "template copy unavailable"):
@@ -448,7 +470,10 @@ func friendlyDesignStepTitle(title string) string {
 
 // RunDesignTUI is the cobra entry point: huh form → bubble tea progress.
 // prefillName is empty for `kit design`, set for `kit design <name>`.
-func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
+func RunDesignTUI(layout liftoff.Layout, prefillName, checkoutBackend string) error {
+	if err := liftoff.ValidateCheckoutBackend(checkoutBackend); err != nil {
+		return err
+	}
 	if !layout.MasterIsRepo() {
 		return fmt.Errorf("master repo not found at %s (set KIT_ROOT/KIT_MASTER_DIR)", layout.Master)
 	}
@@ -471,14 +496,15 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 	sw := stopwatch.New(stopwatch.WithInterval(time.Second))
 
 	m := &designModel{
-		layout:    layout,
-		answers:   answers,
-		worktree:  layout.WorktreePath(answers.name),
-		spinner:   sp,
-		stopwatch: sw,
-		anim:      NewAnimation(),
-		keys:      DefaultKeymap,
-		help:      NewHelp(),
+		layout:          layout,
+		answers:         answers,
+		worktree:        layout.WorktreePath(answers.name),
+		checkoutBackend: checkoutBackend,
+		spinner:         sp,
+		stopwatch:       sw,
+		anim:            NewAnimation(),
+		keys:            DefaultKeymap,
+		help:            NewHelp(),
 	}
 
 	final, runErr := tea.NewProgram(m).Run()
@@ -486,7 +512,7 @@ func RunDesignTUI(layout liftoff.Layout, prefillName string) error {
 		return runErr
 	}
 	if dm, ok := final.(*designModel); ok && dm.failed {
-		return errors.New("kit design reported a failure")
+		return fmt.Errorf("kit design failed: %w", dm.failureErr)
 	}
 	// Post-design "what's next?" prompt — offers to launch the gtab
 	// workspace, start dev servers, and/or open URLs in the browser

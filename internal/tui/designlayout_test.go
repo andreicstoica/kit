@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,43 @@ func TestOrbNotClipped(t *testing.T) {
 	}
 }
 
+// orbColumn returns the screen column where the orb's top border starts.
+func orbColumn(t *testing.T, m *designModel) int {
+	t.Helper()
+	for _, ln := range strings.Split(m.View().Content, "\n") {
+		if i := strings.Index(ln, "╭"); i >= 0 {
+			return lipgloss.Width(ln[:i])
+		}
+	}
+	t.Fatal("orb border not rendered")
+	return -1
+}
+
+// The orb must sit flush against the right edge, not trail the widest step
+// line — otherwise it slides sideways whenever a note or elapsed time lands.
+func TestOrbPinnedToRightEdge(t *testing.T) {
+	for _, w := range []int{200, 160, 140, 120, 100} {
+		m := mkDesignModel(w)
+		orbW := lipgloss.Width(m.anim.View())
+		want := w - orbW
+		if got := orbColumn(t, m); got != want {
+			t.Errorf("width=%d: orb starts at column %d, want %d (flush right)", w, got, want)
+		}
+
+		// Same terminal, wider step text: the orb must not move.
+		short := mkDesignModel(w)
+		long := mkDesignModel(w)
+		long.stepNotes = map[int]string{
+			0: "Git fallback: requested revision differs from source HEAD",
+		}
+		long.stepStatuses = append([]liftoff.StepStatus(nil), long.stepStatuses...)
+		long.stepStatuses[0] = liftoff.StepDone
+		if a, b := orbColumn(t, short), orbColumn(t, long); a != b {
+			t.Errorf("width=%d: orb column moved from %d to %d when a note appeared", w, a, b)
+		}
+	}
+}
+
 func TestFriendlyDesignStepTitle(t *testing.T) {
 	cases := map[string]string{
 		"fetch origin/master":                                          "Get the latest main code",
@@ -76,10 +114,12 @@ func TestFriendlyDesignStepTitle(t *testing.T) {
 
 func TestDesignStepNote(t *testing.T) {
 	cases := map[string]string{
-		"copied liftoff by template":                     "fast copy",
-		"template copy unavailable, using pg_dump: busy": "full copy, source database in use",
-		"already copied by template":                     "copied in the previous step",
-		"CREATE TABLE":                                   "",
+		"git-twig: APFS CoW: verified tracked files":                       "copy-on-write",
+		"git-twig: stock Git: requested revision differs from source HEAD": "Git fallback: requested revision differs from source HEAD",
+		"copied liftoff by template":                                       "fast copy",
+		"template copy unavailable, using pg_dump: busy":                   "full copy, source database in use",
+		"already copied by template":                                       "copied in the previous step",
+		"CREATE TABLE":                                                     "",
 	}
 	for line, want := range cases {
 		if got := designStepNote(line); got != want {
