@@ -40,6 +40,12 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 		return "", false, err
 	}
 	meta := cfg.Worktrees[name]
+	if meta.DatabaseCreateIntent != nil {
+		return "", false, uncertainDatabaseCreation(name)
+	}
+	if meta.DatabaseIdentity != nil && meta.DatabaseName == "" {
+		return "", false, fmt.Errorf("incomplete PostgreSQL ownership for %s; refusing cleanup", name)
+	}
 	if meta.DatabaseDeferred && meta.DatabaseName == "" {
 		return "", true, nil
 	}
@@ -65,7 +71,8 @@ func resolveCleanupDB(name, worktreePath string) (db string, skip bool, err erro
 				return "", false, fmt.Errorf("database %s belongs to worktree %q; not dropping it with %q", candidate, other, name)
 			}
 		}
-		return candidate, false, nil
+		absent, err := verifyOwnedDatabase(name, candidate, meta)
+		return candidate, absent, err
 	}
 	for other, otherMeta := range cfg.Worktrees {
 		if other == name {

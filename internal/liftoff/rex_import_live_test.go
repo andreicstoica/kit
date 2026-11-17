@@ -47,7 +47,7 @@ func runRexLiveImport(t *testing.T, injectFailure bool) {
 		realCLI := rexCLIPath()
 		dir := t.TempDir()
 		countFile, failureFile := filepath.Join(dir, "count"), filepath.Join(dir, "failed")
-		launcher := "#!/bin/sh\ncase \"$*\" in\n*rex.session.new_split*)\n n=0; if [ -f " + shellQuote(countFile) + " ]; then read n < " + shellQuote(countFile) + "; fi\n n=$((n+1)); printf '%s\\n' \"$n\" > " + shellQuote(countFile) + "\n if [ \"$n\" = 2 ] && [ ! -f " + shellQuote(failureFile) + " ]; then printf failed > " + shellQuote(failureFile) + "; printf 'injected second split failure\\n' >&2; exit 1; fi\n;;\nesac\nexec " + shellQuote(realCLI) + " \"$@\"\n"
+		launcher := "#!/bin/sh\ncase \"$*\" in\n*rex.session.new_split*)\n n=0; if [ -f " + ShellQuote(countFile) + " ]; then read n < " + ShellQuote(countFile) + "; fi\n n=$((n+1)); printf '%s\\n' \"$n\" > " + ShellQuote(countFile) + "\n if [ \"$n\" = 2 ] && [ ! -f " + ShellQuote(failureFile) + " ]; then printf failed > " + ShellQuote(failureFile) + "; printf 'injected second split failure\\n' >&2; exit 1; fi\n;;\nesac\nexec " + ShellQuote(realCLI) + " \"$@\"\n"
 		if err := os.WriteFile(filepath.Join(dir, "rex"), []byte(launcher), 0700); err != nil {
 			t.Fatal(err)
 		}

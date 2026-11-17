@@ -48,7 +48,7 @@ func TestRunDressTwigPreflightHasNoSideEffects(t *testing.T) {
 	l, path := dressLayout(t)
 	setStateDir(t)
 	stubTwig(t, "#!/bin/sh\necho git-twig 0.3.0\n")
-	err := runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, CheckoutBackend: "twig", CloneDB: true})
+	err := runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, CheckoutBackend: "twig", DatabaseMode: DatabaseModeCopy, AllowPGDump: true})
 	if err == nil || !strings.Contains(err.Error(), "0.4.0") {
 		t.Fatalf("expected actionable version error, got %v", err)
 	}
@@ -79,7 +79,7 @@ echo diagnostic > .git/twigs/staging/failed-attempt/marker
 echo 'simulated failure after registration' >&2
 exit 1
 `)
-	err := runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, CheckoutBackend: "twig", CloneDB: true})
+	err := runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, CheckoutBackend: "twig", DatabaseMode: DatabaseModeCopy, AllowPGDump: true})
 	if err == nil || !strings.Contains(err.Error(), "do not retry") {
 		t.Fatalf("expected recovery instructions, got %v", err)
 	}

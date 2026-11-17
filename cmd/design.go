@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/andreicstoica/kit/internal/liftoff"
@@ -39,6 +38,12 @@ a full pg_dump fallback unless --allow-pg-dump is explicitly set.
 source checkouts. Git remains the default. A leading liftoff- is stripped
 from the feature name.`,
 		Args: cobra.MaximumNArgs(1),
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if designHeadless(cmd) {
+				return nil
+			}
+			return rootCmd.PersistentPreRunE(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			backend, _ := cmd.Flags().GetString("checkout-backend")
 			if designHeadless(cmd) {
@@ -95,69 +100,37 @@ func runDesignHeadless(layout liftoff.Layout, cmd *cobra.Command, args []string)
 	if len(args) != 1 {
 		return errors.New("headless design requires a feature name: kit design <name> --non-interactive")
 	}
-	name, err := liftoff.NormalizeAndValidate(args[0])
-	if err != nil {
-		return err
-	}
-	if len(liftoff.DBName(name)) > 63 {
-		return errors.New("feature name is too long for an isolated PostgreSQL database (max 55 characters)")
-	}
+	name := liftoff.Normalize(args[0])
 	mode, _ := cmd.Flags().GetString("db")
-	if mode == "" {
+	if mode == liftoff.DatabaseModeShared {
 		return errors.New("--db must be none, empty, or copy")
 	}
-	if err := liftoff.ValidateDatabaseMode(mode); err != nil {
-		return err
-	}
 	allowDump, _ := cmd.Flags().GetBool("allow-pg-dump")
-	if allowDump && mode != "copy" {
-		return errors.New("--allow-pg-dump requires --db copy")
-	}
 	backend, _ := cmd.Flags().GetString("checkout-backend")
-	if backend != "git" && backend != "twig" {
-		return fmt.Errorf("unknown checkout backend %q; use git or twig", backend)
-	}
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
-	return executeHeadlessDesign(layout, cmd, name, mode, backend, allowDump, dryRun)
-}
-
-func executeHeadlessDesign(layout liftoff.Layout, cmd *cobra.Command, name, mode, backend string, allowDump, dryRun bool) error {
-	if !layout.MasterIsRepo() {
-		return fmt.Errorf("master repo not found at %s (set KIT_ROOT/KIT_MASTER_DIR)", layout.Master)
-	}
-	cfg, err := liftoff.LoadConfig()
-	if err != nil {
-		return err
-	}
-	if _, exists := cfg.Worktrees[name]; exists {
-		return fmt.Errorf("kit record already exists for %s; inspect kit lineup or kit reconcile before retrying", name)
-	}
-	for _, path := range []string{layout.WorktreePath(name), layout.LegacyWorktreePath(name)} {
-		if _, err := os.Lstat(path); err == nil {
-			return fmt.Errorf("worktree path already exists: %s", path)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
 	backendDeps, _ := cmd.Flags().GetBool("backend-deps")
 	symlink, _ := cmd.Flags().GetBool("symlink-frontend")
 	graphite, _ := cmd.Flags().GetBool("graphite")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 	path, err := filepath.Abs(layout.WorktreePath(name))
 	if err != nil {
 		return err
+	}
+	plan := liftoff.DressPlan{
+		Name: name, Worktree: path, DatabaseMode: mode, AllowPGDump: allowDump,
+		BackendDeps: backendDeps, SymlinkFrontend: symlink, GraphiteTrack: graphite,
+		CheckoutBackend: backend,
 	}
 	result := designResult{
 		Name: name, Path: path, Branch: name, DatabaseMode: mode,
 		BackendDeps: backendDeps, SymlinkFrontend: symlink, Graphite: graphite,
 		CheckoutBackend: backend, AllowPGDump: allowDump, DryRun: dryRun,
 	}
-	if !dryRun {
-		plan := liftoff.DressPlan{
-			Name: name, Worktree: path, DatabaseMode: mode, AllowPGDump: allowDump,
-			BackendDeps: backendDeps, SymlinkFrontend: symlink, GraphiteTrack: graphite,
-			CheckoutBackend: backend,
+	if dryRun {
+		if err := layout.ValidateNewWorkspace(plan); err != nil {
+			return err
 		}
+	} else {
 		var failures []error
 		for update := range layout.RunDress(plan) {
 			if update.Line != "" {

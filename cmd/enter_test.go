@@ -25,8 +25,31 @@ func enterTestLayout(t *testing.T) liftoff.Layout {
 	t.Setenv("KIT_MASTER_DIR", "main-checkout")
 	t.Setenv("KIT_STATE_DIR", filepath.Join(root, "state"))
 	t.Setenv("KIT_RUN_DIR", filepath.Join(root, "run"))
-	t.Setenv("PATH", t.TempDir())
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git unavailable")
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(git, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
 	return liftoff.DefaultLayout()
+}
+
+func addEnterCheckout(t *testing.T, layout liftoff.Layout, name, path string) {
+	t.Helper()
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git("init", "-b", "master", layout.Master)
+	git("-C", layout.Master, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "init")
+	if path != layout.Master {
+		git("-C", layout.Master, "worktree", "add", "-b", name, path)
+	}
 }
 
 func enterTestBinary(t *testing.T, name, script string) string {
@@ -88,9 +111,7 @@ func TestEnterPrintResolvesWorktree(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := os.MkdirAll(path, 0o755); err != nil {
-				t.Fatal(err)
-			}
+			addEnterCheckout(t, layout, name, path)
 			var out bytes.Buffer
 			cmd := newEnterCmd(func() bool { t.Fatal("--print checked terminal"); return false }, nil)
 			cmd.SetOut(&out)
@@ -98,7 +119,7 @@ func TestEnterPrintResolvesWorktree(t *testing.T) {
 			if err := cmd.Execute(); err != nil {
 				t.Fatal(err)
 			}
-			want := "cd -- " + enterShellQuote(path) + " && fx --resume 'saved-id'\n"
+			want := fmt.Sprintf("cd -- '%s' && fx --resume 'saved-id'\n", path)
 			if out.String() != want {
 				t.Fatalf("output = %q, want %q", out.String(), want)
 			}
@@ -106,15 +127,38 @@ func TestEnterPrintResolvesWorktree(t *testing.T) {
 	}
 }
 
+func TestEnterUsesRecordedCheckoutOverCanonicalReplacement(t *testing.T) {
+	layout := enterTestLayout(t)
+	moved := filepath.Join(layout.Root, "moved-checkout")
+	addEnterCheckout(t, layout, "feature", moved)
+	canonical := layout.WorktreePath("feature")
+	if out, err := exec.Command("git", "-C", layout.Master, "worktree", "add", "-b", "unrelated", canonical).CombinedOutput(); err != nil {
+		t.Fatalf("add replacement: %v: %s", err, out)
+	}
+	cfg := &liftoff.Config{Worktrees: map[string]liftoff.WorktreeMeta{"feature": {Path: moved, Branch: "feature"}}}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	cmd := newEnterCmd(func() bool { return false }, nil)
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"feature", "--session", "saved-id", "--print"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if want := fmt.Sprintf("cd -- '%s' && fx --resume 'saved-id'\n", moved); out.String() != want {
+		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+}
+
 func TestEnterPrintFromCwdAndGitTrackedPath(t *testing.T) {
 	layout := enterTestLayout(t)
-	path := filepath.Join(t.TempDir(), "tracked-feature")
+	path := filepath.Join(filepath.Dir(layout.Root), "tracked-feature")
+	addEnterCheckout(t, layout, "tracked-feature", path)
 	subdir := filepath.Join(path, "nested")
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("ENTER_TEST_WORKTREES", "worktree "+layout.Master+"\nbranch refs/heads/master\n\nworktree "+path+"\nbranch refs/heads/tracked-feature\n")
-	enterTestBinary(t, "git", "printf '%s\\n' \"$ENTER_TEST_WORKTREES\"\n")
 	t.Chdir(subdir)
 	var out bytes.Buffer
 	cmd := newEnterCmd(func() bool { return false }, nil)
@@ -123,7 +167,7 @@ func TestEnterPrintFromCwdAndGitTrackedPath(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if want := "cd -- " + enterShellQuote(path) + " && fx --resume 'saved-id'\n"; out.String() != want {
+	if want := fmt.Sprintf("cd -- '%s' && fx --resume 'saved-id'\n", path); out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
 }
@@ -132,9 +176,8 @@ func TestEnterPrintIsReadOnlyAndShellQuoted(t *testing.T) {
 	layout := enterTestLayout(t)
 	path := filepath.Join(layout.Root, "root's $(touch injected); directory", "feature")
 	t.Setenv("KIT_ROOT", filepath.Dir(path))
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	layout = liftoff.DefaultLayout()
+	addEnterCheckout(t, layout, "feature", path)
 	beforeCwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -228,9 +271,7 @@ func TestEnterRejectsInvalidDestination(t *testing.T) {
 func TestEnterExecUsesDestinationAndExactSession(t *testing.T) {
 	layout := enterTestLayout(t)
 	path := layout.WorktreePath("feature")
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	addEnterCheckout(t, layout, "feature", path)
 	binary := enterTestBinary(t, "fx", "exit 99\n")
 	t.Setenv("PWD", "stale-parent-directory")
 	t.Setenv("ENTER_TEST_KEEP", "preserved")
@@ -283,9 +324,7 @@ func TestEnterExecUsesDestinationAndExactSession(t *testing.T) {
 
 func TestEnterMissingFXDoesNotChangeCwd(t *testing.T) {
 	layout := enterTestLayout(t)
-	if err := os.MkdirAll(layout.WorktreePath("feature"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	addEnterCheckout(t, layout, "feature", layout.WorktreePath("feature"))
 	beforeCwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

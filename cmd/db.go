@@ -17,12 +17,13 @@ func newDBCommand() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeWorktreeNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := liftoff.DefaultLayout().ProvisionDatabase(args[0], mode, allowPGDump, func(line string) {
+			name := liftoff.Normalize(args[0])
+			if err := liftoff.DefaultLayout().ProvisionDatabase(name, mode, allowPGDump, func(line string) {
 				fmt.Fprintln(cmd.OutOrStdout(), line)
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "database provisioned for %s (%s)\n", args[0], mode)
+			fmt.Fprintf(cmd.OutOrStdout(), "database provisioned for %s (%s)\n", name, mode)
 			if mode == liftoff.DatabaseModeEmpty {
 				fmt.Fprintln(cmd.OutOrStdout(), "schema and migrations are not initialized")
 			}

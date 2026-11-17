@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -36,7 +37,7 @@ func TestRunDressExplicitExistingRecordNeverMutates(t *testing.T) {
 	}
 }
 
-func TestRunDressSerializesLegacyAndExplicitPlans(t *testing.T) {
+func TestRunDressSerializesDatabasePolicies(t *testing.T) {
 	l, path := dressLayout(t)
 	setStateDir(t)
 	setRunDir(t)
@@ -51,10 +52,13 @@ func TestRunDressSerializesLegacyAndExplicitPlans(t *testing.T) {
 printf 'createdb %s\n' "$*" >> "$DB_MODE_CALLS"
 touch "$DB_CREATE_BARRIER/started"
 while [ ! -f "$DB_CREATE_BARRIER/release" ]; do sleep 0.01; done
+printf '42\n' > "$DB_IDENTITY_DIR/$1"
 `)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	legacyDone := make(chan error, 1)
-	go func() { legacyDone <- runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, CloneDB: true}) }()
+	wizardDone := make(chan error, 1)
+	go func() {
+		wizardDone <- runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, DatabaseMode: DatabaseModeCopy, AllowPGDump: true})
+	}()
 	release := func() { _ = os.WriteFile(filepath.Join(barrier, "release"), nil, 0o600) }
 	defer release()
 	deadline := time.Now().Add(2 * time.Second)
@@ -63,7 +67,7 @@ while [ ! -f "$DB_CREATE_BARRIER/release" ]; do sleep 0.01; done
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("legacy database creation never started")
+			t.Fatal("wizard database creation never started")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -71,19 +75,14 @@ while [ ! -f "$DB_CREATE_BARRIER/release" ]; do sleep 0.01; done
 	go func() {
 		explicitDone <- runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, DatabaseMode: DatabaseModeEmpty})
 	}()
-	select {
-	case err := <-explicitDone:
-		t.Fatalf("explicit plan ran while legacy creation held lock: %v", err)
-	case <-time.After(75 * time.Millisecond):
-	}
 	release()
 	select {
-	case err := <-legacyDone:
+	case err := <-wizardDone:
 		if err != nil {
-			t.Fatalf("legacy winner failed: %v", err)
+			t.Fatalf("wizard winner failed: %v", err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("legacy winner deadlocked")
+		t.Fatal("wizard winner deadlocked")
 	}
 	select {
 	case err := <-explicitDone:
@@ -134,8 +133,9 @@ printf 'createdb %s\n' "$*" >> "$DB_MODE_CALLS"
 touch "$DB_CREATE_BARRIER/started"
 while [ ! -f "$DB_CREATE_BARRIER/release" ]; do sleep 0.01; done
 touch "$DB_CREATE_BARRIER/exists"
+printf '42\n' > "$DB_IDENTITY_DIR/$1"
 `)
-			writeExecutable(t, filepath.Join(bin, "psql"), `#!/bin/sh
+			writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\n"+fakeDatabaseIdentityPSQL+`
 if [ "$2" = postgres ]; then
   if [ -f "$DB_CREATE_BARRIER/exists" ]; then printf 'liftoff_feature\n'; fi
 else
@@ -144,7 +144,7 @@ fi
 `)
 			writeExecutable(t, filepath.Join(bin, "dropdb"), `#!/bin/sh
 printf 'dropdb %s\n' "$*" >> "$DB_MODE_CALLS"
-rm -f "$DB_CREATE_BARRIER/exists"
+rm -f "$DB_CREATE_BARRIER/exists" "$DB_IDENTITY_DIR/$2"
 `)
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			provisionDone := make(chan error, 1)
@@ -174,19 +174,6 @@ rm -f "$DB_CREATE_BARRIER/exists"
 					cleanupDone <- l.ReconcileOrphan(OrphanCandidate{Name: "feature", Path: path}, nil)
 				}
 			}()
-			select {
-			case err := <-cleanupDone:
-				t.Fatalf("cleanup ran during template creation: %v", err)
-			case <-time.After(75 * time.Millisecond):
-			}
-			cfg, err := LoadConfig()
-			if err != nil {
-				t.Fatal(err)
-			}
-			meta, ok := cfg.Worktrees["feature"]
-			if !ok || !meta.DatabaseDeferred || meta.DatabaseName != "" || meta.CleanupPending {
-				t.Fatalf("cleanup mutated provisioning state: %+v exists=%v", meta, ok)
-			}
 			release()
 			select {
 			case err := <-provisionDone:
@@ -204,7 +191,7 @@ rm -f "$DB_CREATE_BARRIER/exists"
 			case <-time.After(3 * time.Second):
 				t.Fatal("cleanup deadlocked after provisioning")
 			}
-			cfg, err = LoadConfig()
+			cfg, err := LoadConfig()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -215,5 +202,89 @@ rm -f "$DB_CREATE_BARRIER/exists"
 				t.Fatalf("owned database was not cleaned up exactly once: %s", readCapture(t, capture))
 			}
 		})
+	}
+}
+
+func TestWorkspaceLifecycleRejectsContention(t *testing.T) {
+	l := newMasterRepo(t)
+	setStateDir(t)
+	setRunDir(t)
+	path := addWorktree(t, l, "feature")
+	if err := writeIsolatedDatabaseEnv(path, DBName("feature")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WithConfigLock(func(c *Config) error {
+		c.Worktrees["feature"] = WorktreeMeta{Slot: 99, Path: path, DatabaseDeferred: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	capture := stubModeDBCommands(t)
+	held, release := make(chan struct{}), make(chan struct{})
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- WithWorkspaceLock("database:feature", func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	select {
+	case <-held:
+	case err := <-holderDone:
+		t.Fatalf("acquire test lock: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("test lock was never acquired")
+	}
+	var workers sync.WaitGroup
+	defer func() {
+		close(release)
+		workers.Wait()
+		if err := <-holderDone; err != nil {
+			t.Errorf("release test lock: %v", err)
+		}
+	}()
+	type completion struct {
+		operation string
+		err       error
+	}
+	finished := make(chan completion, 4)
+	operations := map[string]func() error{
+		"create": func() error {
+			return runDressBlocking(l, DressPlan{Name: "feature", Worktree: path, DatabaseMode: DatabaseModeNone})
+		},
+		"provision": func() error { return l.ProvisionDatabase("feature", DatabaseModeEmpty, false, nil) },
+		"wash": func() error {
+			return l.RunWashBlocking(WashPlan{Name: "feature", WorktreePath: path, ExpectedHead: "must-not-remove"})
+		},
+		"reconcile": func() error { return l.ReconcileOrphan(OrphanCandidate{Name: "feature", Path: path}, nil) },
+	}
+	for name, run := range operations {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			finished <- completion{name, run()}
+		}()
+	}
+	for range operations {
+		select {
+		case result := <-finished:
+			if result.err == nil || !strings.Contains(result.err.Error(), "busy") {
+				t.Errorf("%s bypassed the held lifecycle lock: %v", result.operation, result.err)
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatal("operation did not report lock contention")
+		}
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := cfg.Worktrees["feature"]
+	if !meta.DatabaseDeferred || meta.CleanupPending || meta.DatabaseName != "" || readCapture(t, capture) != "" {
+		t.Fatalf("contended operation changed ownership: %+v calls=%q", meta, readCapture(t, capture))
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("contended cleanup removed worktree: %v", err)
 	}
 }

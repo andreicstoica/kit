@@ -38,6 +38,26 @@ func mkDesignModel(width int) *designModel {
 	}
 }
 
+func TestDesignDatabaseChoice(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		copy      bool
+		mode      string
+		allowDump bool
+	}{
+		{name: "skip", mode: liftoff.DatabaseModeShared},
+		{name: "copy", copy: true, mode: liftoff.DatabaseModeCopy, allowDump: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &designModel{answers: &designAnswers{name: "feature", cloneDB: tc.copy}}
+			plan := model.plan()
+			if plan.DatabaseMode != tc.mode || plan.AllowPGDump != tc.allowDump {
+				t.Fatalf("wizard choice produced db=%q allow-dump=%v", plan.DatabaseMode, plan.AllowPGDump)
+			}
+		})
+	}
+}
+
 func TestOrbNotClipped(t *testing.T) {
 	for _, w := range []int{120, 140, 100, 70} {
 		m := mkDesignModel(w)

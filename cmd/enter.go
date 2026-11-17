@@ -50,16 +50,32 @@ changing directory, starting fx, or modifying kit state.`,
 			}
 
 			layout := liftoff.DefaultLayout()
-			name, err := resolveArgOrCwd(layout, args)
+			cfg, err := liftoff.LoadConfig()
 			if err != nil {
 				return err
+			}
+			var name string
+			if len(args) == 1 {
+				if _, ok := cfg.Worktrees[args[0]]; ok && filepath.Base(args[0]) == args[0] && args[0] != "." && args[0] != ".." {
+					name = args[0]
+				}
+			}
+			if name == "" {
+				name, err = resolveArgOrCwd(layout, args)
+				if err != nil {
+					return err
+				}
 			}
 			if name == "" {
 				return fmt.Errorf("specify a worktree name or run kit enter inside a kit worktree")
 			}
-			path, err := layout.ResolveWorktreePath(name)
-			if err != nil {
-				return err
+			meta := cfg.Worktrees[name]
+			path := meta.Path
+			if name == "master" || path == "" {
+				path, err = layout.ResolveWorktreePath(name)
+				if err != nil {
+					return err
+				}
 			}
 			path, err = filepath.Abs(path)
 			if err != nil {
@@ -72,8 +88,11 @@ changing directory, starting fx, or modifying kit state.`,
 			if !info.IsDir() {
 				return fmt.Errorf("worktree path is not a directory: %s", path)
 			}
+			if err := layout.VerifyGitCheckout(name, path, meta.Branch); err != nil {
+				return err
+			}
 			if printOnly {
-				_, err := fmt.Fprintf(cmd.OutOrStdout(), "cd -- %s && fx --resume %s\n", enterShellQuote(path), enterShellQuote(session))
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "cd -- %s && fx --resume %s\n", liftoff.ShellQuote(path), liftoff.ShellQuote(session))
 				return err
 			}
 			return execFXInWorktree(path, session, replaceProcess)
@@ -131,10 +150,6 @@ func execFXInWorktree(path, session string, replaceProcess func(string, []string
 		return fmt.Errorf("resume fx session: %w", err)
 	}
 	return nil
-}
-
-func enterShellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func init() {

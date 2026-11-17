@@ -45,25 +45,27 @@ type CleanupIntent struct {
 
 // WorktreeMeta is the persisted record for one worktree in config.toml.
 type WorktreeMeta struct {
-	Slot             int            `toml:"slot"`
-	Created          time.Time      `toml:"created"`
-	LastUsed         time.Time      `toml:"last_used"`
-	Branch           string         `toml:"branch,omitempty"`        // actual git branch (may differ from key)
-	Path             string         `toml:"path,omitempty"`          // worktree path (for adoption troubleshooting)
-	Adopted          bool           `toml:"adopted,omitempty"`       // true when added via kit adopt (vs kit design)
-	DatabaseName     string         `toml:"database_name,omitempty"` // exact Kit-owned DB; retained during partial cleanup
-	DatabaseDeferred bool           `toml:"database_deferred,omitempty"`
-	HerdrSpace       string         `toml:"space,omitempty"` // durable Herdr workspace label
-	HerdrID          string         `toml:"herdr_workspace_id,omitempty"`
-	HerdrLayout      string         `toml:"layout,omitempty"`
-	RexID            string         `toml:"rex_session_id,omitempty"`
-	RexLayout        string         `toml:"rex_layout,omitempty"`
-	RexShellWindow   string         `toml:"rex_shell_window_id,omitempty"`
-	LastOpened       time.Time      `toml:"last_opened,omitempty"`
-	PreferredAgents  []string       `toml:"preferred_agents,omitempty"`
-	Cleanup          *CleanupIntent `toml:"cleanup,omitempty"`
-	CleanupPending   bool           `toml:"cleanup_pending,omitempty"`
-	Parked           bool           `toml:"parked,omitempty"`
+	Slot                 int                   `toml:"slot"`
+	Created              time.Time             `toml:"created"`
+	LastUsed             time.Time             `toml:"last_used"`
+	Branch               string                `toml:"branch,omitempty"`        // actual git branch (may differ from key)
+	Path                 string                `toml:"path,omitempty"`          // worktree path (for adoption troubleshooting)
+	Adopted              bool                  `toml:"adopted,omitempty"`       // true when added via kit adopt (vs kit design)
+	DatabaseName         string                `toml:"database_name,omitempty"` // exact Kit-owned DB; retained during partial cleanup
+	DatabaseDeferred     bool                  `toml:"database_deferred,omitempty"`
+	DatabaseIdentity     *DatabaseIdentity     `toml:"database_identity,omitempty"`
+	DatabaseCreateIntent *DatabaseCreateIntent `toml:"database_create_intent,omitempty"`
+	HerdrSpace           string                `toml:"space,omitempty"` // durable Herdr workspace label
+	HerdrID              string                `toml:"herdr_workspace_id,omitempty"`
+	HerdrLayout          string                `toml:"layout,omitempty"`
+	RexID                string                `toml:"rex_session_id,omitempty"`
+	RexLayout            string                `toml:"rex_layout,omitempty"`
+	RexShellWindow       string                `toml:"rex_shell_window_id,omitempty"`
+	LastOpened           time.Time             `toml:"last_opened,omitempty"`
+	PreferredAgents      []string              `toml:"preferred_agents,omitempty"`
+	Cleanup              *CleanupIntent        `toml:"cleanup,omitempty"`
+	CleanupPending       bool                  `toml:"cleanup_pending,omitempty"`
+	Parked               bool                  `toml:"parked,omitempty"`
 }
 
 // HerdrLayout describes the tabs Kit materializes inside a Herdr workspace.

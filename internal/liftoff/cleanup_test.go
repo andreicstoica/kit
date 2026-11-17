@@ -460,6 +460,12 @@ func TestReconcilePreservesResourcesExcludedFromFailedWash(t *testing.T) {
 	if _, err := l.WriteGtab(name, path); err != nil {
 		t.Fatal(err)
 	}
+	if err := WithConfigLock(func(c *Config) error {
+		c.Worktrees[name] = WorktreeMeta{DatabaseName: DBName(name), DatabaseIdentity: &DatabaseIdentity{ClusterID: "12345", OID: 42}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := markCleanupPending(WashPlan{Name: name, Branch: name, WorktreePath: path}); err != nil {
 		t.Fatal(err)
 	}

@@ -3,32 +3,65 @@ package liftoff
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// DressPlan captures every choice for a `kit design` run.
-// (The struct name predates the command rename from `dress` → `design`;
-// kept as-is to minimize churn in internal call sites.)
 type DressPlan struct {
 	Name            string
 	Worktree        string
-	CloneDB         bool
 	DatabaseMode    string
 	AllowPGDump     bool
 	BackendDeps     bool
-	SymlinkFrontend bool // symlink frontend node_modules from master
+	SymlinkFrontend bool
 	GraphiteTrack   bool
 	Gtab            bool
-	OverwriteEnvs   bool // force overwrite if env files already exist in worktree
 	CheckoutBackend string
-
-	// Result fields populated after RunDress completes successfully.
-	AllocatedSlot int
 }
 
-// StepStatus is the lifecycle of one step.
+func (p DressPlan) Validate() error {
+	if err := validateDatabaseOptions(p.DatabaseMode, p.AllowPGDump); err != nil {
+		return err
+	}
+	if p.DatabaseMode == DatabaseModeShared {
+		if err := Validate(p.Name); err != nil {
+			return err
+		}
+	} else if err := validateDatabaseName(p.Name); err != nil {
+		return err
+	}
+	return validateCheckoutBackendName(p.CheckoutBackend)
+}
+
+func (l Layout) ValidateNewWorkspace(p DressPlan) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	if !l.MasterIsRepo() {
+		return fmt.Errorf("master repo not found at %s (set KIT_ROOT/KIT_MASTER_DIR)", l.Master)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	if _, exists := cfg.Worktrees[p.Name]; exists {
+		return fmt.Errorf("workspace %s is already registered; inspect kit lineup or kit reconcile before retrying", p.Name)
+	}
+	for _, path := range []string{p.Worktree, l.LegacyWorktreePath(p.Name)} {
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("worktree path already exists: %s", path)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if p.DatabaseMode != DatabaseModeShared {
+		return cfg.validateDatabaseOwner(p.Name)
+	}
+	return nil
+}
+
 type StepStatus int
 
 const (
@@ -55,7 +88,6 @@ func (s StepStatus) String() string {
 	return "?"
 }
 
-// StepUpdate is one event from the runner.
 type StepUpdate struct {
 	Index   int
 	Title   string
@@ -84,17 +116,11 @@ type step struct {
 	kind  string
 }
 
-// PlanSteps returns the ordered step list, including skipped ones (for display).
 func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 	dbName := DBName(p.Name)
-	createDB := p.CloneDB
-	copyDB := p.CloneDB
-	updateDB := p.CloneDB
-	if p.DatabaseMode != "" {
-		createDB = p.DatabaseMode != DatabaseModeNone
-		copyDB = p.DatabaseMode == DatabaseModeCopy
-		updateDB = true
-	}
+	createDB := p.DatabaseMode == DatabaseModeEmpty || p.DatabaseMode == DatabaseModeCopy
+	copyDB := p.DatabaseMode == DatabaseModeCopy
+	updateDB := p.DatabaseMode != DatabaseModeShared
 	templated := false // set by the create step, read by the clone step that follows it
 	return []step{
 		{
@@ -115,7 +141,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			title: "copy env files (root, backend, frontend/app, frontend/admin)",
 			phase: phasePrefix,
 			run: func(emit func(string)) error {
-				_, _, err := l.CopyEnvFiles(l.Master, p.Worktree, p.OverwriteEnvs, emit)
+				_, _, err := l.CopyEnvFiles(l.Master, p.Worktree, false, emit)
 				return err
 			},
 		},
@@ -124,22 +150,9 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			phase: phaseDB, kind: "db-create",
 			skip: !createDB,
 			run: func(emit func(string)) error {
-				if p.DatabaseMode != "" {
-					var err error
-					templated, err = createDatabase(dbName, p.DatabaseMode, p.AllowPGDump, emit)
-					return err
-				}
-				if cloneByTemplate {
-					copied, err := CreateDBFromTemplate(dbName, "liftoff", emit)
-					if err != nil {
-						return err
-					}
-					if copied {
-						templated = true
-						return nil
-					}
-				}
-				return CreateDB(dbName, emit)
+				var err error
+				templated, err = createOwnedDatabase(p.Name, p.DatabaseMode, p.AllowPGDump, emit)
+				return err
 			},
 		},
 		{
@@ -159,9 +172,6 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			phase: phaseDB,
 			skip:  !updateDB,
 			run: func(emit func(string)) error {
-				if p.DatabaseMode == "" {
-					return l.UpdateBackendDBName(p.Worktree, dbName)
-				}
 				if err := writeIsolatedDatabaseEnv(p.Worktree, dbName); err != nil {
 					return err
 				}
@@ -284,7 +294,6 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 	}
 }
 
-// StepTitles returns just the titles for preview before run.
 func (l Layout) StepTitles(p DressPlan) []string {
 	steps := l.planSteps(p, nil)
 	out := make([]string, 0, len(steps))
@@ -300,10 +309,8 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 	ch := make(chan StepUpdate, 64)
 	go func() {
 		defer close(ch)
-		if err := WithWorkspaceLock("database:"+p.Name, func() error {
-			for update := range l.runDress(p) {
-				ch <- update
-			}
+		if err := WithWorkspaceLock(databaseLockNamespace+p.Name, func() error {
+			l.runDress(p, ch)
 			return nil
 		}); err != nil {
 			ch <- StepUpdate{Title: "lock workspace database", Status: StepFailed, Err: err}
@@ -312,242 +319,214 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 	return ch
 }
 
-func (l Layout) runDress(p DressPlan) <-chan StepUpdate {
-	ch := make(chan StepUpdate, 64)
+func (l Layout) runDress(p DressPlan, ch chan<- StepUpdate) {
+	var slot int
+	worktreeAdded := false
+	dbCreated := false
+	gtabWritten := false
+	steps := l.planSteps(p, &slot)
+	if err := l.ValidateNewWorkspace(p); err != nil {
+		ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: err}
+		return
+	}
+	if err := ValidateCheckoutBackend(p.CheckoutBackend); err != nil {
+		ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: err}
+		return
+	}
+
+	type pResult struct {
+		index   int
+		err     error
+		elapsed time.Duration
+	}
+	var wg sync.WaitGroup
+	var dbResult pResult
+
+	// The database chain (create, clone) needs neither the fetch nor the
+	// checkout, so it starts now. Only the backend DB-name update edits
+	// files in the checkout and waits for steps 0-2. Every failure path
+	// joins this goroutine before rollback so dbCreated is settled.
+	prefixDone := make(chan struct{})
+	prefixOK := false
+	var abort atomic.Bool
+	wg.Add(1)
 	go func() {
-		defer close(ch)
-		var slot int
-		worktreeAdded := false
-		dbCreated := false
-		gtabWritten := false
-		// Snapshot any pre-existing record so a fully successful rollback
-		// restores it instead of deleting a record this run did not create.
-		var priorMeta WorktreeMeta
-		hadRecord := false
-		if cfg, err := LoadConfig(); err == nil {
-			priorMeta, hadRecord = cfg.Worktrees[p.Name]
-		}
-		steps := l.planSteps(p, &slot)
-		if err := validateDatabaseOptions(p.DatabaseMode, p.AllowPGDump); err != nil {
-			ch <- StepUpdate{Index: 3, Title: steps[3].title, Status: StepFailed, Err: err}
-			return
-		}
-		if p.DatabaseMode != "" {
-			cfg, err := LoadConfig()
-			if err != nil {
-				ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: err}
-				return
-			}
-			if _, exists := cfg.Worktrees[p.Name]; exists {
-				ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: fmt.Errorf("workspace %s is already registered; refusing to overwrite it", p.Name)}
-				return
-			}
-			if err := validateDatabaseOwner(p.Name); err != nil {
-				ch <- StepUpdate{Index: 3, Title: steps[3].title, Status: StepFailed, Err: err}
-				return
-			}
-		}
-		if err := ValidateCheckoutBackend(p.CheckoutBackend); err != nil {
-			ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: err}
-			return
-		}
-
-		type pResult struct {
-			index   int
-			err     error
-			elapsed time.Duration
-		}
-		var wg sync.WaitGroup
-		var dbResult pResult
-
-		// The database chain (create, clone) needs neither the fetch nor the
-		// checkout, so it starts now. Only the backend DB-name update edits
-		// files in the checkout and waits for steps 0-2. Every failure path
-		// joins this goroutine before rollback so dbCreated is settled.
-		prefixDone := make(chan struct{})
-		prefixOK := false
-		var abort atomic.Bool
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var dbSteps []int
-			for i, s := range steps {
-				if s.phase == phaseDB {
-					dbSteps = append(dbSteps, i)
-				}
-			}
-			for pos, i := range dbSteps {
-				s := steps[i]
-				if s.skip {
-					ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
-					continue
-				}
-				if pos < len(dbSteps)-1 && abort.Load() {
-					return
-				}
-				if pos == len(dbSteps)-1 {
-					<-prefixDone
-					if !prefixOK {
-						return
-					}
-				}
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
-				start := time.Now()
-				err := s.run(func(line string) { ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line} })
-				if err == nil && s.kind == "db-create" {
-					dbCreated = true
-					err = persistDressDatabase(p)
-				}
-				elapsed := time.Since(start)
-				if err != nil {
-					dbResult = pResult{index: i, err: err, elapsed: elapsed}
-					ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
-					return
-				}
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed}
-			}
-		}()
-
+		defer wg.Done()
+		var dbSteps []int
 		for i, s := range steps {
-			if s.phase != phasePrefix {
-				continue
+			if s.phase == phaseDB {
+				dbSteps = append(dbSteps, i)
 			}
+		}
+		for pos, i := range dbSteps {
+			s := steps[i]
 			if s.skip {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
 				continue
 			}
+			if pos < len(dbSteps)-1 && abort.Load() {
+				return
+			}
+			if pos == len(dbSteps)-1 {
+				<-prefixDone
+				if !prefixOK {
+					return
+				}
+			}
 			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
 			start := time.Now()
-			emit := func(line string) {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+			err := s.run(func(line string) { ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line} })
+			if err == nil && s.kind == "db-create" {
+				dbCreated = true
 			}
-			err := s.run(emit)
 			elapsed := time.Since(start)
-			if err == nil && s.kind == "worktree" {
-				worktreeAdded = true
-				err = persistDressCheckout(p)
-			}
 			if err != nil {
+				dbResult = pResult{index: i, err: err, elapsed: elapsed}
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
-				abort.Store(true)
-				close(prefixDone)
-				wg.Wait()
-				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
-					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
-				})
-				var twigErr *twigCreateError
-				if errors.As(err, &twigErr) && twigErr.partial {
-					// Twig can register before failing. Keep that checkout and its
-					// diagnostic staging outside automatic rollback.
-					if recoveryErr := WithConfigLock(func(c *Config) error {
-						meta := c.Worktrees[p.Name]
-						meta.Path = p.Worktree
-						meta.Branch = p.Name
-						meta.CleanupPending = true
-						c.Worktrees[p.Name] = meta
-						return nil
-					}); recoveryErr != nil {
-						ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: errors.Join(err, fmt.Errorf("save partial checkout recovery: %w", recoveryErr))}
-					}
-				}
 				return
 			}
 			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed}
 		}
-		prefixOK = true
-		close(prefixDone)
+	}()
 
-		// Dependency installation, frontend links, Graphite and gtab need only
-		// the checkout. Run them alongside the rest of the DB chain, then join
-		// every branch before rollback or slot allocation. No rollback may
-		// delete files a sibling is still using.
-		var parallelIdx []int
-		for i, s := range steps {
-			if s.phase == phaseParallel {
-				parallelIdx = append(parallelIdx, i)
-			}
+	for i, s := range steps {
+		if s.phase != phasePrefix {
+			continue
 		}
-		results := make([]pResult, len(parallelIdx))
-		for idx, i := range parallelIdx {
-			s := steps[i]
-			if s.skip {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
-				results[idx] = pResult{index: i}
-				continue
-			}
-			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
-			wg.Add(1)
-			go func(i int, s step, idx int) {
-				defer wg.Done()
-				start := time.Now()
-				emit := func(line string) {
-					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
-				}
-				err := s.run(emit)
-				results[idx] = pResult{index: i, err: err, elapsed: time.Since(start)}
-				status := StepDone
-				if err != nil {
-					status = StepFailed
-				}
-				ch <- StepUpdate{Index: i, Title: s.title, Status: status, Err: err, Elapsed: results[idx].elapsed}
-			}(i, s, idx)
+		if s.skip {
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
+			continue
 		}
-		wg.Wait()
-
-		// All branches have joined. Mark every resource success first: a
-		// failure must still roll back a sibling step that succeeded in the
-		// same batch (notably a written gtab file), not abort on the first
-		// error in index order and leak the later success.
-		for _, r := range results {
-			if r.err == nil && !steps[r.index].skip && steps[r.index].kind == "gtab" {
-				gtabWritten = true
-			}
+		ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
+		start := time.Now()
+		emit := func(line string) {
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
 		}
-		if dbResult.err != nil {
-			l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
-				ch <- StepUpdate{Index: dbResult.index, Title: steps[dbResult.index].title, Status: StepRunning, Line: line}
+		err := s.run(emit)
+		elapsed := time.Since(start)
+		if err == nil && s.kind == "worktree" {
+			worktreeAdded = true
+			err = persistDressCheckout(p)
+		}
+		if err != nil {
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
+			abort.Store(true)
+			close(prefixDone)
+			wg.Wait()
+			l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, func(line string) {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
 			})
+			var twigErr *twigCreateError
+			if errors.As(err, &twigErr) && twigErr.partial {
+				// Twig can register before failing. Keep that checkout and its
+				// diagnostic staging outside automatic rollback.
+				if recoveryErr := WithConfigLock(func(c *Config) error {
+					meta := c.Worktrees[p.Name]
+					meta.Path = p.Worktree
+					meta.Branch = p.Name
+					meta.CleanupPending = true
+					c.Worktrees[p.Name] = meta
+					return nil
+				}); recoveryErr != nil {
+					ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: errors.Join(err, fmt.Errorf("save partial checkout recovery: %w", recoveryErr))}
+				}
+			}
 			return
 		}
-		for _, r := range results {
-			s := steps[r.index]
-			if r.err != nil {
-				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
-					ch <- StepUpdate{Index: r.index, Title: s.title, Status: StepRunning, Line: line}
-				})
-				return
-			}
-		}
+		ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed}
+	}
+	prefixOK = true
+	close(prefixDone)
 
-		for i, s := range steps {
-			if s.phase != phaseTail {
-				continue
-			}
-			if s.skip {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
-				continue
-			}
-			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
+	// Dependency installation, frontend links, Graphite and gtab need only
+	// the checkout. Run them alongside the rest of the DB chain, then join
+	// every branch before rollback or slot allocation. No rollback may
+	// delete files a sibling is still using.
+	var parallelIdx []int
+	for i, s := range steps {
+		if s.phase == phaseParallel {
+			parallelIdx = append(parallelIdx, i)
+		}
+	}
+	results := make([]pResult, len(parallelIdx))
+	for idx, i := range parallelIdx {
+		s := steps[i]
+		if s.skip {
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
+			results[idx] = pResult{index: i}
+			continue
+		}
+		ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
+		wg.Add(1)
+		go func(i int, s step, idx int) {
+			defer wg.Done()
 			start := time.Now()
 			emit := func(line string) {
 				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
 			}
 			err := s.run(emit)
-			elapsed := time.Since(start)
+			results[idx] = pResult{index: i, err: err, elapsed: time.Since(start)}
+			status := StepDone
 			if err != nil {
-				ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
-				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
-					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
-				})
-				return
+				status = StepFailed
 			}
-			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed, AllocatedSlot: slot}
+			ch <- StepUpdate{Index: i, Title: s.title, Status: status, Err: err, Elapsed: results[idx].elapsed}
+		}(i, s, idx)
+	}
+	wg.Wait()
+
+	// All branches have joined. Mark every resource success first: a
+	// failure must still roll back a sibling step that succeeded in the
+	// same batch (notably a written gtab file), not abort on the first
+	// error in index order and leak the later success.
+	for _, r := range results {
+		if r.err == nil && !steps[r.index].skip && steps[r.index].kind == "gtab" {
+			gtabWritten = true
 		}
-	}()
-	return ch
+	}
+	if dbResult.err != nil {
+		l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, func(line string) {
+			ch <- StepUpdate{Index: dbResult.index, Title: steps[dbResult.index].title, Status: StepRunning, Line: line}
+		})
+		return
+	}
+	for _, r := range results {
+		s := steps[r.index]
+		if r.err != nil {
+			l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, func(line string) {
+				ch <- StepUpdate{Index: r.index, Title: s.title, Status: StepRunning, Line: line}
+			})
+			return
+		}
+	}
+
+	for i, s := range steps {
+		if s.phase != phaseTail {
+			continue
+		}
+		if s.skip {
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepSkipped}
+			continue
+		}
+		ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning}
+		start := time.Now()
+		emit := func(line string) {
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+		}
+		err := s.run(emit)
+		elapsed := time.Since(start)
+		if err != nil {
+			ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: err, Elapsed: elapsed}
+			l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, func(line string) {
+				ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
+			})
+			return
+		}
+		ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed, AllocatedSlot: slot}
+	}
 }
 
-func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten bool, priorMeta WorktreeMeta, hadRecord bool, emit func(string)) {
+func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten bool, emit func(string)) {
 	failed := false
 	cleanup := func(label string, fn func() error) {
 		if err := fn(); err != nil {
@@ -558,12 +537,25 @@ func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten
 		emit("cleaned " + label)
 	}
 
-	// Prefer the exact persisted database name: the run recorded ownership
-	// right after createdb, before any clone ran.
 	dbName := DBName(p.Name)
 	if cfg, err := LoadConfig(); err == nil {
-		if m, ok := cfg.Worktrees[p.Name]; ok && m.DatabaseName != "" {
-			dbName = m.DatabaseName
+		meta := cfg.Worktrees[p.Name]
+		if meta.DatabaseCreateIntent != nil {
+			emit(uncertainDatabaseCreation(p.Name).Error())
+			if err := WithConfigLock(func(c *Config) error {
+				meta := c.Worktrees[p.Name]
+				meta.CleanupPending = true
+				meta.Path = p.Worktree
+				meta.Branch = p.Name
+				c.Worktrees[p.Name] = meta
+				return nil
+			}); err != nil {
+				emit("failed to retain database recovery state: " + err.Error())
+			}
+			return
+		}
+		if meta.DatabaseName != "" {
+			dbName = meta.DatabaseName
 		}
 	}
 
@@ -574,7 +566,7 @@ func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten
 		cleanup("run directory", func() error { return RemoveRunDir(p.Name) })
 	}
 	if dbCreated {
-		cleanup("database "+dbName, func() error { return DropDB(dbName, nil) })
+		cleanup("database "+dbName, func() error { return dropOwnedDatabase(p.Name, dbName, nil) })
 	}
 	if worktreeAdded {
 		cleanup("worktree", func() error { return l.RemoveWorktree(p.Worktree, nil) })
@@ -594,9 +586,6 @@ func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten
 			if meta.Path == "" {
 				meta.Path = p.Worktree
 			}
-			if meta.DatabaseName == "" && dbCreated {
-				meta.DatabaseName = dbName
-			}
 			c.Worktrees[p.Name] = meta
 			return nil
 		}); err != nil {
@@ -606,14 +595,8 @@ func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten
 		}
 		return
 	}
-	// Fully rolled back: remove only the progressive traces this run wrote,
-	// restoring any record that predates the run.
 	if err := WithConfigLock(func(c *Config) error {
-		if hadRecord {
-			c.Worktrees[p.Name] = priorMeta
-		} else {
-			c.FreeSlot(p.Name)
-		}
+		c.FreeSlot(p.Name)
 		return nil
 	}); err != nil {
 		emit(fmt.Sprintf("failed to restore config after rollback: %v", err))
@@ -626,26 +609,12 @@ func (l Layout) rollbackDress(p DressPlan, worktreeAdded, dbCreated, gtabWritten
 func persistDressCheckout(p DressPlan) error {
 	return WithConfigLock(func(c *Config) error {
 		meta := c.Worktrees[p.Name]
+		meta.DatabaseDeferred = p.DatabaseMode != DatabaseModeShared
 		if meta.Path == "" {
 			meta.Path = p.Worktree
 		}
 		if meta.Branch == "" {
 			meta.Branch = p.Name
-		}
-		c.Worktrees[p.Name] = meta
-		return nil
-	})
-}
-
-// persistDressDatabase records exact database ownership right after `createdb`
-// succeeds and before any clone runs, so a clone or rollback failure can
-// still identify the database this run created.
-func persistDressDatabase(p DressPlan) error {
-	dbName := DBName(p.Name)
-	return WithConfigLock(func(c *Config) error {
-		meta := c.Worktrees[p.Name]
-		if meta.DatabaseName == "" {
-			meta.DatabaseName = dbName
 		}
 		c.Worktrees[p.Name] = meta
 		return nil

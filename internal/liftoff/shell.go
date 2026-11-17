@@ -3,6 +3,7 @@ package liftoff
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // This file centralizes "where does PATH wiring go" so setup and doctor agree.
@@ -86,4 +87,9 @@ func DirOnPath(dir string) bool {
 // in both bash and zsh, so the same line works regardless of detected shell.
 func PathExportLine(dir string) string {
 	return `export PATH="` + dir + `:$PATH"`
+}
+
+// ShellQuote encodes one POSIX shell argument.
+func ShellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

@@ -331,8 +331,9 @@ launches another agent, starts services, or installs backend packages unless
 `--backend-deps` is set. Frontend dependencies are reused by default; Graphite
 tracking defaults to whether `gt` is installed. Pass `--graphite=false` or
 `--symlink-frontend=false` when the task needs a different setup. Non-terminal
-calls automatically use this mode and require a name. `--json`, `--dry-run`, or
-explicit setup flags also bypass the wizard in a terminal.
+calls automatically use this mode and require a name. `--json`, `--dry-run`,
+`--db`, `--allow-pg-dump`, `--backend-deps`, `--symlink-frontend`, and
+`--graphite` also bypass the wizard in a terminal.
 
 | Database mode | Use when | Behavior |
 |---|---|---|
@@ -352,6 +353,12 @@ kit db login-fix --mode empty
 # Or, only when existing local data is necessary:
 kit db login-fix --mode copy
 ```
+
+Creating a private database requires a PostgreSQL role that can create databases
+and execute `pg_catalog.pg_control_system()`. An administrator can grant that
+function to the development role in the `postgres` database. Kit uses the
+cluster identifier and database OID to refuse cleanup on a different cluster or
+against a replacement database.
 
 An empty DB has no schema or fixtures. Run migrations from the new worktree's
 `backend/` with its own environment, not `kit sync` (which migrates master).
@@ -376,6 +383,41 @@ find the session ID. An agent tool can use `--print` to return the quoted handof
 command without launching anything. Live in-process relocation and transfers
 for other agent clients are not implemented. See the
 [fx session documentation](https://fx.sh/docs/using-fx/sessions.md).
+
+### Launch a fresh agent in Rex
+
+When you want a new thread instead of a transfer, an agent can start one in an
+existing worktree:
+
+```sh
+kit agent launch login-fix --brief /tmp/login-fix-brief.md
+kit agent launch login-fix --harness codex --model gpt-5.4 --prompt 'Check the login redirect tests'
+printf '%s\n' "$BRIEF" | kit agent launch login-fix --harness fx --brief - --json
+```
+
+Kit opens a fresh agent window in the worktree's Rex session and selects it.
+The calling agent keeps running. Claude Code with Opus is the default.
+Choose `--harness claude`, `fx`, `codex`, or `opencode`. fx and Codex use
+their configured model unless you pass `--model`. OpenCode uses its configured
+model and does not accept `--model`. Omit both `--brief` and `--prompt` to open
+an empty thread. JSON output reports the harness and model override; an empty
+`model` means Kit left model selection to the harness.
+
+- The worktree must already exist in Kit and must not be parked, pending
+  cleanup, `master`, or a symlinked path. Launch never creates worktrees,
+  databases, or services; run `kit design` first.
+- A live mapped session is reused without adding layout tabs. Without one, Kit
+  creates the session with the `default` layout, which starts no agent.
+- Kit runs the selected harness directly through Rex (no shell) with an absolute path
+  and never passes a permission-bypass flag.
+- The brief is at most 32 KiB of UTF-8 text, must not start with `-`, and is
+  never printed by Kit, but is visible in process arguments. Do not pass secrets.
+  Control characters other than tab, newline, and carriage
+  return are refused.
+- Exit 0 means the agent window opened. If Rex could not select it, the command
+  still exits 0 with a warning (`"focused": false` in JSON); select the `agent`
+  window in the Rex app. An error that says Kit could not confirm the launch
+  means a window may exist. Check the session before you launch again.
 
 ## What `kit design` does
 

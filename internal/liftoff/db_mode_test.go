@@ -13,6 +13,7 @@ import (
 func stubModeDBCommands(t *testing.T) string {
 	t.Helper()
 	bin := t.TempDir()
+	setupFakeDatabaseIdentity(t)
 	capture := filepath.Join(t.TempDir(), "calls")
 	t.Setenv("DB_MODE_CALLS", capture)
 	t.Setenv("DB_TEMPLATE_FAIL", "")
@@ -30,10 +31,10 @@ case "$*" in
     fi
     ;;
 esac
+printf '42\n' > "$DB_IDENTITY_DIR/$1"
 exit 0
 `)
-	writeExecutable(t, filepath.Join(bin, "psql"), `#!/bin/sh
-printf 'psql %s\n' "$*" >> "$DB_MODE_CALLS"
+	writeExecutable(t, filepath.Join(bin, "psql"), "#!/bin/sh\nprintf 'psql %s\\n' \"$*\" >> \"$DB_MODE_CALLS\"\n"+fakeDatabaseIdentityPSQL+`
 if [ "$2" = postgres ]; then
   printf '%s\n' "$DB_EXISTS"
 else
@@ -51,6 +52,7 @@ printf 'fake SQL\n'
 	writeExecutable(t, filepath.Join(bin, "dropdb"), `#!/bin/sh
 printf 'dropdb %s\n' "$*" >> "$DB_MODE_CALLS"
 if [ "$DB_DROP_FAIL" = 1 ]; then exit 1; fi
+rm -f "$DB_IDENTITY_DIR/$2"
 `)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return capture
@@ -87,7 +89,7 @@ func TestRunDressExplicitDatabaseModes(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if err := runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, DatabaseMode: mode, CloneDB: true}); err != nil {
+				if err := runDressBlocking(l, DressPlan{Name: "fdb", Worktree: path, DatabaseMode: mode}); err != nil {
 					t.Fatal(err)
 				}
 				name, found, err := DBNameFromEnv(path)
@@ -183,12 +185,25 @@ func TestProvisionDatabaseModes(t *testing.T) {
 	}
 }
 
-func TestProvisionDatabaseRefusesExistingOrSharedTargets(t *testing.T) {
-	for _, condition := range []string{"owned", "shared-env", "existing-db", "not-deferred", "cleanup-pending", "claimed-by-other", "unknown-db-state"} {
+func TestProvisionDatabaseRefusesUnsafeTargets(t *testing.T) {
+	for _, condition := range []string{"owned", "shared-env", "existing-db", "not-deferred", "cleanup-pending", "claimed-by-other", "unknown-db-state", "identifier-overflow"} {
 		t.Run(condition, func(t *testing.T) {
 			l := deferredDatabaseLayout(t)
 			capture := stubModeDBCommands(t)
+			name := "feature"
 			switch condition {
+			case "identifier-overflow":
+				name = strings.Repeat("a", 56)
+				if err := writeIsolatedDatabaseEnv(l.WorktreePath("feature"), DBName(name)); err != nil {
+					t.Fatal(err)
+				}
+				if err := WithConfigLock(func(c *Config) error {
+					c.Worktrees[name] = c.Worktrees["feature"]
+					delete(c.Worktrees, "feature")
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
 			case "shared-env":
 				if err := writeIsolatedDatabaseEnv(l.WorktreePath("feature"), "liftoff"); err != nil {
 					t.Fatal(err)
@@ -218,8 +233,12 @@ func TestProvisionDatabaseRefusesExistingOrSharedTargets(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := l.ProvisionDatabase("feature", DatabaseModeEmpty, false, nil); err == nil {
+			err := l.ProvisionDatabase(name, DatabaseModeEmpty, false, nil)
+			if err == nil {
 				t.Fatal("unsafe provision was accepted")
+			}
+			if condition == "identifier-overflow" && !strings.Contains(err.Error(), "too long") {
+				t.Fatalf("identifier overflow was not rejected at validation: %v", err)
 			}
 			calls := readCapture(t, capture)
 			if strings.Contains(calls, "createdb") || strings.Contains(calls, "dropdb") || strings.Contains(calls, "pg_dump") {
@@ -322,6 +341,21 @@ func TestRunPlayDeferredDatabaseAllowsFrontendOnly(t *testing.T) {
 	}
 }
 
+func TestNewWorkspaceDatabaseIsUnreadyUntilBound(t *testing.T) {
+	for _, mode := range []string{DatabaseModeShared, DatabaseModeNone, DatabaseModeEmpty, DatabaseModeCopy} {
+		t.Run(mode, func(t *testing.T) {
+			setStateDir(t)
+			plan := DressPlan{Name: "feature", Worktree: t.TempDir(), DatabaseMode: mode}
+			if err := persistDressCheckout(plan); err != nil {
+				t.Fatal(err)
+			}
+			if err := requireProvisionedDatabase("feature", []Service{SvcAPI}); (err != nil) != (mode != DatabaseModeShared) {
+				t.Fatalf("startup guard before env binding: %v", err)
+			}
+		})
+	}
+}
+
 func TestResolveCleanupDBDeferredNeverClaimsExistingTarget(t *testing.T) {
 	l := deferredDatabaseLayout(t)
 	capture := stubModeDBCommands(t)
@@ -353,23 +387,5 @@ func TestResolveCleanupDBDeferredRetainedOwnershipStillCleans(t *testing.T) {
 	db, skip, err := resolveCleanupDB("feature", l.WorktreePath("feature"))
 	if err != nil || skip || db != "liftoff_feature" {
 		t.Fatalf("retained owned DB not eligible for cleanup: db=%q skip=%v err=%v", db, skip, err)
-	}
-}
-
-func TestValidateDatabaseOptions(t *testing.T) {
-	for _, mode := range []string{"", DatabaseModeNone, DatabaseModeEmpty, DatabaseModeCopy} {
-		if err := ValidateDatabaseMode(mode); err != nil {
-			t.Fatalf("valid mode %q rejected: %v", mode, err)
-		}
-	}
-	if err := ValidateDatabaseMode("shared"); err == nil {
-		t.Fatal("unknown mode accepted")
-	}
-	if err := validateDatabaseOptions(DatabaseModeNone, true); err == nil {
-		t.Fatal("dump opt-in without copy accepted")
-	}
-	setStateDir(t)
-	if err := validateDatabaseOwner(strings.Repeat("a", 56)); err == nil {
-		t.Fatal("database name exceeding PostgreSQL's identifier limit accepted")
 	}
 }

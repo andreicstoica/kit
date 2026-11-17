@@ -1,6 +1,6 @@
 ---
 name: kit-kickoff
-description: Use when asked to implement, build, or fix a task in Liftoff, especially in a new workspace. Choose the right kit worktree and necessary resources, and safely hand off an existing fx thread.
+description: Use when asked to implement, build, or fix a task in Liftoff, especially in a new workspace. Choose the right kit worktree and necessary resources, safely hand off an existing fx thread, or, when the user wants it, launch a fresh Claude Code agent there.
 ---
 
 # Kit kickoff
@@ -41,8 +41,19 @@ For an actual existing-thread transfer, prefer a native runtime switch if this c
 
 End the current turn with the handoff instructions. The user must quit the original fx process **before** running `kit enter NAME --session FX_ID` in their terminal. That command resumes fx in the foreground. Never launch a second writer for the same thread or background the resumed agent. Do not call unprinted `kit enter` from the active agent.
 
+## Launch a fresh agent thread (only when authorized)
+
+Use this only when the user asks for a new agent in the worktree, or approves one when offered. It starts a **new** thread; it does not transfer or resume the current one. The current thread keeps running, so do not edit the same worktree from both threads.
+
+1. Create or choose the worktree first with the headless `kit design` path above, and add only the resources the task needs. `kit agent launch` never creates worktrees, databases, or services.
+2. Write a bounded brief (at most 32 KiB of UTF-8 text) with the goal, the verified worktree path, the chosen resources, constraints, and what is already done. Do not put secrets in it. It must not start with `-`.
+3. Run `kit agent launch NAME --brief FILE` (or `--brief -` to read stdin). Use `--harness` and `--model` if the user specifies a client or model. Kit defaults to Claude Code with Opus and supports `fx`, `codex`, and `opencode`. OpenCode uses its configured model. Kit sends the brief as the first prompt and selects the new window in Rex. Kit never passes a permission-bypass flag or prints the brief.
+4. Read the result. Exit 0 means the agent window opened. A warning that Rex did not select it means the window is still open: tell the user to select the `agent` window in the Rex app. An error that says Kit could not confirm the launch means a window may exist: ask the user to check the session before any retry. Other errors mean no window opened. Never launch twice for one brief without checking.
+
+Kit refuses parked or cleanup-pending worktrees, `master`, and unknown names. Fix the cause (for example `kit resume NAME`) instead of working around it.
+
 ## Startup and fallback
 
 - One-time installation is necessary for automatic discovery: `kit agent install` writes `~/.fx/skills/kit-kickoff/SKILL.md`. For another client, `kit agent install --path /absolute/client/skills/kit-kickoff` takes the complete skill directory. Reload/start the client to discover it. Do not install without the user's request; differing files require explicit `--force`.
-- Without installation, `kit agent` prints these instructions; read and follow them in the current thread. If kit or the required headless flags are missing, check `kit --version`, `kit design --help`, and `kit doctor`, then report the blocker or ask the user to update/setup kit. Do not substitute an interactive wizard, a raw worktree/database clone, or a second agent process.
+- Without installation, `kit agent` prints these instructions; read and follow them in the current thread. If kit or the required headless flags are missing, check `kit --version`, `kit design --help`, and `kit doctor`, then report the blocker or ask the user to update/setup kit. Do not substitute an interactive wizard, a raw worktree/database clone, or an unauthorized or hand-built agent process. The only allowed second agent is an authorized `kit agent launch`.
 - If native switching is unavailable or the session ID is unknown, continue using explicit cwd, or stop with the exact missing handoff step. Never claim a thread transfer happened without runtime evidence.

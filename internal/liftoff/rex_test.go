@@ -95,11 +95,21 @@ func TestFakeRexCLI(t *testing.T) {
 		data, _ := json.Marshal(state)
 		_, _ = os.Stdout.Write(append(data, '\n'))
 	case "client":
+		if os.Getenv("KIT_REX_NO_APP") == "1" {
+			_, _ = os.Stdout.WriteString(`{"clients":[]}`)
+			break
+		}
 		_, _ = os.Stdout.WriteString(`{"clients":[{"client_id":"client:test-app","info":{"kind":"app"}}]}`)
 	case "do":
+		if len(args) > 1 && args[1] == "session.select" && os.Getenv("KIT_REX_FAIL_SELECT") == "1" {
+			_, _ = os.Stderr.WriteString("remote control disabled")
+			os.Exit(1)
+		}
 		var tabs struct {
-			Name      string `json:"name"`
-			SessionID string `json:"session_id"`
+			Name      string   `json:"name"`
+			SessionID string   `json:"session_id"`
+			Label     string   `json:"label"`
+			Argv      []string `json:"argv"`
 			Tabs      []struct {
 				Label string `json:"label"`
 			} `json:"tabs"`
@@ -108,6 +118,33 @@ func TestFakeRexCLI(t *testing.T) {
 			if args[i] == "--args" && i+1 < len(args) {
 				_ = json.Unmarshal([]byte(args[i+1]), &tabs)
 			}
+		}
+		if len(tabs.Argv) > 0 {
+			if os.Getenv("KIT_REX_FAIL_AGENT") == "1" {
+				_, _ = os.Stderr.WriteString("injected failure echoing " + strings.Join(tabs.Argv, " "))
+				os.Exit(1)
+			}
+			windowID := "window:" + tabs.SessionID + ":agent"
+			for i := range state.Sessions {
+				if state.Sessions[i].SessionID == tabs.SessionID {
+					state.Sessions[i].Windows = append(state.Sessions[i].Windows, RexWindow{WindowID: windowID, Label: tabs.Label})
+					if os.Getenv("KIT_REX_AGENT_RESULT") == "timeout-ambiguous" {
+						// Another client opened a window at the same time.
+						state.Sessions[i].Windows = append(state.Sessions[i].Windows, RexWindow{WindowID: "window:concurrent"})
+					}
+				}
+			}
+			save()
+			switch os.Getenv("KIT_REX_AGENT_RESULT") {
+			case "timeout", "timeout-ambiguous":
+				_, _ = os.Stderr.WriteString("timed out")
+				os.Exit(1)
+			case "no-id":
+				_, _ = os.Stdout.WriteString("true\n")
+			default:
+				_, _ = os.Stdout.WriteString(`{"window_id":"` + windowID + `"}`)
+			}
+			os.Exit(0)
 		}
 		if tabs.Name != "" && len(tabs.Tabs) > 0 {
 			if os.Getenv("KIT_REX_DELAY_CREATE") == "1" {

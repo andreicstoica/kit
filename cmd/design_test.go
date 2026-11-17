@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,10 @@ func headlessDesignFixture(t *testing.T) liftoff.Layout {
 	layout := newSyncMasterRepo(t)
 	layout.Root = filepath.Dir(layout.Master)
 	layout.GtabDir = filepath.Join(t.TempDir(), "gtab")
+	t.Setenv("KIT_ROOT", layout.Root)
+	t.Setenv("KIT_MASTER_DIR", filepath.Base(layout.Master))
+	t.Setenv("KIT_MAIN_BRANCH", layout.MainBranch)
+	t.Setenv("KIT_GTAB_DIR", layout.GtabDir)
 	t.Setenv("KIT_STATE_DIR", filepath.Join(t.TempDir(), "state"))
 	t.Setenv("KIT_RUN_DIR", t.TempDir())
 	if err := os.MkdirAll(filepath.Join(layout.Master, "backend"), 0o755); err != nil {
@@ -29,29 +34,61 @@ func headlessDesignFixture(t *testing.T) liftoff.Layout {
 	return layout
 }
 
-func designTestCommand(t *testing.T, flags ...string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
+type designWireOutput struct {
+	Name            string         `json:"name"`
+	Path            string         `json:"path"`
+	Branch          string         `json:"branch"`
+	DatabaseMode    string         `json:"database_mode"`
+	BackendDeps     bool           `json:"backend_deps"`
+	SymlinkFrontend bool           `json:"symlink_frontend"`
+	DryRun          bool           `json:"dry_run"`
+	Slot            int            `json:"slot"`
+	Ports           map[string]int `json:"ports"`
+}
+
+func designTestCommand(t *testing.T, args ...string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
-	cmd := newDesignCmd()
+	root := &cobra.Command{
+		Use: "kit", SilenceErrors: true, SilenceUsage: true,
+		PersistentPreRunE: func(*cobra.Command, []string) error {
+			t.Error("headless design ran the default setup/update hook")
+			return errors.New("unexpected startup hook")
+		},
+	}
+	root.AddCommand(newDesignCmd())
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	if err := cmd.ParseFlags(flags); err != nil {
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs(append([]string{"design"}, args...))
+	return root, &stdout, &stderr
+}
+
+func decodeDesignOutput(t *testing.T, data []byte) designWireOutput {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatalf("stdout must contain one JSON object: %v\n%s", err, data)
+	}
+	for _, key := range []string{"name", "path", "branch", "database_mode", "backend_deps", "symlink_frontend", "graphite", "checkout_backend", "allow_pg_dump", "dry_run"} {
+		if _, exists := fields[key]; !exists {
+			t.Errorf("JSON result omitted %q", key)
+		}
+	}
+	var output designWireOutput
+	if err := json.Unmarshal(data, &output); err != nil {
 		t.Fatal(err)
 	}
-	return cmd, &stdout, &stderr
+	return output
 }
 
 func TestHeadlessDesignDryRunIsReadOnly(t *testing.T) {
 	layout := headlessDesignFixture(t)
-	cmd, stdout, stderr := designTestCommand(t, "--dry-run", "--json", "--graphite=false")
-	if err := runDesignHeadless(layout, cmd, []string{"Liftoff-Login-Fix"}); err != nil {
+	cmd, stdout, stderr := designTestCommand(t, "Liftoff-Login-Fix", "--dry-run", "--json", "--graphite=false")
+	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	var result designResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("invalid JSON: %v\n%s", err, stdout.String())
-	}
-	if result.Name != "login-fix" || result.Path != layout.WorktreePath("login-fix") || !result.DryRun {
+	result := decodeDesignOutput(t, stdout.Bytes())
+	if result.Name != "login-fix" || result.Branch != "login-fix" || result.Path != layout.WorktreePath("login-fix") || !result.DryRun {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	if result.DatabaseMode != "none" || result.BackendDeps || !result.SymlinkFrontend || result.Slot != 0 || result.Ports != nil {
@@ -73,15 +110,12 @@ func TestHeadlessDesignDryRunIsReadOnly(t *testing.T) {
 
 func TestHeadlessDesignCreatesDeferredWorkspaceWithSingleJSONResult(t *testing.T) {
 	layout := headlessDesignFixture(t)
-	cmd, stdout, stderr := designTestCommand(t, "--json", "--graphite=false", "--symlink-frontend=false")
-	if err := runDesignHeadless(layout, cmd, []string{"login-fix"}); err != nil {
+	cmd, stdout, stderr := designTestCommand(t, "login-fix", "--json", "--graphite=false", "--symlink-frontend=false")
+	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	var result designResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("stdout must contain only JSON: %v\n%s", err, stdout.String())
-	}
-	if result.DryRun || result.Slot < 1 || result.Ports == nil || result.Ports.API != 9000+result.Slot*10 {
+	result := decodeDesignOutput(t, stdout.Bytes())
+	if result.DryRun || result.Slot < 1 || result.Ports == nil || result.Ports["api"] == 0 || result.Ports["slot"] != result.Slot {
 		t.Fatalf("missing allocated ports: %+v", result)
 	}
 	if !strings.Contains(stderr.String(), "fetch origin/master") {
@@ -123,9 +157,9 @@ func TestHeadlessDesignRejectsInvalidRequestsBeforeCreation(t *testing.T) {
 		{name: "bad checkout", args: []string{"feature"}, flags: []string{"--checkout-backend=other"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			layout := headlessDesignFixture(t)
-			cmd, stdout, _ := designTestCommand(t, tc.flags...)
-			if err := runDesignHeadless(layout, cmd, tc.args); err == nil {
+			headlessDesignFixture(t)
+			cmd, stdout, _ := designTestCommand(t, append(tc.args, tc.flags...)...)
+			if err := cmd.Execute(); err == nil {
 				t.Fatal("expected validation error")
 			}
 			if stdout.Len() != 0 {
@@ -166,8 +200,8 @@ func TestHeadlessDesignPreservesExistingPathsAndRecords(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			cmd, _, _ := designTestCommand(t, "--json")
-			if err := runDesignHeadless(layout, cmd, []string{"feature"}); err == nil {
+			cmd, _, _ := designTestCommand(t, "feature", "--json")
+			if err := cmd.Execute(); err == nil {
 				t.Fatal("existing user state should block creation")
 			}
 			if kind == "canonical" || kind == "legacy" {
@@ -182,14 +216,14 @@ func TestHeadlessDesignPreservesExistingPathsAndRecords(t *testing.T) {
 
 func TestHeadlessDesignConcurrentCreatesPreserveWinner(t *testing.T) {
 	layout := headlessDesignFixture(t)
-	first, _, _ := designTestCommand(t, "--json", "--graphite=false", "--symlink-frontend=false")
-	second, _, _ := designTestCommand(t, "--json", "--graphite=false", "--symlink-frontend=false")
+	first, _, _ := designTestCommand(t, "same-task", "--json", "--graphite=false", "--symlink-frontend=false")
+	second, _, _ := designTestCommand(t, "same-task", "--json", "--graphite=false", "--symlink-frontend=false")
 	start := make(chan struct{})
 	results := make(chan error, 2)
 	for _, cmd := range []*cobra.Command{first, second} {
 		go func() {
 			<-start
-			results <- runDesignHeadless(layout, cmd, []string{"same-task"})
+			results <- cmd.Execute()
 		}()
 	}
 	close(start)
@@ -218,8 +252,8 @@ func TestHeadlessDesignConcurrentCreatesPreserveWinner(t *testing.T) {
 func TestHeadlessDesignFailureDoesNotReturnSuccessJSON(t *testing.T) {
 	layout := headlessDesignFixture(t)
 	runTestGit(t, layout.Master, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing.git"))
-	cmd, stdout, _ := designTestCommand(t, "--json", "--graphite=false")
-	if err := runDesignHeadless(layout, cmd, []string{"feature"}); err == nil {
+	cmd, stdout, _ := designTestCommand(t, "feature", "--json", "--graphite=false")
+	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected fetch failure")
 	}
 	if stdout.Len() != 0 {

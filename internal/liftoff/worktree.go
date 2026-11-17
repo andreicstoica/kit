@@ -294,3 +294,30 @@ func (l Layout) MasterIsRepo() bool {
 	}
 	return true
 }
+
+// VerifyGitCheckout checks both the managing repository's registration and the
+// checkout's current Git identity; a stale registration alone is insufficient.
+func (l Layout) VerifyGitCheckout(name, path, branch string) error {
+	worktrees, err := l.ListWorktrees()
+	if err != nil {
+		return fmt.Errorf("check Git worktree registration: %w", err)
+	}
+	wt, ok := NewWorktreeSet(worktrees).At(path)
+	if !ok || wt.IsMaster(l) != (name == "master") || wt.Missing || wt.Bare ||
+		(branch != "" && wt.Branch != branch) {
+		return fmt.Errorf("%s is not the registered Git checkout for %q", path, name)
+	}
+	masterCommon, err := Run(l.Master, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return fmt.Errorf("resolve master Git directory: %w", err)
+	}
+	checkoutCommon, err := Run(path, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil || pathKey(checkoutCommon) != pathKey(masterCommon) {
+		return fmt.Errorf("%s is not a checkout of the managing repository", path)
+	}
+	gitTop, err := Run(path, "git", "rev-parse", "--show-toplevel")
+	if err != nil || pathKey(gitTop) != pathKey(path) {
+		return fmt.Errorf("%s is not the root of the registered checkout", path)
+	}
+	return nil
+}

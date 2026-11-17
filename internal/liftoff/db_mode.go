@@ -8,23 +8,18 @@ import (
 )
 
 const (
-	DatabaseModeNone  = "none"
-	DatabaseModeEmpty = "empty"
-	DatabaseModeCopy  = "copy"
+	databaseLockNamespace = "database:"
+	DatabaseModeShared    = ""
+	DatabaseModeNone      = "none"
+	DatabaseModeEmpty     = "empty"
+	DatabaseModeCopy      = "copy"
 )
 
-func ValidateDatabaseMode(mode string) error {
+func validateDatabaseOptions(mode string, allowPGDump bool) error {
 	switch mode {
-	case "", DatabaseModeNone, DatabaseModeEmpty, DatabaseModeCopy:
-		return nil
+	case DatabaseModeShared, DatabaseModeNone, DatabaseModeEmpty, DatabaseModeCopy:
 	default:
 		return fmt.Errorf("unknown database mode %q (want none, empty, or copy)", mode)
-	}
-}
-
-func validateDatabaseOptions(mode string, allowPGDump bool) error {
-	if err := ValidateDatabaseMode(mode); err != nil {
-		return err
 	}
 	if allowPGDump && mode != DatabaseModeCopy {
 		return errors.New("--allow-pg-dump requires database mode copy")
@@ -63,22 +58,25 @@ func writeIsolatedDatabaseEnv(path, target string) error {
 	return os.WriteFile(envPath, []byte(replaceEnvKey(string(data), "SQLALCHEMY_DATABASE_NAME", target)), 0o600)
 }
 
-func validateDatabaseOwner(name string) error {
+func validateDatabaseName(name string) error {
 	if err := Validate(name); err != nil {
 		return err
 	}
-	cfg, err := LoadConfig()
-	if err != nil {
-		return err
+	if len(DBName(name)) > 63 {
+		return errors.New("workspace name too long for an isolated database (max 55 characters)")
 	}
-	if cfg.Worktrees[name].DatabaseName != "" {
+	return nil
+}
+
+func (c *Config) validateDatabaseOwner(name string) error {
+	if c.Worktrees[name].DatabaseCreateIntent != nil {
+		return uncertainDatabaseCreation(name)
+	}
+	if c.Worktrees[name].DatabaseName != "" || c.Worktrees[name].DatabaseIdentity != nil {
 		return fmt.Errorf("%s already owns a database; refusing to overwrite it", name)
 	}
 	target := DBName(name)
-	if len(target) > 63 {
-		return errors.New("workspace name too long for an isolated database (max 55 characters)")
-	}
-	for other, meta := range cfg.Worktrees {
+	for other, meta := range c.Worktrees {
 		if other == name {
 			continue
 		}
@@ -94,18 +92,21 @@ func validateDatabaseOwner(name string) error {
 }
 
 func (l Layout) ProvisionDatabase(name, mode string, allowPGDump bool, onLine LineFn) error {
+	if err := validateDatabaseName(name); err != nil {
+		return err
+	}
 	if err := validateDatabaseOptions(mode, allowPGDump); err != nil {
 		return err
 	}
 	if mode != DatabaseModeEmpty && mode != DatabaseModeCopy {
 		return errors.New("provisioning requires --mode empty or --mode copy")
 	}
-	return WithWorkspaceLock("database:"+name, func() error {
-		if err := validateDatabaseOwner(name); err != nil {
-			return err
-		}
+	return WithWorkspaceLock(databaseLockNamespace+name, func() error {
 		cfg, err := LoadConfig()
 		if err != nil {
+			return err
+		}
+		if err := cfg.validateDatabaseOwner(name); err != nil {
 			return err
 		}
 		meta, ok := cfg.Worktrees[name]
@@ -124,20 +125,9 @@ func (l Layout) ProvisionDatabase(name, mode string, allowPGDump bool, onLine Li
 		if !found || envDB != target {
 			return fmt.Errorf("%s backend/.env does not point at its isolated database; refusing to provision", name)
 		}
-		existing, err := HasDBs([]string{name})
+		copied, err := createOwnedDatabase(name, mode, allowPGDump, onLine)
 		if err != nil {
 			return err
-		}
-		if existing[name] {
-			return fmt.Errorf("database for %s already exists without ownership; refusing to overwrite it", name)
-		}
-		copied, err := createDatabase(target, mode, allowPGDump, onLine)
-		if err != nil {
-			return err
-		}
-		p := DressPlan{Name: name, Worktree: path}
-		if err := persistDressDatabase(p); err != nil {
-			return rollbackProvisionDatabase(name, target, err)
 		}
 		if mode == DatabaseModeCopy && !copied {
 			if err := CloneDB("liftoff", target, onLine); err != nil {
@@ -160,15 +150,15 @@ func (l Layout) ProvisionDatabase(name, mode string, allowPGDump bool, onLine Li
 }
 
 func rollbackProvisionDatabase(name, target string, cause error) error {
-	dropErr := DropDB(target, nil)
+	dropErr := dropOwnedDatabase(name, target, nil)
 	persistErr := WithConfigLock(func(c *Config) error {
 		meta := c.Worktrees[name]
 		meta.DatabaseDeferred = true
 		if dropErr != nil {
-			meta.DatabaseName = target
 			meta.CleanupPending = true
 		} else {
 			meta.DatabaseName = ""
+			meta.DatabaseIdentity = nil
 		}
 		c.Worktrees[name] = meta
 		return nil
@@ -186,6 +176,9 @@ func requireProvisionedDatabase(name string, services []Service) error {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return err
+	}
+	if cfg.Worktrees[name].DatabaseCreateIntent != nil {
+		return uncertainDatabaseCreation(name)
 	}
 	if cfg.Worktrees[name].DatabaseDeferred {
 		return fmt.Errorf("%s has an unprovisioned database; run `kit db %s --mode empty` or `kit db %s --mode copy` before starting backend services", name, name, name)

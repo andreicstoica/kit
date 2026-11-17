@@ -13,9 +13,6 @@ var version = "dev"
 
 func init() {
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		if cmd.Name() == "design" && designHeadless(cmd) {
-			return nil
-		}
 		tui.SeedTheme()
 		if err := MaybeOfferSetup(cmd, args); err != nil {
 			return err

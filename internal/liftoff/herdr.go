@@ -576,7 +576,7 @@ func herdrTailCommand(name string, service Service) string {
 	if err != nil {
 		return "exec ${SHELL:-/bin/sh}"
 	}
-	return "tail -F " + shellQuote(file)
+	return "tail -F " + ShellQuote(file)
 }
 
 func herdrCombinedTailCommand(name string, services ...Service) string {
@@ -584,7 +584,7 @@ func herdrCombinedTailCommand(name string, services ...Service) string {
 	for _, service := range services {
 		file, err := LogFile(name, string(service))
 		if err == nil {
-			files = append(files, shellQuote(file))
+			files = append(files, ShellQuote(file))
 		}
 	}
 	if len(files) == 0 {
@@ -653,10 +653,6 @@ func uniqueStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func runHerdr(args ...string) (string, error) {

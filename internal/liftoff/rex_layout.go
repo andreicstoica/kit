@@ -16,4 +16,6 @@ var (
 	rexCloseOwnTabLua string
 	//go:embed lua/ensure_tabs.lua
 	rexEnsureTabsLua string
+	//go:embed lua/launch_agent.lua
+	rexLaunchAgentLua string
 )

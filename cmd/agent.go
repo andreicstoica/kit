@@ -16,11 +16,13 @@ var agentSkill []byte
 func newAgentCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agent",
-		Short: "Print or install the kit-kickoff agent skill",
+		Short: "Print or install the kit-kickoff agent skill, or launch an agent",
 		Long: "Print the bundled kit-kickoff SKILL.md, or install it for agent discovery.\n\n" +
 			"The default install directory is ~/.fx/skills/kit-kickoff. For another client,\n" +
 			"pass its complete skill directory with install --path. Existing different\n" +
-			"content is never overwritten unless --force is given.",
+			"content is never overwritten unless --force is given.\n\n" +
+			"launch opens a new Claude Code agent with a brief in an existing worktree's\n" +
+			"Rex session. See kit agent launch --help.",
 		Args: cobra.NoArgs,
 		// Skill discovery must not trigger setup prompts or update checks.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return nil },
@@ -56,7 +58,7 @@ func newAgentCommand() *cobra.Command {
 	}
 	install.Flags().String("path", "", "Explicit skill directory (SKILL.md is written inside)")
 	install.Flags().Bool("force", false, "Replace an existing different SKILL.md")
-	cmd.AddCommand(install)
+	cmd.AddCommand(install, defaultAgentLaunchCommand())
 	return cmd
 }
 

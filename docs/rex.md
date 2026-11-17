@@ -135,6 +135,6 @@ failure leaves the created workspace intact and reports how to select it.
 
 `kit design` copies the local `liftoff` database with `createdb --template=liftoff
 --strategy=file_copy`, a file-level copy that skips SQL replay and index rebuilds.
-Postgres refuses it while anything is connected to `liftoff`. Kit then creates an
-empty database and falls back to `pg_dump | psql`. A failed template copy leaves
-no database behind.
+Postgres refuses it while anything is connected to `liftoff`. The wizard can
+fall back to `pg_dump | psql`; headless `kit design` and `kit db` require
+`--allow-pg-dump` for that fallback.

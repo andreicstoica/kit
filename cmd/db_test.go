@@ -31,12 +31,19 @@ func dbCommandFixture(t *testing.T) (string, string) {
 	capture := filepath.Join(t.TempDir(), "db-calls")
 	t.Setenv("DB_COMMAND_CALLS", capture)
 	t.Setenv("DB_COMMAND_BUSY", "")
+	t.Setenv("DB_COMMAND_CREATED", filepath.Join(t.TempDir(), "created"))
 	bin := t.TempDir()
 	for name, body := range map[string]string{
-		"createdb": `case "$*" in *--template=*) if [ "$DB_COMMAND_BUSY" = 1 ]; then echo busy >&2; exit 1; fi;; esac`,
-		"psql":     `if [ "$2" != postgres ]; then cat >/dev/null; fi`,
-		"pg_dump":  `exit 0`,
-		"dropdb":   `exit 0`,
+		"createdb": `case "$*" in *--template=*) if [ "$DB_COMMAND_BUSY" = 1 ]; then echo busy >&2; exit 1; fi;; esac
+touch "$DB_COMMAND_CREATED"`,
+		"psql": `case "$*" in
+  *pg_catalog.pg_control_system*)
+    if [ -f "$DB_COMMAND_CREATED" ]; then printf '12345\t42\n'; else printf '12345\t\n'; fi
+    exit 0;;
+esac
+if [ "$2" != postgres ]; then cat >/dev/null; fi`,
+		"pg_dump": `exit 0`,
+		"dropdb":  `exit 0`,
 	} {
 		script := "#!/bin/sh\nprintf '" + name + " %s\\n' \"$*\" >> \"$DB_COMMAND_CALLS\"\n" + body + "\n"
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
