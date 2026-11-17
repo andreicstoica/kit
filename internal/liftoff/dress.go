@@ -1,6 +1,7 @@
 package liftoff
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ type DressPlan struct {
 	GraphiteTrack   bool
 	Gtab            bool
 	OverwriteEnvs   bool // force overwrite if env files already exist in worktree
+	CheckoutBackend string
 
 	// Result fields populated after RunDress completes successfully.
 	AllocatedSlot int
@@ -96,7 +98,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 			title: fmt.Sprintf("worktree add %s -b %s %s", p.Worktree, p.Name, l.MainBranch),
 			phase: phasePrefix, kind: "worktree",
 			run: func(emit func(string)) error {
-				return l.AddWorktree(p.Name, p.Worktree, emit)
+				return l.AddWorktreeWithBackend(p.Name, p.Worktree, p.CheckoutBackend, emit)
 			},
 		},
 		{
@@ -110,7 +112,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		{
 			title: "create database " + dbName + " (template copy of liftoff when possible)",
 			phase: phaseDB, kind: "db-create",
-			skip:  !p.CloneDB,
+			skip: !p.CloneDB,
 			run: func(emit func(string)) error {
 				if cloneByTemplate {
 					copied, err := CreateDBFromTemplate(dbName, "liftoff", emit)
@@ -173,7 +175,7 @@ func (l Layout) planSteps(p DressPlan, slotResult *int) []step {
 		{
 			title: "write gtab workspace",
 			phase: phaseParallel, kind: "gtab",
-			skip:  !p.Gtab,
+			skip: !p.Gtab,
 			run: func(emit func(string)) error {
 				path, err := l.WriteGtab(p.Name, p.Worktree)
 				if err != nil {
@@ -284,6 +286,10 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 			priorMeta, hadRecord = cfg.Worktrees[p.Name]
 		}
 		steps := l.planSteps(p, &slot)
+		if err := ValidateCheckoutBackend(p.CheckoutBackend); err != nil {
+			ch <- StepUpdate{Index: 1, Title: steps[1].title, Status: StepFailed, Err: err}
+			return
+		}
 
 		type pResult struct {
 			index   int
@@ -368,6 +374,21 @@ func (l Layout) RunDress(p DressPlan) <-chan StepUpdate {
 				l.rollbackDress(p, worktreeAdded, dbCreated, gtabWritten, priorMeta, hadRecord, func(line string) {
 					ch <- StepUpdate{Index: i, Title: s.title, Status: StepRunning, Line: line}
 				})
+				var twigErr *twigCreateError
+				if errors.As(err, &twigErr) && twigErr.partial {
+					// Twig can register before failing. Keep that checkout and its
+					// diagnostic staging outside automatic rollback.
+					if recoveryErr := WithConfigLock(func(c *Config) error {
+						meta := c.Worktrees[p.Name]
+						meta.Path = p.Worktree
+						meta.Branch = p.Name
+						meta.CleanupPending = true
+						c.Worktrees[p.Name] = meta
+						return nil
+					}); recoveryErr != nil {
+						ch <- StepUpdate{Index: i, Title: s.title, Status: StepFailed, Err: errors.Join(err, fmt.Errorf("save partial checkout recovery: %w", recoveryErr))}
+					}
+				}
 				return
 			}
 			ch <- StepUpdate{Index: i, Title: s.title, Status: StepDone, Elapsed: elapsed}

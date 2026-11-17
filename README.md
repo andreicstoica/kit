@@ -60,6 +60,37 @@ without Enter. Labels cover the full list and stay the same when filtering.
 `1` through `9` also select the first nine results. `/` starts filtering;
 Esc clears an unfinished shortcut, then cancels the picker. Master appears in every picker as 🧊 slot 0.
 
+## Copy-on-write checkouts with Twig
+
+Git is the default checkout backend. To use [Twig](https://github.com/leostera/git-twig)
+for a new workspace, install released version 0.4.0 or newer:
+
+```sh
+brew tap leostera/git-twig https://github.com/leostera/git-twig
+brew install leostera/git-twig/git-twig
+kit design my-feature --checkout-backend twig
+```
+
+Twig shares committed file data through copy-on-write on supported filesystems,
+including macOS/APFS. Edits stay private. It does not copy ignored files,
+dependencies, or databases. Kit still handles the rest of workspace setup.
+Existing worktrees are unchanged.
+
+Kit fetches upstream and uses `origin/master` (or the configured main branch),
+even if the source checkout is behind. Twig 0.4.0 delegates to Git when that
+revision differs from the source checkout's `HEAD`. The progress output reports
+native cloning or the reason for fallback. Copy-on-write saves disk, not
+necessarily time.
+
+Kit creates a detached Twig checkout, then uses stock Git to create the branch
+with the user's normal tracking policy. This avoids Twig 0.4.0's tracking-config
+failure during native branch creation.
+
+If Twig fails, Kit does not retry with Git or delete its partial checkout.
+Kit retains a recovery record when resources remain. Inspect the reported
+checkout, `git worktree list`, and retained `twigs/staging` directory under the
+common Git directory before cleanup. Staging is never swept by Kit.
+
 ## Parking work in progress
 
 `kit park <name>` stops Kit-managed services and hides the workspace from
@@ -129,6 +160,7 @@ Exact database ownership and incomplete-cleanup metadata are retained for retrie
 go test ./...
 go test -race ./...
 go vet ./...
+KIT_TEST_TWIG=1 go test ./internal/liftoff -run TestTwigLiveWorktree -v
 KIT_TEST_REX=1 go test ./internal/liftoff -run 'TestRex.*Live' -v
 python3 dev/pty-smoke.py dist/kit-rex
 python3 dev/provider-smoke.py          # installs only into a disposable prefix
